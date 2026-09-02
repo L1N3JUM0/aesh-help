@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#1F3B63">
+<title>Suivi AESH</title>
+<style>
+:root{
+  --fond:#ECEEEC;
+  --feuille:#FFFFFF;
+  --encre:#1F3B63;
+  --encre-clair:#3A5A85;
+  --texte:#23262B;
+  --gris:#697079;
+  --gris-clair:#9AA1A9;
+  --seyes:#C6CFE3;
+  --marge:#B0473C;
+  --valide:#2F6B4F;
+  --rayon:10px;
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--fond);
+  color:var(--texte);
+  font-family:var(--sans);
+  font-size:16px;
+  line-height:1.45;
+  -webkit-text-size-adjust:100%;
+}
+.app{max-width:640px;margin:0 auto;padding:0 0 96px}
+
+/* ---------- en-tête ---------- */
+.entete{
+  position:sticky;top:0;z-index:20;
+  background:var(--encre);color:#fff;
+  padding:calc(env(safe-area-inset-top) + 12px) 16px 12px;
+  display:flex;align-items:baseline;gap:10px;
+}
+.entete h1{
+  font-family:var(--serif);font-size:20px;font-weight:600;
+  margin:0;letter-spacing:.2px;flex:1;
+}
+.entete .lieu{font-size:13px;color:#B9C9E2;font-family:var(--sans)}
+.entete button{
+  background:transparent;border:1px solid rgba(255,255,255,.35);
+  color:#fff;border-radius:20px;padding:6px 12px;font-size:14px;
+  font-family:inherit;cursor:pointer;
+}
+.entete button:active{background:rgba(255,255,255,.15)}
+
+/* ---------- feuille ---------- */
+.feuille{
+  position:relative;background:var(--feuille);
+  border-radius:var(--rayon);
+  margin:14px 12px;padding:18px 18px 20px 26px;
+  box-shadow:0 1px 0 rgba(31,59,99,.12);
+}
+.feuille::before{
+  content:"";position:absolute;left:14px;top:12px;bottom:12px;
+  width:1px;background:var(--marge);opacity:.5;
+}
+.feuille h2{
+  font-family:var(--serif);font-size:19px;font-weight:600;
+  color:var(--encre);margin:0 0 4px;
+}
+.feuille .chapeau{color:var(--gris);font-size:14px;margin:0 0 16px}
+
+/* ---------- champs ---------- */
+.champ{margin:0 0 16px}
+.champ > label,.legende{
+  display:block;font-size:14px;font-weight:600;color:var(--encre);
+  margin:0 0 6px;
+}
+.aide{font-size:13px;color:var(--gris);margin:-2px 0 8px}
+input[type=text],input[type=email],input[type=date],input[type=number],select,textarea{
+  width:100%;font-family:inherit;font-size:16px;color:var(--texte);
+  background:#FBFCFD;border:1px solid var(--seyes);border-radius:8px;
+  padding:11px 12px;
+}
+textarea{min-height:130px;resize:vertical;line-height:1.5}
+input:focus,select:focus,textarea:focus{
+  outline:2px solid var(--encre-clair);outline-offset:1px;border-color:var(--encre-clair);
+}
+.duo{display:flex;gap:10px}
+.duo > *{flex:1;min-width:0}
+
+/* ---------- pastilles (choix) ---------- */
+.pastilles{display:flex;flex-wrap:wrap;gap:8px}
+.pastille{
+  font-family:inherit;font-size:15px;
+  background:#fff;border:1px solid var(--seyes);color:var(--texte);
+  border-radius:22px;padding:9px 14px;cursor:pointer;text-align:left;
+}
+.pastille:active{transform:scale(.98)}
+.pastille[aria-pressed=true]{
+  background:var(--encre);border-color:var(--encre);color:#fff;
+}
+.trio{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.trio .pastille{text-align:center;padding:13px 6px;border-radius:8px;line-height:1.2}
+.trio .pastille small{display:block;font-size:11px;color:var(--gris-clair);margin-top:3px}
+.trio .pastille[aria-pressed=true] small{color:#C3D2E8}
+.ajout{display:flex;gap:8px;margin-top:10px}
+.ajout input{flex:1}
+
+/* ---------- boutons ---------- */
+.btn{
+  font-family:inherit;font-size:16px;font-weight:600;
+  border-radius:9px;padding:13px 18px;cursor:pointer;border:1px solid transparent;
+  width:100%;
+}
+.btn-plein{background:var(--encre);color:#fff}
+.btn-plein:active{background:#16294a}
+.btn-vide{background:#fff;color:var(--encre);border-color:var(--seyes)}
+.btn-danger{background:#fff;color:var(--marge);border-color:#E3C4C0}
+.btn-lien{
+  background:none;border:none;color:var(--encre-clair);font-family:inherit;
+  font-size:15px;padding:8px 0;cursor:pointer;text-decoration:underline;width:auto;
+}
+.actions{display:flex;flex-direction:column;gap:10px;margin-top:18px}
+.actions-2{display:flex;gap:10px}
+.actions-2 .btn{flex:1}
+.retour{
+  display:inline-flex;align-items:center;gap:6px;margin:14px 12px 0;
+  background:none;border:none;color:var(--encre);font-family:inherit;font-size:15px;
+  cursor:pointer;padding:4px 0;
+}
+
+/* ---------- liste d'élèves ---------- */
+.eleve{
+  display:flex;align-items:center;gap:12px;width:100%;
+  background:none;border:none;border-top:1px solid var(--seyes);
+  padding:14px 0;text-align:left;font-family:inherit;cursor:pointer;color:inherit;
+}
+.eleve:first-of-type{border-top:none}
+.initiales{
+  flex:none;width:42px;height:42px;border-radius:50%;
+  background:#EAEFF7;color:var(--encre);
+  display:grid;place-items:center;font-weight:600;font-size:15px;
+}
+.eleve .nom{font-weight:600;font-size:16px}
+.eleve .meta{font-size:13px;color:var(--gris)}
+.eleve .fleche{margin-left:auto;color:var(--gris-clair);font-size:20px}
+.vide{text-align:center;color:var(--gris);padding:8px 0 18px}
+.vide p{margin:0 0 14px;font-size:15px}
+
+/* ---------- aperçu du rapport ---------- */
+.rapport{font-family:var(--serif);line-height:1.55}
+.rapport .titre{
+  font-size:17px;font-weight:600;color:var(--encre);
+  margin:0 0 10px;padding-bottom:8px;border-bottom:1px solid var(--seyes);
+}
+.rapport dl{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;margin:0 0 16px;font-size:15px}
+.rapport dt{color:var(--gris);font-family:var(--sans);font-size:13px;padding-top:2px}
+.rapport dd{margin:0}
+.rapport section{margin:0 0 16px}
+.rapport h3{
+  font-family:var(--sans);font-size:12.5px;font-weight:700;color:var(--encre);
+  letter-spacing:.3px;margin:0 0 5px;
+}
+.rapport ul{margin:0;padding-left:20px}
+.rapport p{margin:0;white-space:pre-wrap}
+.signature{display:none}
+
+/* ---------- divers ---------- */
+.note{
+  font-size:13.5px;color:var(--gris);background:#F4F6F9;
+  border-left:2px solid var(--seyes);padding:10px 12px;border-radius:0 6px 6px 0;margin:0 0 16px;
+}
+.note.alerte{background:#FBF1EF;border-left-color:var(--marge);color:#7C3A32}
+.toast{
+  position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);
+  background:var(--encre);color:#fff;padding:12px 18px;border-radius:24px;
+  font-size:15px;opacity:0;pointer-events:none;transition:opacity .18s, transform .18s;z-index:60;
+  max-width:90vw;text-align:center;
+}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+.masque{display:none}
+hr.regle{border:none;border-top:1px solid var(--seyes);margin:18px 0}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* ---------- impression ---------- */
+@media print{
+  body{background:#fff}
+  .entete,.retour,.actions,.actions-2,.btn,.note,.toast{display:none!important}
+  .app{max-width:none;padding:0}
+  .feuille{margin:0;padding:0;box-shadow:none;border-radius:0}
+  .feuille::before{display:none}
+  .rapport{font-size:12pt}
+  .rapport .titre{font-size:14pt}
+  .signature{
+    display:block;margin-top:36pt;font-family:var(--sans);font-size:10pt;color:#444;
+  }
+  .signature .ligne{margin-top:34pt;border-top:1px solid #999;width:60%}
+  @page{margin:18mm}
+}
+</style>
+</head>
+<body>
+
+<header class="entete">
+  <h1>Suivi AESH</h1>
+  <span class="lieu" id="lieu"></span>
+  <button type="button" id="btn-reglages">Réglages</button>
+</header>
+
+<div class="app">
+
+  <!-- ============ VUE : LISTE DES ÉLÈVES ============ -->
+  <section id="vue-eleves">
+    <div class="feuille">
+      <h2>Mes élèves</h2>
+      <p class="chapeau" id="chapeau-eleves"></p>
+      <div id="liste-eleves"></div>
+      <div class="actions">
+        <button type="button" class="btn btn-vide" id="btn-nouvel-eleve">Ajouter un élève</button>
+      </div>
+    </div>
+    <div class="feuille" id="bloc-recents" hidden>
+      <h2>Derniers rapports</h2>
+      <div id="liste-rapports"></div>
+    </div>
+  </section>
+
+  <!-- ============ VUE : FICHE ÉLÈVE ============ -->
+  <section id="vue-fiche" class="masque">
+    <button type="button" class="retour" data-retour>← Mes élèves</button>
+    <div class="feuille">
+      <h2 id="titre-fiche">Nouvel élève</h2>
+      <p class="chapeau">Ces informations sont saisies une seule fois, puis reprises dans chaque rapport.</p>
+
+      <div class="duo champ">
+        <div><label for="f-prenom">Prénom</label><input type="text" id="f-prenom" autocomplete="off"></div>
+        <div><label for="f-nom">Nom</label><input type="text" id="f-nom" autocomplete="off"></div>
+      </div>
+
+      <div class="duo champ">
+        <div><label for="f-classe">Classe</label><input type="text" id="f-classe" placeholder="5e B" autocomplete="off"></div>
+        <div><label for="f-heures">Heures / semaine</label><input type="text" id="f-heures" placeholder="12 h" autocomplete="off"></div>
+      </div>
+
+      <div class="champ">
+        <span class="legende">Modalité d'accompagnement</span>
+        <div class="pastilles" id="f-modalite"></div>
+      </div>
+
+      <div class="champ" id="f-bloc-mutu" hidden>
+        <label for="f-copartage">Partagé avec combien d'autres élèves&nbsp;?</label>
+        <input type="number" id="f-copartage" min="1" max="6" value="1">
+      </div>
+
+      <div class="champ">
+        <span class="legende">Matières habituellement accompagnées</span>
+        <p class="aide">Elles seront pré-cochées dans les rapports. Vous pourrez les ajuster à chaque fois.</p>
+        <div class="pastilles" id="f-matieres"></div>
+        <div class="ajout">
+          <input type="text" id="f-matiere-ajout" placeholder="Ajouter une matière" autocomplete="off">
+          <button type="button" class="btn btn-vide" style="width:auto" id="f-matiere-btn">Ajouter</button>
+        </div>
+      </div>
+
+      <div class="champ">
+        <label for="f-notes">Notes personnelles</label>
+        <p class="aide">Aide-mémoire privé. N'apparaît jamais dans le rapport exporté.</p>
+        <textarea id="f-notes" style="min-height:80px"></textarea>
+      </div>
+
+      <div class="actions">
+        <button type="button" class="btn btn-plein" id="f-enregistrer">Enregistrer la fiche</button>
+        <button type="button" class="btn btn-danger" id="f-supprimer" hidden>Supprimer cet élève</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ VUE : RAPPORT ============ -->
+  <section id="vue-rapport" class="masque">
+    <button type="button" class="retour" data-retour>← Mes élèves</button>
+    <div class="feuille">
+      <h2 id="titre-rapport">Rapport</h2>
+      <p class="chapeau" id="chapeau-rapport"></p>
+
+      <div class="champ">
+        <span class="legende">Période concernée</span>
+        <div class="pastilles" id="r-periode"></div>
+        <div class="duo" style="margin-top:10px">
+          <div><label for="r-debut" style="font-weight:400;color:var(--gris);font-size:13px">Du</label><input type="date" id="r-debut"></div>
+          <div><label for="r-fin" style="font-weight:400;color:var(--gris);font-size:13px">Au</label><input type="date" id="r-fin"></div>
+        </div>
+      </div>
+
+      <hr class="regle">
+
+      <div class="champ">
+        <span class="legende">Qualité de la relation</span>
+        <div class="trio" id="r-relation"></div>
+      </div>
+
+      <div class="champ">
+        <span class="legende">Modalité</span>
+        <div class="pastilles" id="r-modalite"></div>
+      </div>
+
+      <hr class="regle">
+
+      <div class="champ">
+        <span class="legende">Type d'accompagnement</span>
+        <p class="aide">Plusieurs choix possibles.</p>
+        <div class="pastilles" id="r-accomp"></div>
+        <div class="ajout">
+          <input type="text" id="r-accomp-ajout" placeholder="Ajouter un type" autocomplete="off">
+          <button type="button" class="btn btn-vide" style="width:auto" id="r-accomp-btn">Ajouter</button>
+        </div>
+      </div>
+
+      <div class="champ">
+        <span class="legende">Matières concernées</span>
+        <div class="pastilles" id="r-matieres"></div>
+      </div>
+
+      <div class="champ">
+        <label for="r-commentaire">Commentaire</label>
+        <p class="aide">Observations, évolutions, points d'appui, difficultés, besoins à venir.</p>
+        <textarea id="r-commentaire"></textarea>
+      </div>
+
+      <div class="actions">
+        <button type="button" class="btn btn-plein" id="r-apercu">Voir le rapport</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ VUE : APERÇU ============ -->
+  <section id="vue-apercu" class="masque">
+    <button type="button" class="retour" id="retour-rapport">← Modifier</button>
+    <div class="feuille">
+      <div class="rapport" id="apercu"></div>
+      <div class="signature">
+        <div>Rapport rédigé par&nbsp;: <span id="sig-nom"></span></div>
+        <div class="ligne"></div>
+        <div style="margin-top:4px">Date et signature</div>
+      </div>
+      <div class="actions">
+        <div class="actions-2">
+          <button type="button" class="btn btn-plein" id="a-mail">Envoyer par mail</button>
+          <button type="button" class="btn btn-vide" id="a-imprimer">Imprimer</button>
+        </div>
+        <div class="actions-2">
+          <button type="button" class="btn btn-vide" id="a-txt">Télécharger (.txt)</button>
+          <button type="button" class="btn btn-vide" id="a-copier">Copier le texte</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ VUE : RÉGLAGES ============ -->
+  <section id="vue-reglages" class="masque">
+    <button type="button" class="retour" data-retour>← Mes élèves</button>
+    <div class="feuille">
+      <h2>Réglages</h2>
+      <p class="chapeau">Saisis une fois, repris dans tous vos rapports.</p>
+
+      <div class="champ"><label for="g-aesh">Votre nom</label><input type="text" id="g-aesh" autocomplete="name"></div>
+      <div class="champ"><label for="g-etab">Établissement</label><input type="text" id="g-etab" placeholder="Collège Jean Moulin" autocomplete="off"></div>
+      <div class="champ">
+        <label for="g-coordo">Adresse mail du coordonnateur PIAL</label>
+        <p class="aide">Le bouton « Envoyer par mail » écrira directement à cette adresse.</p>
+        <input type="email" id="g-coordo" placeholder="coordonnateur@ac-academie.fr" autocomplete="email">
+      </div>
+
+      <div class="champ">
+        <span class="legende">Nom de l'élève dans le rapport</span>
+        <div class="pastilles" id="g-anonyme"></div>
+        <p class="aide" style="margin-top:8px">Le prénom et l'initiale suffisent souvent, et limitent la diffusion de données personnelles.</p>
+      </div>
+    </div>
+
+    <div class="feuille">
+      <h2>Sauvegarde</h2>
+      <p class="chapeau">Tout est stocké dans ce téléphone, rien n'est envoyé sur internet. Si vous changez d'appareil ou effacez les données du navigateur, tout est perdu&nbsp;: pensez à exporter de temps en temps.</p>
+      <div id="etat-stockage"></div>
+      <div class="actions">
+        <button type="button" class="btn btn-vide" id="g-export">Exporter mes données</button>
+        <button type="button" class="btn btn-vide" id="g-import">Importer une sauvegarde</button>
+        <input type="file" id="g-fichier" accept="application/json,.json" hidden>
+        <button type="button" class="btn btn-danger" id="g-effacer">Tout effacer</button>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+"use strict";
+
+/* =============== stockage =============== */
+var CLE = "suivi-aesh-v1";
+var memoire = {}, stockageOk = true;
+try { localStorage.setItem("_t","1"); localStorage.removeItem("_t"); } catch(e){ stockageOk = false; }
+function lire(){ try { return stockageOk ? localStorage.getItem(CLE) : memoire[CLE]; } catch(e){ return null; } }
+function ecrire(v){ try { stockageOk ? localStorage.setItem(CLE,v) : (memoire[CLE]=v); } catch(e){ stockageOk=false; memoire[CLE]=v; } }
+
+var DEFAUT = { reglages:{aesh:"",etab:"",coordo:"",anonyme:true}, eleves:[], rapports:[], matieresPerso:[], accompPerso:[] };
+var db;
+try { db = Object.assign({}, DEFAUT, JSON.parse(lire()||"{}")); } catch(e){ db = JSON.parse(JSON.stringify(DEFAUT)); }
+["eleves","rapports","matieresPerso","accompPerso"].forEach(function(k){ if(!Array.isArray(db[k])) db[k]=[]; });
+db.reglages = Object.assign({}, DEFAUT.reglages, db.reglages||{});
+function sauver(){ ecrire(JSON.stringify(db)); }
+
+/* =============== listes =============== */
+var MATIERES = ["Français","Mathématiques","Histoire-Géographie","EMC","Anglais","Autre langue vivante",
+  "SVT","Physique-Chimie","Technologie","Sciences","Questionner le monde","Arts plastiques",
+  "Éducation musicale","EPS","Temps informels","Toutes les matières"];
+
+var ACCOMP = ["Reformulation des consignes","Secrétaire, scripteur","Aide à la mise en place du matériel",
+  "Recentrage sur la tâche","Aide à l'organisation","Prise de notes","Lecture à voix haute",
+  "Aide à la manipulation","Mise en confiance, encouragement","Gestion des émotions",
+  "Médiation avec l'enseignant","Relations avec les autres élèves","Aménagement des évaluations",
+  "Aide aux déplacements","Gestes du quotidien","Mise en mots, verbalisation"];
+
+var RELATIONS = [
+  {v:"Fluide", d:"confiance installée"},
+  {v:"En construction", d:"progresse"},
+  {v:"Difficile", d:"à retravailler"}
+];
+var PERIODES = ["Semaine","Quinzaine","Mois","Trimestre"];
+var MODALITES = ["Individuel","Mutualisé"];
+
+/* =============== utilitaires =============== */
+function $(id){ return document.getElementById(id); }
+function txt(s){ return String(s==null?"":s); }
+function toast(m){ var t=$("toast"); t.textContent=m; t.classList.add("on"); clearTimeout(t._t); t._t=setTimeout(function(){t.classList.remove("on");},2400); }
+function jour(iso){ if(!iso) return ""; var p=iso.split("-"); return p[2]+"/"+p[1]+"/"+p[0]; }
+function isoJour(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function sansAccent(s){ return s.normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^A-Za-z0-9]+/g,"-").replace(/^-|-$/g,""); }
+function id(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+
+function nomAffiche(el){
+  if(!el) return "";
+  var n = txt(el.nom).trim();
+  if(db.reglages.anonyme) return (txt(el.prenom).trim()+" "+(n?n[0].toUpperCase()+".":"")).trim();
+  return (txt(el.prenom).trim()+" "+n.toUpperCase()).trim();
+}
+function initiales(el){
+  var a=txt(el.prenom).trim(), b=txt(el.nom).trim();
+  return ((a?a[0]:"")+(b?b[0]:"")).toUpperCase() || "?";
+}
+
+/* pastilles génériques : renvoie un getter/setter de sélection */
+function pastilles(hote, valeurs, options){
+  options = options||{};
+  var multi = !!options.multi;
+  var choix = options.valeur!=null ? (multi ? (options.valeur||[]).slice() : options.valeur) : (multi?[]:null);
+  function actif(v){ return multi ? choix.indexOf(v)>-1 : choix===v; }
+  function rendre(){
+    hote.innerHTML="";
+    valeurs.forEach(function(item){
+      var v = typeof item==="string" ? item : item.v;
+      var d = typeof item==="string" ? null : item.d;
+      var b=document.createElement("button");
+      b.type="button"; b.className="pastille";
+      b.setAttribute("aria-pressed", actif(v)?"true":"false");
+      b.textContent=v;
+      if(d){ var s=document.createElement("small"); s.textContent=d; b.appendChild(s); }
+      b.addEventListener("click",function(){
+        if(multi){ var i=choix.indexOf(v); i>-1?choix.splice(i,1):choix.push(v); }
+        else { choix = (choix===v && options.deselectionnable) ? null : v; }
+        rendre(); if(options.onChange) options.onChange(choix);
+      });
+      hote.appendChild(b);
+    });
+  }
+  rendre();
+  return {
+    get:function(){ return multi?choix.slice():choix; },
+    set:function(v){ choix = multi?(v||[]).slice():v; rendre(); },
+    ajouter:function(v){ valeurs=valeurs.concat([v]); if(multi&&choix.indexOf(v)<0) choix.push(v); else if(!multi) choix=v; rendre(); }
+  };
+}
+
+/* =============== navigation =============== */
+var VUES=["vue-eleves","vue-fiche","vue-rapport","vue-apercu","vue-reglages"];
+function vue(nom){
+  VUES.forEach(function(v){ $(v).classList.toggle("masque", v!==nom); });
+  window.scrollTo(0,0);
+}
+Array.prototype.forEach.call(document.querySelectorAll("[data-retour]"),function(b){
+  b.addEventListener("click",function(){ rendreAccueil(); vue("vue-eleves"); });
+});
+$("btn-reglages").addEventListener("click",function(){ ouvrirReglages(); });
+
+/* =============== accueil =============== */
+function rendreAccueil(){
+  $("lieu").textContent = db.reglages.etab || "";
+  var hote=$("liste-eleves"); hote.innerHTML="";
+  if(!db.eleves.length){
+    hote.innerHTML = '<div class="vide"><p>Aucun élève enregistré pour l\'instant.<br>Créez une fiche&nbsp;: vous ne saisirez sa classe et ses matières qu\'une seule fois.</p></div>';
+    $("chapeau-eleves").textContent="";
+  } else {
+    $("chapeau-eleves").textContent = "Touchez un élève pour rédiger son rapport.";
+    db.eleves.forEach(function(el){
+      var b=document.createElement("button");
+      b.type="button"; b.className="eleve";
+      var mod = el.modalite==="Mutualisé" ? "mutualisé" : "individuel";
+      b.innerHTML = '<span class="initiales">'+initiales(el)+'</span>'+
+        '<span><span class="nom">'+nomAffiche(el)+'</span><br>'+
+        '<span class="meta">'+(el.classe?el.classe+" · ":"")+mod+'</span></span>'+
+        '<span class="fleche">›</span>';
+      b.addEventListener("click",function(){ ouvrirRapport(el.id); });
+      hote.appendChild(b);
+    });
+  }
+  var recents = db.rapports.slice().sort(function(a,b){ return b.cree.localeCompare(a.cree); }).slice(0,8);
+  $("bloc-recents").hidden = !recents.length;
+  var lr=$("liste-rapports"); lr.innerHTML="";
+  recents.forEach(function(r){
+    var b=document.createElement("button");
+    b.type="button"; b.className="eleve";
+    b.innerHTML='<span class="initiales" style="background:#EFEFEC">'+(r.periode?r.periode[0]:"R")+'</span>'+
+      '<span><span class="nom">'+r.eleveNom+'</span><br><span class="meta">'+r.periodeTexte+' · '+r.relation+'</span></span>'+
+      '<span class="fleche">›</span>';
+    b.addEventListener("click",function(){ afficherApercu(r,false); });
+    lr.appendChild(b);
+  });
+}
+
+/* =============== fiche élève =============== */
+var ficheId=null, pModalite, pMatieres;
+$("btn-nouvel-eleve").addEventListener("click",function(){ ouvrirFiche(null); });
+
+function ouvrirFiche(eid){
+  ficheId=eid;
+  var el = eid ? db.eleves.filter(function(e){return e.id===eid;})[0] : null;
+  $("titre-fiche").textContent = el ? "Fiche de "+nomAffiche(el) : "Nouvel élève";
+  $("f-prenom").value = el?txt(el.prenom):"";
+  $("f-nom").value = el?txt(el.nom):"";
+  $("f-classe").value = el?txt(el.classe):"";
+  $("f-heures").value = el?txt(el.heures):"";
+  $("f-notes").value = el?txt(el.notes):"";
+  $("f-copartage").value = el&&el.copartage?el.copartage:1;
+
+  pModalite = pastilles($("f-modalite"), MODALITES, {valeur: el?el.modalite:"Individuel", onChange:majMutu});
+  pMatieres = pastilles($("f-matieres"), MATIERES.concat(db.matieresPerso), {multi:true, valeur: el?el.matieres:[]});
+  majMutu(el?el.modalite:"Individuel");
+  $("f-supprimer").hidden = !el;
+  vue("vue-fiche");
+}
+function majMutu(v){ $("f-bloc-mutu").hidden = v!=="Mutualisé"; }
+
+$("f-matiere-btn").addEventListener("click",function(){
+  var v=$("f-matiere-ajout").value.trim(); if(!v) return;
+  if(MATIERES.indexOf(v)<0 && db.matieresPerso.indexOf(v)<0){ db.matieresPerso.push(v); sauver(); }
+  pMatieres.ajouter(v); $("f-matiere-ajout").value="";
+});
+
+$("f-enregistrer").addEventListener("click",function(){
+  var prenom=$("f-prenom").value.trim();
+  if(!prenom){ toast("Indiquez au moins le prénom de l'élève."); $("f-prenom").focus(); return; }
+  var donnees={
+    prenom:prenom, nom:$("f-nom").value.trim(), classe:$("f-classe").value.trim(),
+    heures:$("f-heures").value.trim(), notes:$("f-notes").value,
+    modalite:pModalite.get()||"Individuel", copartage:parseInt($("f-copartage").value,10)||1,
+    matieres:pMatieres.get()
+  };
+  if(ficheId){
+    db.eleves.forEach(function(e,i){ if(e.id===ficheId) db.eleves[i]=Object.assign(e,donnees); });
+  } else {
+    donnees.id=id(); db.eleves.push(donnees);
+  }
+  sauver(); rendreAccueil(); vue("vue-eleves"); toast("Fiche enregistrée.");
+});
+
+$("f-supprimer").addEventListener("click",function(){
+  if(!confirm("Supprimer cet élève et ses rapports enregistrés ?")) return;
+  db.eleves = db.eleves.filter(function(e){ return e.id!==ficheId; });
+  db.rapports = db.rapports.filter(function(r){ return r.eleveId!==ficheId; });
+  sauver(); rendreAccueil(); vue("vue-eleves"); toast("Fiche supprimée.");
+});
+
+/* =============== rapport =============== */
+var rapportEleve=null, pPeriode, pRelation, pModalite2, pAccomp, pMatieres2;
+
+function datesPeriode(type){
+  var d=new Date(), j=d.getDay(), lundi=new Date(d);
+  lundi.setDate(d.getDate() - ((j+6)%7));
+  var vendredi=new Date(lundi); vendredi.setDate(lundi.getDate()+4);
+  if(type==="Semaine") return [isoJour(lundi), isoJour(vendredi)];
+  if(type==="Quinzaine"){ var l2=new Date(lundi); l2.setDate(lundi.getDate()-7); return [isoJour(l2), isoJour(vendredi)]; }
+  if(type==="Mois"){ return [isoJour(new Date(d.getFullYear(),d.getMonth(),1)), isoJour(new Date(d.getFullYear(),d.getMonth()+1,0))]; }
+  var t=new Date(d); t.setMonth(d.getMonth()-3); return [isoJour(t), isoJour(d)];
+}
+
+function ouvrirRapport(eid){
+  rapportEleve = db.eleves.filter(function(e){return e.id===eid;})[0];
+  if(!rapportEleve) return;
+  var dernier = db.rapports.filter(function(r){return r.eleveId===eid;})
+                 .sort(function(a,b){return b.cree.localeCompare(a.cree);})[0];
+
+  $("titre-rapport").textContent = "Rapport — "+nomAffiche(rapportEleve);
+  var mod = rapportEleve.modalite==="Mutualisé" ? "accompagnement mutualisé" : "accompagnement individuel";
+  $("chapeau-rapport").innerHTML = (rapportEleve.classe?rapportEleve.classe+" · ":"")+mod+
+    ' &nbsp;<button type="button" class="btn-lien" id="lien-fiche">modifier la fiche</button>';
+  $("lien-fiche").addEventListener("click",function(){ ouvrirFiche(rapportEleve.id); });
+
+  pPeriode = pastilles($("r-periode"), PERIODES, {valeur: dernier?dernier.periode:"Semaine", onChange:function(v){
+    var d=datesPeriode(v); $("r-debut").value=d[0]; $("r-fin").value=d[1];
+  }});
+  var d0=datesPeriode(dernier?dernier.periode:"Semaine");
+  $("r-debut").value=d0[0]; $("r-fin").value=d0[1];
+
+  pRelation  = pastilles($("r-relation"), RELATIONS, {});
+  pModalite2 = pastilles($("r-modalite"), MODALITES, {valeur: rapportEleve.modalite||"Individuel"});
+  pAccomp    = pastilles($("r-accomp"), ACCOMP.concat(db.accompPerso), {multi:true, valeur: dernier?dernier.accomp:[]});
+  pMatieres2 = pastilles($("r-matieres"), MATIERES.concat(db.matieresPerso), {multi:true,
+                 valeur: (rapportEleve.matieres&&rapportEleve.matieres.length)?rapportEleve.matieres:(dernier?dernier.matieres:[])});
+  $("r-commentaire").value="";
+  vue("vue-rapport");
+}
+
+$("r-accomp-btn").addEventListener("click",function(){
+  var v=$("r-accomp-ajout").value.trim(); if(!v) return;
+  if(ACCOMP.indexOf(v)<0 && db.accompPerso.indexOf(v)<0){ db.accompPerso.push(v); sauver(); }
+  pAccomp.ajouter(v); $("r-accomp-ajout").value="";
+});
+
+$("r-apercu").addEventListener("click",function(){
+  if(!pRelation.get()){ toast("Indiquez la qualité de la relation."); return; }
+  var debut=$("r-debut").value, fin=$("r-fin").value;
+  if(!debut||!fin){ toast("Renseignez les dates de la période."); return; }
+  var periode=pPeriode.get()||"Semaine";
+  var modalite=pModalite2.get()||"Individuel";
+  var r={
+    id:id(), eleveId:rapportEleve.id, eleveNom:nomAffiche(rapportEleve),
+    classe:rapportEleve.classe, heures:rapportEleve.heures,
+    cree:new Date().toISOString(), creeJour:isoJour(new Date()),
+    periode:periode, debut:debut, fin:fin,
+    periodeTexte: periode+" du "+jour(debut)+" au "+jour(fin),
+    relation:pRelation.get(), modalite:modalite,
+    copartage: modalite==="Mutualisé" ? (rapportEleve.copartage||1) : 0,
+    accomp:pAccomp.get(), matieres:pMatieres2.get(),
+    commentaire:$("r-commentaire").value.trim(),
+    aesh:db.reglages.aesh, etab:db.reglages.etab
+  };
+  db.rapports.push(r);
+  if(db.rapports.length>200) db.rapports=db.rapports.slice(-200);
+  sauver();
+  afficherApercu(r,true);
+});
+$("retour-rapport").addEventListener("click",function(){ vue("vue-rapport"); });
+
+/* =============== aperçu, texte, export =============== */
+var rapportCourant=null;
+
+function texteModalite(r){
+  return r.modalite==="Mutualisé"
+    ? "Mutualisé (partagé avec "+r.copartage+" autre"+(r.copartage>1?"s":"")+" élève"+(r.copartage>1?"s":"")+")"
+    : "Individuel";
+}
+
+function afficherApercu(r,nouveau){
+  rapportCourant=r;
+  var h="";
+  h+='<div class="titre">Rapport d\'accompagnement</div>';
+  h+='<dl>';
+  if(r.etab) h+='<dt>Établissement</dt><dd>'+txt(r.etab)+'</dd>';
+  if(r.aesh) h+='<dt>AESH</dt><dd>'+txt(r.aesh)+'</dd>';
+  h+='<dt>Élève</dt><dd>'+txt(r.eleveNom)+(r.classe?" — "+txt(r.classe):"")+'</dd>';
+  h+='<dt>Modalité</dt><dd>'+texteModalite(r)+'</dd>';
+  if(r.heures) h+='<dt>Quotité</dt><dd>'+txt(r.heures)+'</dd>';
+  h+='<dt>Période</dt><dd>'+r.periode+' du '+jour(r.debut)+' au '+jour(r.fin)+'</dd>';
+  h+='<dt>Établi le</dt><dd>'+jour(r.creeJour)+'</dd>';
+  h+='</dl>';
+  h+='<section><h3>Qualité de la relation</h3><p>'+txt(r.relation)+'</p></section>';
+  if(r.accomp.length){
+    h+='<section><h3>Type d\'accompagnement</h3><ul>';
+    r.accomp.forEach(function(a){ h+='<li>'+txt(a)+'</li>'; }); h+='</ul></section>';
+  }
+  if(r.matieres.length) h+='<section><h3>Matières concernées</h3><p>'+r.matieres.join(", ")+'</p></section>';
+  if(r.commentaire) h+='<section><h3>Commentaire</h3><p>'+txt(r.commentaire).replace(/</g,"&lt;")+'</p></section>';
+  $("apercu").innerHTML=h;
+  $("sig-nom").textContent = txt(r.aesh)||"…";
+  vue("vue-apercu");
+  if(nouveau) toast("Rapport enregistré.");
+}
+
+function texteBrut(r){
+  var L=[], sep="────────────────────────────────────────";
+  L.push("RAPPORT D'ACCOMPAGNEMENT AESH"); L.push(sep);
+  if(r.etab) L.push("Établissement : "+r.etab);
+  if(r.aesh) L.push("AESH          : "+r.aesh);
+  L.push("Élève         : "+r.eleveNom+(r.classe?"   (classe : "+r.classe+")":""));
+  L.push("Modalité      : "+texteModalite(r));
+  if(r.heures) L.push("Quotité       : "+r.heures);
+  L.push("Période       : "+r.periode+" du "+jour(r.debut)+" au "+jour(r.fin));
+  L.push("Établi le     : "+jour(r.creeJour));
+  L.push(""); L.push("QUALITÉ DE LA RELATION"); L.push("  "+r.relation);
+  if(r.accomp.length){ L.push(""); L.push("TYPE D'ACCOMPAGNEMENT"); r.accomp.forEach(function(a){ L.push("  - "+a); }); }
+  if(r.matieres.length){ L.push(""); L.push("MATIÈRES CONCERNÉES"); L.push("  "+r.matieres.join(", ")); }
+  if(r.commentaire){ L.push(""); L.push("COMMENTAIRE"); r.commentaire.split("\n").forEach(function(l){ L.push("  "+l); }); }
+  L.push(""); L.push(sep);
+  L.push("Rapport rédigé par "+(r.aesh||"...")+" le "+jour(r.creeJour)+".");
+  return L.join("\n");
+}
+function nomFichier(r){
+  return r.creeJour+"_rapport_"+sansAccent(r.eleveNom)+(r.classe?"_"+sansAccent(r.classe):"")+".txt";
+}
+function telecharger(nom, contenu, type){
+  var b=new Blob([contenu],{type:(type||"text/plain")+";charset=utf-8"});
+  var u=URL.createObjectURL(b), a=document.createElement("a");
+  a.href=u; a.download=nom; document.body.appendChild(a); a.click();
+  setTimeout(function(){ URL.revokeObjectURL(u); a.remove(); },1200);
+}
+
+$("a-txt").addEventListener("click",function(){
+  telecharger(nomFichier(rapportCourant), texteBrut(rapportCourant));
+  toast("Fichier créé : "+nomFichier(rapportCourant));
+});
+$("a-copier").addEventListener("click",function(){
+  var t=texteBrut(rapportCourant);
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(t).then(function(){toast("Texte copié.");},function(){secours(t);});
+  } else secours(t);
+  function secours(t){
+    var z=document.createElement("textarea"); z.value=t; document.body.appendChild(z);
+    z.select(); try{document.execCommand("copy"); toast("Texte copié.");}catch(e){toast("Copie impossible sur cet appareil.");}
+    z.remove();
+  }
+});
+$("a-imprimer").addEventListener("click",function(){ window.print(); });
+$("a-mail").addEventListener("click",function(){
+  var r=rapportCourant;
+  var sujet="Rapport d'accompagnement — "+r.eleveNom+(r.classe?" ("+r.classe+")":"")+" — "+r.periode+" du "+jour(r.debut)+" au "+jour(r.fin);
+  var lien="mailto:"+encodeURIComponent(db.reglages.coordo||"")+"?subject="+encodeURIComponent(sujet)+"&body="+encodeURIComponent(texteBrut(r));
+  if(lien.length>1900) toast("Rapport long : vérifiez qu'il est entier dans le mail.");
+  window.location.href=lien;
+});
+
+/* =============== réglages =============== */
+var pAnonyme;
+function ouvrirReglages(){
+  $("g-aesh").value=txt(db.reglages.aesh);
+  $("g-etab").value=txt(db.reglages.etab);
+  $("g-coordo").value=txt(db.reglages.coordo);
+  pAnonyme = pastilles($("g-anonyme"), ["Prénom + initiale","Nom complet"], {
+    valeur: db.reglages.anonyme?"Prénom + initiale":"Nom complet",
+    onChange:function(v){ db.reglages.anonyme = (v==="Prénom + initiale"); sauver(); }
+  });
+  $("etat-stockage").innerHTML = stockageOk ? "" :
+    '<div class="note alerte">La sauvegarde ne fonctionne pas ici : vos données disparaîtront en fermant la page. Téléchargez le fichier et ouvrez-le depuis votre téléphone, ou hébergez-le sur une adresse web.</div>';
+  vue("vue-reglages");
+}
+["g-aesh","g-etab","g-coordo"].forEach(function(k){
+  $(k).addEventListener("input",function(){
+    db.reglages[k==="g-aesh"?"aesh":k==="g-etab"?"etab":"coordo"]=this.value;
+    sauver(); $("lieu").textContent=db.reglages.etab||"";
+  });
+});
+$("g-export").addEventListener("click",function(){
+  telecharger("sauvegarde-suivi-aesh-"+isoJour(new Date())+".json", JSON.stringify(db,null,2), "application/json");
+  toast("Sauvegarde téléchargée.");
+});
+$("g-import").addEventListener("click",function(){ $("g-fichier").click(); });
+$("g-fichier").addEventListener("change",function(){
+  var f=this.files[0]; if(!f) return;
+  var lecteur=new FileReader();
+  lecteur.onload=function(){
+    try{
+      var d=JSON.parse(lecteur.result);
+      if(!d || !Array.isArray(d.eleves)) throw new Error("format");
+      db=Object.assign({},DEFAUT,d);
+      ["eleves","rapports","matieresPerso","accompPerso"].forEach(function(k){ if(!Array.isArray(db[k])) db[k]=[]; });
+      db.reglages=Object.assign({},DEFAUT.reglages,db.reglages||{});
+      sauver(); rendreAccueil(); vue("vue-eleves");
+      toast("Sauvegarde importée : "+db.eleves.length+" élève(s).");
+    }catch(e){ toast("Ce fichier n'est pas une sauvegarde valide."); }
+  };
+  lecteur.readAsText(f); this.value="";
+});
+$("g-effacer").addEventListener("click",function(){
+  if(!confirm("Effacer définitivement tous les élèves et tous les rapports ?")) return;
+  db=JSON.parse(JSON.stringify(DEFAUT)); sauver(); rendreAccueil(); vue("vue-eleves"); toast("Données effacées.");
+});
+
+/* =============== démarrage =============== */
+rendreAccueil();
+vue(db.reglages.aesh ? "vue-eleves" : "vue-reglages");
+})();
+</script>
+</body>
+</html>

@@ -181,7 +181,7 @@ input:focus,select:focus,textarea:focus{
 .rapport ul{margin:0;padding-left:20px}
 .rapport p{margin:0;white-space:pre-wrap}
 .imp-table,.imp-table thead,.imp-table tbody,.imp-table tr,.imp-table td{display:contents}
-.imp-sousligne,.imp-rappel-signature{display:none}
+.imp-bandeau,.imp-sousligne,.imp-rappel-signature{display:none}
 .signature{display:none}
 
 /* ---------- divers ---------- */
@@ -471,6 +471,15 @@ hr.regle{border:none;border-top:1px solid var(--seyes);margin:18px 0}
         <div class="actions-2">
           <button type="button" class="btn btn-vide" id="a-txt">Télécharger (.txt)</button>
           <button type="button" class="btn btn-vide" id="a-copier">Copier le texte</button>
+        </div>
+      </div>
+
+      <div class="note" id="mail-secours" hidden>
+        <p style="margin:0 0 8px">Votre messagerie ne s'est pas ouverte&nbsp;?</p>
+        <p id="mail-secours-adresse" style="margin:0 0 10px;font-weight:600;color:var(--texte)"></p>
+        <div class="actions-2">
+          <button type="button" class="btn btn-vide" id="mail-copier-adresse">Copier l'adresse</button>
+          <button type="button" class="btn btn-vide" id="mail-copier-rapport">Copier le rapport</button>
         </div>
       </div>
     </div>
@@ -871,6 +880,7 @@ function texteModalite(r){
 
 function afficherApercu(r,nouveau){
   rapportCourant=r;
+  $("mail-secours").hidden = true;
   var h="";
   h+='<div class="titre">Rapport d\'accompagnement</div>';
   h+='<table class="imp-table"><thead><tr><td>';
@@ -941,6 +951,25 @@ function texteBrut(r){
 function nomFichier(r){
   return r.creeJour+"_rapport_"+sansAccent(r.eleveNom)+(r.classe?"_"+sansAccent(r.classe):"")+".txt";
 }
+function enteteBrut(r){
+  var L=[];
+  L.push("Élève   : "+r.eleveNom+(r.classe?"   (classe : "+r.classe+")":""));
+  L.push("Période : "+r.periode+" du "+jour(r.debut)+" au "+jour(r.fin));
+  L.push("Qualité de la relation : "+r.relation);
+  return L.join("\n");
+}
+function copierTexte(t, succes){
+  succes = succes || "Texte copié.";
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(t).then(function(){ toast(succes); }, function(){ copierSecours(t, succes); });
+  } else copierSecours(t, succes);
+}
+function copierSecours(t, succes){
+  var z=document.createElement("textarea"); z.value=t; document.body.appendChild(z);
+  z.select();
+  try{ document.execCommand("copy"); toast(succes); }catch(e){ toast("Copie impossible sur cet appareil."); }
+  z.remove();
+}
 function telecharger(nom, contenu, type){
   var b=new Blob([contenu],{type:(type||"text/plain")+";charset=utf-8"});
   var u=URL.createObjectURL(b), a=document.createElement("a");
@@ -953,23 +982,47 @@ $("a-txt").addEventListener("click",function(){
   toast("Fichier créé : "+nomFichier(rapportCourant));
 });
 $("a-copier").addEventListener("click",function(){
-  var t=texteBrut(rapportCourant);
-  if(navigator.clipboard&&navigator.clipboard.writeText){
-    navigator.clipboard.writeText(t).then(function(){toast("Texte copié.");},function(){secours(t);});
-  } else secours(t);
-  function secours(t){
-    var z=document.createElement("textarea"); z.value=t; document.body.appendChild(z);
-    z.select(); try{document.execCommand("copy"); toast("Texte copié.");}catch(e){toast("Copie impossible sur cet appareil.");}
-    z.remove();
-  }
+  copierTexte(texteBrut(rapportCourant), "Texte copié.");
 });
 $("a-imprimer").addEventListener("click",function(){ window.print(); });
+$("mail-copier-adresse").addEventListener("click",function(){
+  copierTexte(db.reglages.coordo||"", "Adresse copiée.");
+});
+$("mail-copier-rapport").addEventListener("click",function(){
+  copierTexte(texteBrut(rapportCourant), "Texte copié.");
+});
 $("a-mail").addEventListener("click",function(){
   var r=rapportCourant;
+  var texte=texteBrut(r);
   var sujet="Rapport d'accompagnement — "+r.eleveNom+(r.classe?" ("+r.classe+")":"")+" — "+r.periode+" du "+jour(r.debut)+" au "+jour(r.fin);
-  var lien="mailto:"+encodeURIComponent(db.reglages.coordo||"")+"?subject="+encodeURIComponent(sujet)+"&body="+encodeURIComponent(texteBrut(r));
-  if(lien.length>1900) toast("Rapport long : vérifiez qu'il est entier dans le mail.");
+  var tropLong = texte.length>1500;
+  var corpsCourt = enteteBrut(r)+"\n\nRapport complet en pièce jointe.";
+
+  // 3) partage natif (mobile) en priorité : peut envoyer le fichier lui-même
+  if(navigator.share){
+    var fichier;
+    try{ fichier = new File([texte], nomFichier(r), {type:"text/plain"}); }catch(e){}
+    var avecFichier = !!(fichier && navigator.canShare && navigator.canShare({files:[fichier]}));
+    var donnees = {title:sujet};
+    if(avecFichier) donnees.files=[fichier];
+    else donnees.text = tropLong ? corpsCourt : texte;
+    if(tropLong && !avecFichier){
+      telecharger(nomFichier(r), texte);
+      toast("Le rapport est trop long pour être écrit dans le mail. Il a été téléchargé : joignez-le au message.");
+    }
+    navigator.share(donnees).catch(function(){});
+    return;
+  }
+
+  var corps = tropLong ? corpsCourt : texte;
+  if(tropLong){
+    telecharger(nomFichier(r), texte);
+    toast("Le rapport est trop long pour être écrit dans le mail. Il a été téléchargé : joignez-le au message.");
+  }
+  var lien="mailto:"+encodeURIComponent(db.reglages.coordo||"")+"?subject="+encodeURIComponent(sujet)+"&body="+encodeURIComponent(corps);
   window.location.href=lien;
+  $("mail-secours-adresse").textContent = db.reglages.coordo || "(adresse non renseignée)";
+  $("mail-secours").hidden = false;
 });
 
 /* =============== réglages =============== */

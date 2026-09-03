@@ -318,11 +318,32 @@ hr.regle{border:none;border-top:1px solid var(--seyes);margin:18px 0}
       <div id="liste-eleves"></div>
       <div class="actions">
         <button type="button" class="btn btn-vide" id="btn-nouvel-eleve">Ajouter un élève</button>
+        <button type="button" class="btn btn-vide" id="btn-transmission">Transmettre au PIAL</button>
       </div>
     </div>
     <div class="feuille" id="bloc-recents" hidden>
       <h2>Derniers rapports</h2>
       <div id="liste-rapports"></div>
+    </div>
+  </section>
+
+  <!-- ============ VUE : TRANSMISSION AU PIAL ============ -->
+  <section id="vue-transmission" class="masque">
+    <button type="button" class="retour" data-retour>← Mes élèves</button>
+    <div class="feuille">
+      <h2>Transmettre au PIAL</h2>
+      <p class="chapeau">Exportez les rapports de la période choisie dans un seul fichier, à transmettre au coordonnateur PIAL. Le nom de famille et vos notes personnelles ne sont jamais inclus.</p>
+
+      <div class="duo champ">
+        <div><label for="t-debut">Du</label><input type="date" id="t-debut"></div>
+        <div><label for="t-fin">Au</label><input type="date" id="t-fin"></div>
+      </div>
+
+      <div class="note" id="t-resume"></div>
+
+      <div class="actions">
+        <button type="button" class="btn btn-plein" id="t-exporter">Exporter la transmission (.json)</button>
+      </div>
     </div>
   </section>
 
@@ -507,6 +528,18 @@ hr.regle{border:none;border-top:1px solid var(--seyes);margin:18px 0}
       </div>
     </div>
 
+    <div class="feuille" id="bloc-archivage" hidden>
+      <h2>Rapports enregistrés</h2>
+      <p class="chapeau" id="archivage-texte"></p>
+      <div class="champ">
+        <label for="g-archiver-avant">Archiver les rapports déjà transmis, antérieurs au</label>
+        <input type="date" id="g-archiver-avant">
+      </div>
+      <div class="actions">
+        <button type="button" class="btn btn-vide" id="g-archiver">Archiver</button>
+      </div>
+    </div>
+
     <div class="feuille">
       <h2>Sauvegarde</h2>
       <p class="chapeau">Tout est stocké dans ce téléphone, rien n'est envoyé sur internet. Si vous changez d'appareil ou effacez les données du navigateur, tout est perdu&nbsp;: pensez à exporter de temps en temps.</p>
@@ -644,7 +677,7 @@ function pastilles(hote, valeurs, options){
 }
 
 /* =============== navigation =============== */
-var VUES=["vue-eleves","vue-fiche","vue-rapport","vue-apercu","vue-reglages"];
+var VUES=["vue-eleves","vue-transmission","vue-fiche","vue-rapport","vue-apercu","vue-reglages"];
 function vue(nom){
   VUES.forEach(function(v){ $(v).classList.toggle("masque", v!==nom); });
   window.scrollTo(0,0);
@@ -682,7 +715,7 @@ function rendreAccueil(){
     var b=document.createElement("button");
     b.type="button"; b.className="eleve";
     b.innerHTML='<span class="initiales" style="background:#EFEFEC">'+(r.periode?r.periode[0]:"R")+'</span>'+
-      '<span><span class="nom">'+r.eleveNom+'</span><br><span class="meta">'+r.periodeTexte+' · '+r.relation+'</span></span>'+
+      '<span><span class="nom">'+r.eleveNom+'</span><br><span class="meta">'+r.periodeTexte+' · '+r.relation+(r.transmisLe?' · transmis le '+jour(r.transmisLe):'')+'</span></span>'+
       '<span class="fleche">›</span>';
     b.addEventListener("click",function(){ afficherApercu(r,false); });
     lr.appendChild(b);
@@ -863,7 +896,6 @@ $("r-apercu").addEventListener("click",function(){
     aesh:db.reglages.aesh, etab:db.reglages.etab
   };
   db.rapports.push(r);
-  if(db.rapports.length>200) db.rapports=db.rapports.slice(-200);
   sauver();
   afficherApercu(r,true);
 });
@@ -1025,6 +1057,75 @@ $("a-mail").addEventListener("click",function(){
   $("mail-secours").hidden = false;
 });
 
+/* =============== transmission au PIAL =============== */
+function nomTransmission(el){
+  if(!el) return "";
+  var a=txt(el.prenom).trim(), n=txt(el.nom).trim();
+  return (a+" "+(n?n[0].toUpperCase()+".":"")).trim();
+}
+function eleveParId(eid){ return db.eleves.filter(function(e){return e.id===eid;})[0]; }
+function moisEcoule(){
+  var fin=new Date(), debut=new Date(fin);
+  debut.setMonth(debut.getMonth()-1);
+  return [isoJour(debut), isoJour(fin)];
+}
+function rapportsTransmissibles(debut,fin){
+  if(!debut||!fin) return [];
+  return db.rapports.filter(function(r){
+    return r.creeJour>=debut && r.creeJour<=fin && !!eleveParId(r.eleveId);
+  });
+}
+function majResumeTransmission(){
+  var debut=$("t-debut").value, fin=$("t-fin").value;
+  var hote=$("t-resume");
+  if(!debut||!fin){ hote.className="note"; hote.textContent="Choisissez une période."; return; }
+  var rapports=rapportsTransmissibles(debut,fin);
+  if(!rapports.length){ hote.className="note alerte"; hote.textContent="Aucun rapport dans cette période."; return; }
+  var vus={}, noms=[];
+  rapports.forEach(function(r){
+    if(vus[r.eleveId]) return; vus[r.eleveId]=true;
+    noms.push(nomTransmission(eleveParId(r.eleveId)));
+  });
+  hote.className="note";
+  hote.textContent = rapports.length+" rapport"+(rapports.length>1?"s":"")+" concernant "+noms.length+" élève"+(noms.length>1?"s":"")+" : "+noms.join(", ")+".";
+}
+$("t-debut").addEventListener("change",majResumeTransmission);
+$("t-fin").addEventListener("change",majResumeTransmission);
+$("btn-transmission").addEventListener("click",function(){
+  var d=moisEcoule();
+  $("t-debut").value=d[0]; $("t-fin").value=d[1];
+  majResumeTransmission();
+  vue("vue-transmission");
+});
+$("t-exporter").addEventListener("click",function(){
+  var debut=$("t-debut").value, fin=$("t-fin").value;
+  if(!debut||!fin){ toast("Choisissez une période."); return; }
+  var rapports=rapportsTransmissibles(debut,fin);
+  if(!rapports.length){ toast("Aucun rapport à transmettre sur cette période."); return; }
+  var aujourdhui=isoJour(new Date());
+  var contenu={
+    format:"suivi-aesh/1", genere_le:aujourdhui,
+    aesh:db.reglages.aesh||"", etablissement:db.reglages.etab||"",
+    periode:{debut:debut,fin:fin},
+    rapports: rapports.map(function(r){
+      return {
+        id:r.id, eleveId:r.eleveId, eleveNom:nomTransmission(eleveParId(r.eleveId)),
+        classe:r.classe, heures:r.heures,
+        periode:r.periode, debut:r.debut, fin:r.fin, periodeTexte:r.periodeTexte,
+        modalite:r.modalite, copartage:r.copartage,
+        relation:r.relation, invest:r.invest,
+        accomp:r.accomp, matieres:r.matieres,
+        commentaire:r.commentaire, creeJour:r.creeJour
+      };
+    })
+  };
+  var nom="transmission_"+sansAccent(db.reglages.aesh||"aesh")+"_"+aujourdhui+".json";
+  telecharger(nom, JSON.stringify(contenu,null,2), "application/json");
+  rapports.forEach(function(r){ r.transmisLe=aujourdhui; });
+  sauver(); rendreAccueil(); majResumeTransmission();
+  toast("Transmission exportée : "+nom);
+});
+
 /* =============== réglages =============== */
 var pAnonyme;
 function ouvrirReglages(){
@@ -1037,8 +1138,30 @@ function ouvrirReglages(){
   });
   $("etat-stockage").innerHTML = stockageOk ? "" :
     '<div class="note alerte">La sauvegarde ne fonctionne pas ici : vos données disparaîtront en fermant la page. Téléchargez le fichier et ouvrez-le depuis votre téléphone, ou hébergez-le sur une adresse web.</div>';
+  var n=db.rapports.length, blocArchivage=$("bloc-archivage");
+  if(n>150){
+    blocArchivage.hidden=false;
+    $("archivage-texte").textContent = n+" rapports sont enregistrés sur cet appareil. Pensez à exporter une transmission, puis à archiver les rapports déjà transmis pour garder l'application légère.";
+    if(!$("g-archiver-avant").value){
+      var d=new Date(); d.setMonth(d.getMonth()-6);
+      $("g-archiver-avant").value=isoJour(d);
+    }
+  } else {
+    blocArchivage.hidden=true;
+  }
   vue("vue-reglages");
 }
+$("g-archiver").addEventListener("click",function(){
+  var avant=$("g-archiver-avant").value;
+  if(!avant){ toast("Choisissez une date."); return; }
+  var aArchiver=db.rapports.filter(function(r){ return r.transmisLe && r.creeJour<avant; });
+  if(!aArchiver.length){ toast("Aucun rapport transmis avant cette date."); return; }
+  if(!confirm("Archiver (supprimer de cet appareil) "+aArchiver.length+" rapport(s) déjà transmis, antérieurs au "+jour(avant)+" ? Ils resteront disponibles côté PIAL.")) return;
+  var idsAArchiver={}; aArchiver.forEach(function(r){ idsAArchiver[r.id]=true; });
+  db.rapports = db.rapports.filter(function(r){ return !idsAArchiver[r.id]; });
+  sauver(); rendreAccueil(); ouvrirReglages();
+  toast(aArchiver.length+" rapport(s) archivé(s).");
+});
 ["g-aesh","g-etab","g-coordo"].forEach(function(k){
   $(k).addEventListener("input",function(){
     db.reglages[k==="g-aesh"?"aesh":k==="g-etab"?"etab":"coordo"]=this.value;

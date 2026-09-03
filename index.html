@@ -5,8 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Suivi AESH">
 <meta name="theme-color" content="#1F3B63">
 <title>Suivi AESH</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
 <style>
 :root{
   --fond:#ECEEEC;
@@ -791,6 +796,16 @@ $("g-effacer").addEventListener("click",function(){
 /* =============== démarrage =============== */
 rendreAccueil();
 vue(db.reglages.aesh ? "vue-eleves" : "vue-reglages");
+
+/* =============== PWA hors ligne ===============
+   Pas d'effet si le fichier est ouvert directement (protocole file:) :
+   les service workers n'y sont pas autorisés, l'app fonctionne alors
+   comme avant, sans mise en cache ni installation. */
+if("serviceWorker" in navigator && location.protocol!=="file:"){
+  window.addEventListener("load",function(){
+    navigator.serviceWorker.register("service-worker.js").catch(function(){});
+  });
+}
 })();
 </script>
 </body>

@@ -112,6 +112,16 @@ input:focus,select:focus,textarea:focus{
 .trio .pastille[aria-pressed=true] small{color:#C3D2E8}
 .ajout{display:flex;gap:8px;margin-top:10px}
 .ajout input{flex:1}
+.groupe-repliable{border-top:1px solid var(--seyes);padding:12px 0}
+.groupe-repliable:first-of-type{border-top:none;padding-top:0}
+.groupe-repliable summary{
+  font-size:14px;font-weight:600;color:var(--encre);cursor:pointer;
+  list-style:none;display:flex;align-items:center;gap:6px;
+}
+.groupe-repliable summary::-webkit-details-marker{display:none}
+.groupe-repliable summary::before{content:"▸";color:var(--gris-clair);font-size:12px;transition:transform .15s}
+.groupe-repliable[open] summary::before{transform:rotate(90deg)}
+.groupe-repliable .pastilles{margin-top:10px}
 
 /* ---------- boutons ---------- */
 .btn{
@@ -313,6 +323,15 @@ hr.regle{border:none;border-top:1px solid var(--seyes);margin:18px 0}
       <hr class="regle">
 
       <div class="champ">
+        <span class="legende">Investissement de l'élève</span>
+        <div class="trio" id="r-invest-tendance"></div>
+      </div>
+
+      <div class="champ" id="r-invest-groupes"></div>
+
+      <hr class="regle">
+
+      <div class="champ">
         <span class="legende">Type d'accompagnement</span>
         <p class="aide">Plusieurs choix possibles.</p>
         <div class="pastilles" id="r-accomp"></div>
@@ -412,7 +431,7 @@ try { localStorage.setItem("_t","1"); localStorage.removeItem("_t"); } catch(e){
 function lire(){ try { return stockageOk ? localStorage.getItem(CLE) : memoire[CLE]; } catch(e){ return null; } }
 function ecrire(v){ try { stockageOk ? localStorage.setItem(CLE,v) : (memoire[CLE]=v); } catch(e){ stockageOk=false; memoire[CLE]=v; } }
 
-var DEFAUT = { reglages:{aesh:"",etab:"",coordo:"",anonyme:true}, eleves:[], rapports:[], matieresPerso:[], accompPerso:[] };
+var DEFAUT = { reglages:{aesh:"",etab:"",coordo:"",anonyme:true}, eleves:[], rapports:[], matieresPerso:[], accompPerso:[], investPerso:{} };
 var db;
 try { db = Object.assign({}, DEFAUT, JSON.parse(lire()||"{}")); } catch(e){ db = JSON.parse(JSON.stringify(DEFAUT)); }
 ["eleves","rapports","matieresPerso","accompPerso"].forEach(function(k){ if(!Array.isArray(db[k])) db[k]=[]; });
@@ -437,6 +456,30 @@ var RELATIONS = [
 ];
 var PERIODES = ["Semaine","Quinzaine","Mois","Trimestre"];
 var MODALITES = ["Individuel","Mutualisé"];
+
+var INVEST_TENDANCE = ["En progrès","Stable","En recul"];
+var INVEST_GROUPES = [
+  { id:"engagement", titre:"Engagement dans le travail", items:[
+    "Fournit des efforts constants","Se met au travail sans sollicitation","Se met au travail après relance",
+    "Persévère face à la difficulté","Renonce dès la première difficulté","Demande de l'aide quand c'est nécessaire"
+  ]},
+  { id:"autonomie", titre:"Autonomie", items:[
+    "De plus en plus autonome","Autonomie stable","Sollicite l'AESH systématiquement",
+    "A besoin d'un étayage permanent","Utilise seul(e) ses outils de compensation"
+  ]},
+  { id:"participation", titre:"Participation", items:[
+    "Participe correctement","Participe à l'oral","Reste en retrait","Prises de parole intempestives"
+  ]},
+  { id:"attention", titre:"Attention et organisation", items:[
+    "Attention soutenue sur la durée","Se disperse rapidement","Bavardages fréquents","Gère seul(e) son matériel","Note ses devoirs"
+  ]},
+  { id:"cadre", titre:"Cadre et relations", items:[
+    "Accepte les remarques","Oppositions fréquentes aux consignes","Attitude de défi envers les adultes",
+    "Tensions avec les camarades","S'intègre bien au groupe"
+  ]}
+];
+if(!db.investPerso || typeof db.investPerso!=="object" || Array.isArray(db.investPerso)) db.investPerso={};
+INVEST_GROUPES.forEach(function(g){ if(!Array.isArray(db.investPerso[g.id])) db.investPerso[g.id]=[]; });
 
 /* =============== utilitaires =============== */
 function $(id){ return document.getElementById(id); }
@@ -590,7 +633,60 @@ $("f-supprimer").addEventListener("click",function(){
 });
 
 /* =============== rapport =============== */
-var rapportEleve=null, pPeriode, pRelation, pModalite2, pAccomp, pMatieres2;
+var rapportEleve=null, pPeriode, pRelation, pModalite2, pInvestTendance, pInvestGroupes, pAccomp, pMatieres2;
+
+function rendreGroupesInvest(){
+  var hote=$("r-invest-groupes");
+  hote.innerHTML="";
+  pInvestGroupes={};
+  INVEST_GROUPES.forEach(function(g,i){
+    var det=document.createElement("details");
+    det.className="groupe-repliable";
+    if(i===0) det.open=true;
+    var sum=document.createElement("summary");
+    sum.textContent=g.titre;
+    det.appendChild(sum);
+
+    var zone=document.createElement("div");
+    zone.className="pastilles";
+    det.appendChild(zone);
+
+    var ajout=document.createElement("div");
+    ajout.className="ajout";
+    var input=document.createElement("input");
+    input.type="text"; input.placeholder="Ajouter un item"; input.autocomplete="off";
+    var btn=document.createElement("button");
+    btn.type="button"; btn.className="btn btn-vide"; btn.style.width="auto"; btn.textContent="Ajouter";
+    ajout.appendChild(input); ajout.appendChild(btn);
+    det.appendChild(ajout);
+
+    hote.appendChild(det);
+
+    var ctrl=pastilles(zone, g.items.concat(db.investPerso[g.id]||[]), {multi:true, valeur:[]});
+    pInvestGroupes[g.id]=ctrl;
+
+    btn.addEventListener("click",function(){
+      var v=input.value.trim(); if(!v) return;
+      if(g.items.indexOf(v)<0 && db.investPerso[g.id].indexOf(v)<0){ db.investPerso[g.id].push(v); sauver(); }
+      ctrl.ajouter(v); input.value="";
+    });
+  });
+}
+function investGet(){
+  var out={};
+  INVEST_GROUPES.forEach(function(g){ out[g.id]=pInvestGroupes[g.id].get(); });
+  return out;
+}
+function investLignes(r){
+  if(!r.invest) return [];
+  var lignes=[];
+  if(r.invest.tendance) lignes.push({titre:null, valeur:r.invest.tendance});
+  INVEST_GROUPES.forEach(function(g){
+    var arr=(r.invest.items&&r.invest.items[g.id])||[];
+    if(arr.length) lignes.push({titre:g.titre, valeur:arr.join(", ")});
+  });
+  return lignes;
+}
 
 function datesPeriode(type){
   var d=new Date(), j=d.getDay(), lundi=new Date(d);
@@ -622,6 +718,8 @@ function ouvrirRapport(eid){
 
   pRelation  = pastilles($("r-relation"), RELATIONS, {});
   pModalite2 = pastilles($("r-modalite"), MODALITES, {valeur: rapportEleve.modalite||"Individuel"});
+  pInvestTendance = pastilles($("r-invest-tendance"), INVEST_TENDANCE, {});
+  rendreGroupesInvest();
   pAccomp    = pastilles($("r-accomp"), ACCOMP.concat(db.accompPerso), {multi:true, valeur: dernier?dernier.accomp:[]});
   pMatieres2 = pastilles($("r-matieres"), MATIERES.concat(db.matieresPerso), {multi:true,
                  valeur: (rapportEleve.matieres&&rapportEleve.matieres.length)?rapportEleve.matieres:(dernier?dernier.matieres:[])});
@@ -649,6 +747,7 @@ $("r-apercu").addEventListener("click",function(){
     periodeTexte: periode+" du "+jour(debut)+" au "+jour(fin),
     relation:pRelation.get(), modalite:modalite,
     copartage: modalite==="Mutualisé" ? (rapportEleve.copartage||1) : 0,
+    invest:{ tendance:pInvestTendance.get(), items:investGet() },
     accomp:pAccomp.get(), matieres:pMatieres2.get(),
     commentaire:$("r-commentaire").value.trim(),
     aesh:db.reglages.aesh, etab:db.reglages.etab
@@ -683,6 +782,14 @@ function afficherApercu(r,nouveau){
   h+='<dt>Établi le</dt><dd>'+jour(r.creeJour)+'</dd>';
   h+='</dl>';
   h+='<section><h3>Qualité de la relation</h3><p>'+txt(r.relation)+'</p></section>';
+  var investH = investLignes(r);
+  if(investH.length){
+    h+='<section><h3>Investissement de l\'élève</h3>';
+    investH.forEach(function(l){
+      h += l.titre ? '<p><strong>'+txt(l.titre)+'</strong> : '+txt(l.valeur)+'</p>' : '<p>'+txt(l.valeur)+'</p>';
+    });
+    h+='</section>';
+  }
   if(r.accomp.length){
     h+='<section><h3>Type d\'accompagnement</h3><ul>';
     r.accomp.forEach(function(a){ h+='<li>'+txt(a)+'</li>'; }); h+='</ul></section>';
@@ -706,6 +813,11 @@ function texteBrut(r){
   L.push("Période       : "+r.periode+" du "+jour(r.debut)+" au "+jour(r.fin));
   L.push("Établi le     : "+jour(r.creeJour));
   L.push(""); L.push("QUALITÉ DE LA RELATION"); L.push("  "+r.relation);
+  var investL = investLignes(r);
+  if(investL.length){
+    L.push(""); L.push("INVESTISSEMENT DE L'ÉLÈVE");
+    investL.forEach(function(l){ L.push(l.titre ? "  "+l.titre+" : "+l.valeur : "  "+l.valeur); });
+  }
   if(r.accomp.length){ L.push(""); L.push("TYPE D'ACCOMPAGNEMENT"); r.accomp.forEach(function(a){ L.push("  - "+a); }); }
   if(r.matieres.length){ L.push(""); L.push("MATIÈRES CONCERNÉES"); L.push("  "+r.matieres.join(", ")); }
   if(r.commentaire){ L.push(""); L.push("COMMENTAIRE"); r.commentaire.split("\n").forEach(function(l){ L.push("  "+l); }); }
@@ -782,6 +894,8 @@ $("g-fichier").addEventListener("change",function(){
       db=Object.assign({},DEFAUT,d);
       ["eleves","rapports","matieresPerso","accompPerso"].forEach(function(k){ if(!Array.isArray(db[k])) db[k]=[]; });
       db.reglages=Object.assign({},DEFAUT.reglages,db.reglages||{});
+      if(!db.investPerso || typeof db.investPerso!=="object" || Array.isArray(db.investPerso)) db.investPerso={};
+      INVEST_GROUPES.forEach(function(g){ if(!Array.isArray(db.investPerso[g.id])) db.investPerso[g.id]=[]; });
       sauver(); rendreAccueil(); vue("vue-eleves");
       toast("Sauvegarde importée : "+db.eleves.length+" élève(s).");
     }catch(e){ toast("Ce fichier n'est pas une sauvegarde valide."); }

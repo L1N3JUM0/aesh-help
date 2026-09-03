@@ -197,6 +197,18 @@ input:focus,select:focus,textarea:focus{
   max-width:90vw;text-align:center;
 }
 .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+.voile{
+  position:fixed;inset:0;background:rgba(31,59,99,.45);
+  display:flex;align-items:center;justify-content:center;
+  padding:20px;z-index:80;
+}
+.voile[hidden]{display:none}
+.modale{
+  background:var(--feuille);border-radius:var(--rayon);
+  padding:20px;max-width:380px;width:100%;
+  box-shadow:0 4px 24px rgba(0,0,0,.3);
+}
+.modale p{margin:0 0 18px;font-size:15px;line-height:1.45;color:var(--texte)}
 .masque{display:none}
 hr.regle{border:none;border-top:1px solid var(--seyes);margin:18px 0}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
@@ -493,6 +505,7 @@ hr.regle{border:none;border-top:1px solid var(--seyes);margin:18px 0}
           <button type="button" class="btn btn-vide" id="a-txt">Télécharger (.txt)</button>
           <button type="button" class="btn btn-vide" id="a-copier">Copier le texte</button>
         </div>
+        <button type="button" class="btn btn-danger" id="a-supprimer">Supprimer ce rapport</button>
       </div>
 
       <div class="note" id="mail-secours" hidden>
@@ -556,6 +569,16 @@ hr.regle{border:none;border-top:1px solid var(--seyes);margin:18px 0}
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<div class="voile" id="voile-confirmation" hidden>
+  <div class="modale">
+    <p id="modale-message"></p>
+    <div class="actions-2">
+      <button type="button" class="btn btn-vide" id="modale-annuler">Annuler</button>
+      <button type="button" class="btn btn-danger" id="modale-confirmer">Supprimer définitivement</button>
+    </div>
+  </div>
+</div>
 
 <script>
 (function(){
@@ -622,6 +645,16 @@ INVEST_GROUPES.forEach(function(g){ if(!Array.isArray(db.investPerso[g.id])) db.
 function $(id){ return document.getElementById(id); }
 function txt(s){ return String(s==null?"":s); }
 function toast(m){ var t=$("toast"); t.textContent=m; t.classList.add("on"); clearTimeout(t._t); t._t=setTimeout(function(){t.classList.remove("on");},2400); }
+function confirmationForte(message, cb){
+  var voile=$("voile-confirmation"), btnOk=$("modale-confirmer"), btnAnnuler=$("modale-annuler");
+  $("modale-message").textContent=message;
+  voile.hidden=false;
+  function nettoyer(){ voile.hidden=true; btnOk.removeEventListener("click",surConfirmer); btnAnnuler.removeEventListener("click",surAnnuler); }
+  function surConfirmer(){ nettoyer(); cb(); }
+  function surAnnuler(){ nettoyer(); }
+  btnOk.addEventListener("click",surConfirmer);
+  btnAnnuler.addEventListener("click",surAnnuler);
+}
 function jour(iso){ if(!iso) return ""; var p=iso.split("-"); return p[2]+"/"+p[1]+"/"+p[0]; }
 function anneeScolaire(iso){
   var d = iso ? new Date(iso+"T00:00:00") : new Date();
@@ -769,10 +802,26 @@ $("f-enregistrer").addEventListener("click",function(){
 });
 
 $("f-supprimer").addEventListener("click",function(){
-  if(!confirm("Supprimer cet élève et ses rapports enregistrés ?")) return;
-  db.eleves = db.eleves.filter(function(e){ return e.id!==ficheId; });
-  db.rapports = db.rapports.filter(function(r){ return r.eleveId!==ficheId; });
-  sauver(); rendreAccueil(); vue("vue-eleves"); toast("Fiche supprimée.");
+  var rapportsEleve = db.rapports.filter(function(r){ return r.eleveId===ficheId; });
+  var total = rapportsEleve.length;
+  var nonTransmis = rapportsEleve.filter(function(r){ return !r.transmisLe; }).length;
+  function supprimer(){
+    db.eleves = db.eleves.filter(function(e){ return e.id!==ficheId; });
+    db.rapports = db.rapports.filter(function(r){ return r.eleveId!==ficheId; });
+    sauver(); rendreAccueil(); vue("vue-eleves"); toast("Fiche supprimée.");
+  }
+  if(total===0){
+    if(!confirm("Supprimer cet élève ?")) return;
+    supprimer();
+  } else if(nonTransmis===0){
+    if(!confirm("Supprimer cet élève et ses "+total+" rapport(s) transmis au PIAL ?")) return;
+    supprimer();
+  } else {
+    var msg = "Supprimer cet élève et ses "+total+" rapport(s) ? "+(nonTransmis>1
+      ? nonTransmis+" rapports sur "+total+" n'ont jamais été transmis au PIAL et seront perdus définitivement."
+      : "1 rapport sur "+total+" n'a jamais été transmis au PIAL et sera perdu définitivement.");
+    confirmationForte(msg, supprimer);
+  }
 });
 
 /* =============== rapport =============== */
@@ -1017,6 +1066,19 @@ $("a-copier").addEventListener("click",function(){
   copierTexte(texteBrut(rapportCourant), "Texte copié.");
 });
 $("a-imprimer").addEventListener("click",function(){ window.print(); });
+$("a-supprimer").addEventListener("click",function(){
+  var r=rapportCourant; if(!r) return;
+  function supprimer(){
+    db.rapports = db.rapports.filter(function(x){ return x.id!==r.id; });
+    sauver(); rendreAccueil(); vue("vue-eleves"); toast("Rapport supprimé.");
+  }
+  if(r.transmisLe){
+    if(!confirm("Supprimer ce rapport ? Il a été transmis au PIAL le "+jour(r.transmisLe)+", cette copie locale sera supprimée.")) return;
+    supprimer();
+  } else {
+    confirmationForte("Ce rapport n'a jamais été transmis au PIAL. Il sera perdu définitivement.", supprimer);
+  }
+});
 $("mail-copier-adresse").addEventListener("click",function(){
   copierTexte(db.reglages.coordo||"", "Adresse copiée.");
 });

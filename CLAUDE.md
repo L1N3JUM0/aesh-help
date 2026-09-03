@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+**Aucune dépendance externe : ni CDN, ni police, ni script tiers, ni requête réseau à l'exécution. L'app doit fonctionner entièrement hors ligne et ne jamais contacter un serveur autre que celui qui sert ses propres fichiers statiques.**
+
 ## What this is
 
 "Suivi AESH" — a French-language single-page web app for AESH (school teaching assistants in France) to record student profiles and write periodic accompaniment reports (rapports d'accompagnement), then export/print/email them. Entirely client-side, no backend, no build step.

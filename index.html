@@ -1149,7 +1149,7 @@ function majResumeTransmission(){
     noms.push(nomTransmission(eleveParId(r.eleveId)));
   });
   hote.className="note";
-  hote.textContent = rapports.length+" rapport"+(rapports.length>1?"s":"")+" concernant "+noms.length+" élève"+(noms.length>1?"s":"")+" : "+noms.join(", ")+".";
+  hote.textContent = rapports.length+" rapport"+(rapports.length>1?"s":"")+" concernant "+noms.length+" élève"+(noms.length>1?"s":"")+" : "+noms.join(", ");
 }
 $("t-debut").addEventListener("change",majResumeTransmission);
 $("t-fin").addEventListener("change",majResumeTransmission);

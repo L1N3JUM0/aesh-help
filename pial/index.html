@@ -66,7 +66,7 @@ body{
 .champ{margin:0 0 14px}
 .champ label{display:block;font-size:13px;font-weight:600;color:var(--encre);margin:0 0 5px}
 .aide{font-size:12.5px;color:var(--gris);margin:-2px 0 8px}
-input[type=text],input[type=email],input[type=date],input[type=number],select{
+input[type=text],input[type=email],input[type=date],input[type=number],input[type=password],select{
   width:100%;font-family:inherit;font-size:14.5px;color:var(--texte);
   background:#FBFCFD;border:1px solid var(--seyes);border-radius:7px;padding:9px 10px;
 }
@@ -167,6 +167,24 @@ table.tableau td.numerique{text-align:right}
 .modale{background:var(--feuille);border-radius:var(--rayon);padding:20px;max-width:420px;width:100%;box-shadow:0 4px 24px rgba(0,0,0,.3)}
 .modale p{margin:0 0 18px;font-size:14.5px;line-height:1.45;color:var(--texte)}
 .modale .actions{justify-content:flex-end}
+
+/* ---------- écran de verrouillage ---------- */
+.voile-verrou{
+  position:fixed;inset:0;z-index:100;background:var(--encre);
+  display:flex;align-items:center;justify-content:center;padding:24px;
+}
+.voile-verrou[hidden]{display:none}
+.modale-verrou{
+  background:var(--feuille);border-radius:var(--rayon);
+  padding:28px 30px;max-width:380px;width:100%;
+  box-shadow:0 8px 32px rgba(0,0,0,.35);
+}
+.ecran-verrou[hidden]{display:none}
+.ecran-verrou h2{font-family:var(--serif);font-size:19px;font-weight:600;color:var(--encre);margin:0 0 6px}
+.ecran-verrou .chapeau{color:var(--gris);font-size:13.5px;margin:0 0 18px}
+.ecran-verrou button[type=submit]{width:100%;margin-top:4px}
+.ecran-verrou .btn-lien{display:block;margin:14px auto 0;text-align:center;width:auto}
+.erreur-verrou{color:var(--marge);font-size:13px;margin:-4px 0 12px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 
 /* =====================================================================
@@ -208,7 +226,7 @@ table.tableau td.numerique{text-align:right}
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   html,body{width:100%;background:var(--feuille)}
   body{font-family:var(--serif);font-size:10.5pt;line-height:1.35;color:var(--texte)}
-  .entete,.barre-nav,.contenu,.toast,.voile{display:none!important}
+  .entete,.barre-nav,.contenu,.toast,.voile,.voile-verrou{display:none!important}
   #impression{display:block!important}
   .feuille-rapport{
     width:100%;max-width:none;margin:0;padding:0;box-shadow:none;border-radius:0;
@@ -439,6 +457,22 @@ table.tableau td.numerique{text-align:right}
     </div>
 
     <div class="carte">
+      <h2>Sécurité</h2>
+      <p class="chapeau">Mot de passe d'accès à cet espace, sur cet ordinateur.</p>
+      <div class="actions"><button type="button" class="btn btn-vide" id="btn-changer-mdp">Changer le mot de passe</button></div>
+      <form id="form-changer-mdp" hidden style="margin-top:16px">
+        <div class="champ"><label for="cm-ancien">Ancien mot de passe</label><input type="password" id="cm-ancien" autocomplete="current-password"></div>
+        <div class="champ"><label for="cm-nouveau1">Nouveau mot de passe</label><input type="password" id="cm-nouveau1" autocomplete="new-password"></div>
+        <div class="champ"><label for="cm-nouveau2">Confirmer le nouveau mot de passe</label><input type="password" id="cm-nouveau2" autocomplete="new-password"></div>
+        <p class="erreur-verrou" id="cm-erreur" hidden></p>
+        <div class="actions">
+          <button type="submit" class="btn btn-plein">Enregistrer</button>
+          <button type="button" class="btn btn-vide" id="cm-annuler">Annuler</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="carte">
       <h2>Purge</h2>
       <p class="chapeau">Supprime définitivement tous les rapports antérieurs à l'année scolaire choisie.</p>
       <div class="champ" style="max-width:260px">
@@ -465,6 +499,52 @@ table.tableau td.numerique{text-align:right}
   </div>
 </div>
 
+<!-- ============ ÉCRAN DE VERROUILLAGE ============
+     Voir l'avertissement de sécurité en tête de auth.js : ceci est un
+     simple frein d'accès côté navigateur, pas une authentification. -->
+<div class="voile-verrou" id="verrou">
+  <div class="modale-verrou">
+
+    <form id="ecran-creation" class="ecran-verrou">
+      <h2>Créer un mot de passe</h2>
+      <p class="chapeau">Premier lancement : définissez un mot de passe pour protéger l'accès à cet espace sur cet ordinateur.</p>
+      <div class="champ"><label for="c-mdp1">Mot de passe</label><input type="password" id="c-mdp1" autocomplete="new-password"></div>
+      <div class="champ"><label for="c-mdp2">Confirmer le mot de passe</label><input type="password" id="c-mdp2" autocomplete="new-password"></div>
+      <p class="erreur-verrou" id="c-erreur" hidden></p>
+      <button type="submit" class="btn btn-plein">Créer le mot de passe</button>
+    </form>
+
+    <form id="ecran-connexion" class="ecran-verrou" hidden>
+      <h2>Suivi AESH — Espace PIAL</h2>
+      <p class="chapeau">Cet espace est protégé. Saisissez le mot de passe pour continuer.</p>
+      <div class="champ"><label for="x-mdp">Mot de passe</label><input type="password" id="x-mdp" autocomplete="current-password"></div>
+      <p class="erreur-verrou" id="x-erreur" hidden></p>
+      <button type="submit" class="btn btn-plein">Se connecter</button>
+      <button type="button" class="btn-lien" id="x-oublie">Mot de passe oublié ?</button>
+    </form>
+
+    <form id="ecran-secours" class="ecran-verrou" hidden>
+      <h2>Question de secours</h2>
+      <p class="chapeau">Qui a créé cette application ?</p>
+      <div class="champ"><input type="text" id="s-reponse" autocomplete="off"></div>
+      <p class="erreur-verrou" id="s-erreur" hidden></p>
+      <button type="submit" class="btn btn-plein">Valider</button>
+      <button type="button" class="btn-lien" id="s-annuler">← Retour à la connexion</button>
+    </form>
+
+    <form id="ecran-nouveau-mdp" class="ecran-verrou" hidden>
+      <h2>Définir un nouveau mot de passe</h2>
+      <p class="chapeau">Réponse acceptée. Choisissez un nouveau mot de passe.</p>
+      <div class="champ"><label for="n-mdp1">Nouveau mot de passe</label><input type="password" id="n-mdp1" autocomplete="new-password"></div>
+      <div class="champ"><label for="n-mdp2">Confirmer le nouveau mot de passe</label><input type="password" id="n-mdp2" autocomplete="new-password"></div>
+      <p class="erreur-verrou" id="n-erreur" hidden></p>
+      <button type="submit" class="btn btn-plein">Enregistrer le nouveau mot de passe</button>
+    </form>
+
+  </div>
+</div>
+
+<script src="auth.js"></script>
 <script src="db.js"></script>
 <script src="app.js"></script>
 </body>

@@ -562,6 +562,31 @@ function rendreStockage() {
 }
 $("btn-rafraichir-espace").addEventListener("click", rendreStockage);
 
+/* =============== réglages : sécurité (mot de passe) =============== */
+$("btn-changer-mdp").addEventListener("click", function () {
+  $("form-changer-mdp").hidden = !$("form-changer-mdp").hidden;
+});
+$("cm-annuler").addEventListener("click", function () {
+  $("form-changer-mdp").hidden = true;
+  $("cm-ancien").value = ""; $("cm-nouveau1").value = ""; $("cm-nouveau2").value = "";
+});
+$("form-changer-mdp").addEventListener("submit", function (evt) {
+  evt.preventDefault();
+  var ancien = $("cm-ancien").value, n1 = $("cm-nouveau1").value, n2 = $("cm-nouveau2").value;
+  function afficherErreurMdp(m) { var el = $("cm-erreur"); el.textContent = m || ""; el.hidden = !m; }
+  if (!n1) { afficherErreurMdp("Indiquez un nouveau mot de passe."); return; }
+  if (n1 !== n2) { afficherErreurMdp("Les deux mots de passe ne correspondent pas."); return; }
+  window.PialAuth.verifierMotDePasse(ancien).then(function (ok) {
+    if (!ok) { afficherErreurMdp("Ancien mot de passe incorrect."); return; }
+    return window.PialAuth.changerMotDePasse(n1).then(function () {
+      $("form-changer-mdp").hidden = true;
+      $("cm-ancien").value = ""; $("cm-nouveau1").value = ""; $("cm-nouveau2").value = "";
+      afficherErreurMdp("");
+      toast("Mot de passe modifié.");
+    });
+  });
+});
+
 /* =============== réglages : sauvegarde / restauration =============== */
 $("btn-exporter-sauvegarde").addEventListener("click", function () {
   PialDB.exporterTout().then(function (donnees) {

@@ -4,7 +4,7 @@
    Incrémenter CACHE_VERSION à chaque déploiement pour forcer la mise à
    jour du cache chez les utilisateurs (les anciens caches sont supprimés
    automatiquement dans "activate"). */
-var CACHE_VERSION = "v5";
+var CACHE_VERSION = "v6";
 var CACHE_NOM = "suivi-aesh-" + CACHE_VERSION;
 
 var FICHIERS = [

@@ -327,6 +327,7 @@ hr.regle{border:none;border-top:1px solid var(--seyes);margin:18px 0}
     <div class="feuille">
       <h2>Mes élèves</h2>
       <p class="chapeau" id="chapeau-eleves"></p>
+      <div class="note alerte" id="alerte-transmission" hidden></div>
       <div id="liste-eleves"></div>
       <div class="actions">
         <button type="button" class="btn btn-vide" id="btn-nouvel-eleve">Ajouter un élève</button>
@@ -344,9 +345,14 @@ hr.regle{border:none;border-top:1px solid var(--seyes);margin:18px 0}
     <button type="button" class="retour" data-retour>← Mes élèves</button>
     <div class="feuille">
       <h2>Transmettre au PIAL</h2>
-      <p class="chapeau">Exportez les rapports de la période choisie dans un seul fichier, à transmettre au coordonnateur PIAL. Le nom de famille et vos notes personnelles ne sont jamais inclus.</p>
+      <p class="chapeau">Par défaut, l'export réunit tous les rapports jamais transmis, quelle que soit leur date de création, pour ne jamais en oublier. Le nom de famille et vos notes personnelles ne sont jamais inclus.</p>
 
-      <div class="duo champ">
+      <div class="champ">
+        <span class="legende">Rapports à inclure</span>
+        <div class="pastilles" id="t-mode"></div>
+      </div>
+
+      <div class="duo champ" id="t-bloc-dates" hidden>
         <div><label for="t-debut">Du</label><input type="date" id="t-debut"></div>
         <div><label for="t-fin">Au</label><input type="date" id="t-fin"></div>
       </div>
@@ -356,6 +362,29 @@ hr.regle{border:none;border-top:1px solid var(--seyes);margin:18px 0}
       <div class="actions">
         <button type="button" class="btn btn-plein" id="t-exporter">Exporter la transmission (.json)</button>
       </div>
+    </div>
+  </section>
+
+  <!-- ============ VUE : CONFIRMATION DE TRANSMISSION ============ -->
+  <section id="vue-transmission-confirm" class="masque">
+    <button type="button" class="retour" data-retour>← Mes élèves</button>
+    <div class="feuille">
+      <h2>Fichier prêt</h2>
+      <p class="chapeau">Le fichier <strong id="tc-nom-fichier"></strong> a été enregistré dans vos téléchargements.</p>
+
+      <div class="note" id="tc-resume"></div>
+
+      <div class="actions">
+        <button type="button" class="btn btn-plein" id="tc-mail">Ouvrir le courriel</button>
+      </div>
+
+      <p class="aide" style="margin-top:18px">mailto: n'attache pas de fichier automatiquement (limitation du protocole) : joignez vous-même le fichier ci-dessus depuis vos téléchargements avant d'envoyer.</p>
+
+      <div class="actions">
+        <button type="button" class="btn btn-vide" id="tc-confirmer">J'ai envoyé le courriel</button>
+      </div>
+
+      <p class="aide">Tant que vous n'avez pas confirmé l'envoi, ces rapports restent marqués non transmis et seront réinclus dans le prochain export — même si vous fermez cette fenêtre en cours de route.</p>
     </div>
   </section>
 
@@ -530,8 +559,18 @@ hr.regle{border:none;border-top:1px solid var(--seyes);margin:18px 0}
       <div class="champ"><label for="g-etab">Établissement</label><input type="text" id="g-etab" placeholder="Collège Jean Moulin" autocomplete="off"></div>
       <div class="champ">
         <label for="g-coordo">Adresse mail du coordonnateur PIAL</label>
-        <p class="aide">Le bouton « Envoyer par mail » écrira directement à cette adresse.</p>
+        <p class="aide">Utilisée pour « Envoyer par mail » et pour la transmission groupée.</p>
         <input type="email" id="g-coordo" placeholder="coordonnateur@ac-academie.fr" autocomplete="email">
+      </div>
+
+      <div class="champ">
+        <span class="legende">Rappel de transmission au PIAL</span>
+        <p class="aide">Purement indicatif&nbsp;: un repère s'affiche sur l'accueil si des rapports non transmis dépassent ce délai. N'empêche et ne filtre jamais l'export.</p>
+        <div class="pastilles" id="g-rappel"></div>
+        <div class="champ" id="g-rappel-libre-bloc" hidden style="margin-top:10px">
+          <label for="g-rappel-libre">Délai personnalisé (jours)</label>
+          <input type="number" id="g-rappel-libre" min="1" max="365">
+        </div>
       </div>
 
       <div class="champ">
@@ -591,7 +630,7 @@ try { localStorage.setItem("_t","1"); localStorage.removeItem("_t"); } catch(e){
 function lire(){ try { return stockageOk ? localStorage.getItem(CLE) : memoire[CLE]; } catch(e){ return null; } }
 function ecrire(v){ try { stockageOk ? localStorage.setItem(CLE,v) : (memoire[CLE]=v); } catch(e){ stockageOk=false; memoire[CLE]=v; } }
 
-var DEFAUT = { reglages:{aesh:"",etab:"",coordo:"",anonyme:true}, eleves:[], rapports:[], matieresPerso:[], accompPerso:[], investPerso:{} };
+var DEFAUT = { reglages:{aesh:"",etab:"",coordo:"",anonyme:true,rappelType:"Quinzaine",rappelJoursLibre:14}, eleves:[], rapports:[], matieresPerso:[], accompPerso:[], investPerso:{} };
 var db;
 try { db = Object.assign({}, DEFAUT, JSON.parse(lire()||"{}")); } catch(e){ db = JSON.parse(JSON.stringify(DEFAUT)); }
 ["eleves","rapports","matieresPerso","accompPerso"].forEach(function(k){ if(!Array.isArray(db[k])) db[k]=[]; });
@@ -616,6 +655,14 @@ var RELATIONS = [
 ];
 var PERIODES = ["Semaine","Quinzaine","Mois","Trimestre"];
 var MODALITES = ["Individuel","Mutualisé"];
+
+var RAPPELS = ["Jour","Semaine","Quinzaine","Mois","Période libre"];
+var RAPPEL_JOURS = {"Jour":1,"Semaine":7,"Quinzaine":14,"Mois":30};
+function rappelSeuilJours(){
+  var t=db.reglages.rappelType||"Quinzaine";
+  if(t==="Période libre") return parseInt(db.reglages.rappelJoursLibre,10)||14;
+  return RAPPEL_JOURS[t]||14;
+}
 
 var INVEST_TENDANCE = ["En progrès","Stable","En recul"];
 var INVEST_GROUPES = [
@@ -710,7 +757,7 @@ function pastilles(hote, valeurs, options){
 }
 
 /* =============== navigation =============== */
-var VUES=["vue-eleves","vue-transmission","vue-fiche","vue-rapport","vue-apercu","vue-reglages"];
+var VUES=["vue-eleves","vue-transmission","vue-transmission-confirm","vue-fiche","vue-rapport","vue-apercu","vue-reglages"];
 function vue(nom){
   VUES.forEach(function(v){ $(v).classList.toggle("masque", v!==nom); });
   window.scrollTo(0,0);
@@ -723,6 +770,7 @@ $("btn-reglages").addEventListener("click",function(){ ouvrirReglages(); });
 /* =============== accueil =============== */
 function rendreAccueil(){
   $("lieu").textContent = db.reglages.etab || "";
+  majAlerteTransmission();
   var hote=$("liste-eleves"); hote.innerHTML="";
   if(!db.eleves.length){
     hote.innerHTML = '<div class="vide"><p>Aucun élève enregistré pour l\'instant.<br>Créez une fiche&nbsp;: vous ne saisirez sa classe et ses matières qu\'une seule fois.</p></div>';
@@ -753,6 +801,22 @@ function rendreAccueil(){
     b.addEventListener("click",function(){ afficherApercu(r,false); });
     lr.appendChild(b);
   });
+}
+
+function rapportsNonTransmis(){
+  return db.rapports.filter(function(r){ return !r.transmisLe && !!eleveParId(r.eleveId); });
+}
+function majAlerteTransmission(){
+  var hote=$("alerte-transmission");
+  var enAttente = rapportsNonTransmis();
+  if(!enAttente.length){ hote.hidden=true; return; }
+  var seuil = rappelSeuilJours();
+  var limite = new Date(); limite.setDate(limite.getDate()-seuil);
+  var limiteIso = isoJour(limite);
+  var enRetard = enAttente.filter(function(r){ return r.creeJour<=limiteIso; });
+  if(!enRetard.length){ hote.hidden=true; return; }
+  hote.hidden=false;
+  hote.textContent = enRetard.length+" rapport"+(enRetard.length>1?"s":"")+" en attente de transmission au PIAL.";
 }
 
 /* =============== fiche élève =============== */
@@ -1126,49 +1190,60 @@ function nomTransmission(el){
   return (a+" "+(n?n[0].toUpperCase()+".":"")).trim();
 }
 function eleveParId(eid){ return db.eleves.filter(function(e){return e.id===eid;})[0]; }
-function moisEcoule(){
-  var fin=new Date(), debut=new Date(fin);
-  debut.setMonth(debut.getMonth()-1);
-  return [isoJour(debut), isoJour(fin)];
+
+var MODE_FILTRE_DATES = "Filtrer par période (cas rare)";
+var pModeTransmission;
+
+// Sélection = tous les rapports non transmis, quelle que soit leur date ;
+// le filtre par date est une restriction manuelle facultative, jamais le comportement par défaut.
+function rapportsSelectionTransmission(){
+  var base = rapportsNonTransmis();
+  if(pModeTransmission && pModeTransmission.get()===MODE_FILTRE_DATES){
+    var debut=$("t-debut").value, fin=$("t-fin").value;
+    if(debut && fin) base = base.filter(function(r){ return r.creeJour>=debut && r.creeJour<=fin; });
+  }
+  return base;
 }
-function rapportsTransmissibles(debut,fin){
-  if(!debut||!fin) return [];
-  return db.rapports.filter(function(r){
-    return r.creeJour>=debut && r.creeJour<=fin && !!eleveParId(r.eleveId);
-  });
+function resumeTransmissionTexte(rapports){
+  if(!rapports.length) return "Aucun rapport non transmis.";
+  var vus={}, m=0;
+  rapports.forEach(function(r){ if(!vus[r.eleveId]){ vus[r.eleveId]=true; m++; } });
+  return rapports.length+" rapport"+(rapports.length>1?"s":"")+" non transmis · "+m+" élève"+(m>1?"s":"")+" concerné"+(m>1?"s":"");
 }
 function majResumeTransmission(){
-  var debut=$("t-debut").value, fin=$("t-fin").value;
+  var rapports = rapportsSelectionTransmission();
   var hote=$("t-resume");
-  if(!debut||!fin){ hote.className="note"; hote.textContent="Choisissez une période."; return; }
-  var rapports=rapportsTransmissibles(debut,fin);
-  if(!rapports.length){ hote.className="note alerte"; hote.textContent="Aucun rapport dans cette période."; return; }
-  var vus={}, noms=[];
-  rapports.forEach(function(r){
-    if(vus[r.eleveId]) return; vus[r.eleveId]=true;
-    noms.push(nomTransmission(eleveParId(r.eleveId)));
-  });
-  hote.className="note";
-  hote.textContent = rapports.length+" rapport"+(rapports.length>1?"s":"")+" concernant "+noms.length+" élève"+(noms.length>1?"s":"")+" : "+noms.join(", ");
+  hote.className = rapports.length ? "note" : "note alerte";
+  hote.textContent = resumeTransmissionTexte(rapports);
 }
 $("t-debut").addEventListener("change",majResumeTransmission);
 $("t-fin").addEventListener("change",majResumeTransmission);
 $("btn-transmission").addEventListener("click",function(){
-  var d=moisEcoule();
-  $("t-debut").value=d[0]; $("t-fin").value=d[1];
+  $("t-debut").value=""; $("t-fin").value=""; $("t-bloc-dates").hidden=true;
+  pModeTransmission = pastilles($("t-mode"), ["Tous les rapports non transmis",MODE_FILTRE_DATES], {
+    valeur:"Tous les rapports non transmis",
+    onChange:function(v){
+      var filtrer = v===MODE_FILTRE_DATES;
+      $("t-bloc-dates").hidden = !filtrer;
+      if(!filtrer){ $("t-debut").value=""; $("t-fin").value=""; }
+      majResumeTransmission();
+    }
+  });
   majResumeTransmission();
   vue("vue-transmission");
 });
+
+// Le fichier est généré et téléchargé tout de suite, mais transmisLe n'est posé
+// qu'après confirmation explicite (étape 3) : un abandon en cours de route ne
+// fait jamais disparaître un rapport de la file d'attente.
+var transmissionEnCours = null;
 $("t-exporter").addEventListener("click",function(){
-  var debut=$("t-debut").value, fin=$("t-fin").value;
-  if(!debut||!fin){ toast("Choisissez une période."); return; }
-  var rapports=rapportsTransmissibles(debut,fin);
-  if(!rapports.length){ toast("Aucun rapport à transmettre sur cette période."); return; }
+  var rapports = rapportsSelectionTransmission();
+  if(!rapports.length){ toast("Aucun rapport à transmettre."); return; }
   var aujourdhui=isoJour(new Date());
   var contenu={
     format:"suivi-aesh/1", genere_le:aujourdhui,
     aesh:db.reglages.aesh||"", etablissement:db.reglages.etab||"",
-    periode:{debut:debut,fin:fin},
     rapports: rapports.map(function(r){
       return {
         id:r.id, eleveId:r.eleveId, eleveNom:nomTransmission(eleveParId(r.eleveId)),
@@ -1183,13 +1258,33 @@ $("t-exporter").addEventListener("click",function(){
   };
   var nom="transmission_"+sansAccent(db.reglages.aesh||"aesh")+"_"+aujourdhui+".json";
   telecharger(nom, JSON.stringify(contenu,null,2), "application/json");
-  rapports.forEach(function(r){ r.transmisLe=aujourdhui; });
-  sauver(); rendreAccueil(); majResumeTransmission();
-  toast("Transmission exportée : "+nom);
+
+  transmissionEnCours = { ids:rapports.map(function(r){return r.id;}), nom:nom, n:rapports.length, date:aujourdhui };
+  $("tc-nom-fichier").textContent = nom;
+  $("tc-resume").textContent = resumeTransmissionTexte(rapports);
+  vue("vue-transmission-confirm");
+});
+$("tc-mail").addEventListener("click",function(){
+  var t=transmissionEnCours; if(!t) return;
+  var sujet="Transmission PIAL — "+(db.reglages.aesh||"AESH")+" — "+t.n+" rapport"+(t.n>1?"s":"")+" — "+jour(t.date);
+  var corps="Bonjour,\n\nVeuillez trouver ci-joint la transmission au format JSON.\n"
+    +"Fichier à joindre manuellement : "+t.nom+"\n\n"
+    +"(mailto: ne permet pas de joindre un fichier automatiquement : c'est une limitation du protocole, la pièce jointe reste manuelle.)\n\nMerci.";
+  var lien="mailto:"+encodeURIComponent(db.reglages.coordo||"")+"?subject="+encodeURIComponent(sujet)+"&body="+encodeURIComponent(corps);
+  window.location.href=lien;
+});
+$("tc-confirmer").addEventListener("click",function(){
+  var t=transmissionEnCours; if(!t) return;
+  var idsAMarquer={}; t.ids.forEach(function(i){ idsAMarquer[i]=true; });
+  db.rapports.forEach(function(r){ if(idsAMarquer[r.id]) r.transmisLe=t.date; });
+  sauver();
+  transmissionEnCours=null;
+  rendreAccueil(); vue("vue-eleves");
+  toast("Transmission confirmée.");
 });
 
 /* =============== réglages =============== */
-var pAnonyme;
+var pAnonyme, pRappel;
 function ouvrirReglages(){
   $("g-aesh").value=txt(db.reglages.aesh);
   $("g-etab").value=txt(db.reglages.etab);
@@ -1197,6 +1292,16 @@ function ouvrirReglages(){
   pAnonyme = pastilles($("g-anonyme"), ["Prénom + initiale","Nom complet"], {
     valeur: db.reglages.anonyme?"Prénom + initiale":"Nom complet",
     onChange:function(v){ db.reglages.anonyme = (v==="Prénom + initiale"); sauver(); }
+  });
+  $("g-rappel-libre").value = db.reglages.rappelJoursLibre || 14;
+  $("g-rappel-libre-bloc").hidden = db.reglages.rappelType!=="Période libre";
+  pRappel = pastilles($("g-rappel"), RAPPELS, {
+    valeur: db.reglages.rappelType||"Quinzaine",
+    onChange:function(v){
+      db.reglages.rappelType = v; sauver();
+      $("g-rappel-libre-bloc").hidden = v!=="Période libre";
+      rendreAccueil();
+    }
   });
   $("etat-stockage").innerHTML = stockageOk ? "" :
     '<div class="note alerte">La sauvegarde ne fonctionne pas ici : vos données disparaîtront en fermant la page. Téléchargez le fichier et ouvrez-le depuis votre téléphone, ou hébergez-le sur une adresse web.</div>';
@@ -1229,6 +1334,10 @@ $("g-archiver").addEventListener("click",function(){
     db.reglages[k==="g-aesh"?"aesh":k==="g-etab"?"etab":"coordo"]=this.value;
     sauver(); $("lieu").textContent=db.reglages.etab||"";
   });
+});
+$("g-rappel-libre").addEventListener("input",function(){
+  db.reglages.rappelJoursLibre = parseInt(this.value,10)||14;
+  sauver(); rendreAccueil();
 });
 $("g-export").addEventListener("click",function(){
   telecharger("sauvegarde-suivi-aesh-"+isoJour(new Date())+".json", JSON.stringify(db,null,2), "application/json");

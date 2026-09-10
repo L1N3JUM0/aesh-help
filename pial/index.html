@@ -145,6 +145,18 @@ table.tableau td.numerique{text-align:right}
 .liste-classement .lc-barre{height:8px;background:#EAEFF7;border-radius:4px;overflow:hidden}
 .liste-classement .lc-barre span{display:block;height:100%;background:var(--encre-clair)}
 
+/* ---------- statistiques (graphiques SVG faits main) ---------- */
+.carte-graphique .entete-graphique{display:flex;align-items:center;gap:10px;margin:0 0 10px}
+.carte-graphique .entete-graphique h2{margin:0}
+.carte-graphique .entete-graphique input[type=checkbox]{width:16px;height:16px;flex:none}
+.graphique-svg{width:100%;height:auto;display:block}
+.graphique-vide{max-width:420px}
+.grille-chiffres{display:flex;flex-wrap:wrap;gap:14px}
+.carte-chiffre{background:#F4F6F9;border-radius:8px;padding:14px 20px;min-width:150px;text-align:center}
+.carte-chiffre .cc-valeur{font-family:var(--serif);font-size:30px;font-weight:700;color:var(--encre);line-height:1.1}
+.carte-chiffre .cc-label{font-size:12.5px;color:var(--gris);margin-top:2px}
+.note-sous-graphique{font-size:12px;color:var(--gris);margin:8px 0 0}
+
 /* ---------- divers ---------- */
 .note{
   font-size:13px;color:var(--gris);background:#F4F6F9;
@@ -294,6 +306,28 @@ table.tableau td.numerique{text-align:right}
   .signature .bloc-visa{flex:1;border:1pt solid var(--encre);padding:6pt 8pt;font-family:var(--sans);font-size:8.5pt;color:var(--gris)}
   .signature .entete-visa{font-weight:700;color:var(--texte);text-transform:uppercase;font-size:8pt;letter-spacing:.3px;margin:0 0 2pt}
   .signature .zone-signature{height:20mm}
+
+  /* ---- impression des statistiques : réutilise la charte graphique
+     (encre, gris, seyes) et le cadre @page A4 déjà en place ci-dessus,
+     pour rester cohérente avec l'impression des rapports. ---- */
+  .impression-stats{font-family:var(--sans);color:var(--texte)}
+  .entete-impression-stats{
+    display:flex;justify-content:space-between;align-items:baseline;gap:10pt;flex-wrap:wrap;
+    background:var(--encre);color:var(--feuille);padding:8pt 10pt;margin:0 0 12pt;
+  }
+  .entete-impression-stats .ei-etab{font-family:var(--serif);font-size:13pt;font-weight:700}
+  .entete-impression-stats .ei-periode,.entete-impression-stats .ei-date{font-size:9pt}
+  .bloc-impression-stat{border:1pt solid var(--seyes);padding:8pt 10pt 10pt;margin:0 0 10pt;break-inside:avoid}
+  .bloc-impression-stat h3{
+    margin:0 -10pt 8pt;padding:4pt 10pt;background:#EDEFF3;color:var(--encre);
+    font-family:var(--sans);font-size:9.5pt;font-weight:700;text-transform:uppercase;letter-spacing:.4px;
+  }
+  .bloc-impression-stat .grille-chiffres{display:flex;gap:10pt}
+  .bloc-impression-stat .carte-chiffre{background:#F4F6F9;border-radius:4pt;padding:8pt 10pt;flex:1;text-align:center}
+  .bloc-impression-stat .carte-chiffre .cc-valeur{font-family:var(--serif);font-size:18pt;font-weight:700;color:var(--encre)}
+  .bloc-impression-stat .carte-chiffre .cc-label{font-size:8pt;color:var(--gris)}
+  .bloc-impression-stat .note-sous-graphique{font-size:8pt;color:var(--gris);margin:6pt 0 0}
+  .bloc-impression-stat svg{width:100%;height:auto;display:block}
 }
 #impression{display:none}
 </style>
@@ -309,6 +343,7 @@ table.tableau td.numerique{text-align:right}
   <button type="button" data-vue="vue-import" aria-current="true">Importer</button>
   <button type="button" data-vue="vue-rapports">Rapports</button>
   <button type="button" data-vue="vue-indicateurs">Indicateurs</button>
+  <button type="button" data-vue="vue-stats">Statistiques</button>
   <button type="button" data-vue="vue-reglages">Réglages</button>
 </nav>
 
@@ -436,6 +471,95 @@ table.tableau td.numerique{text-align:right}
     </div>
   </section>
 
+  <!-- ============ VUE : STATISTIQUES ============ -->
+  <section id="vue-stats" class="masque">
+    <div class="carte">
+      <h2>Statistiques</h2>
+      <p class="chapeau">Les filtres ci-dessous recalculent tous les graphiques de cet onglet.</p>
+      <div class="ligne-filtres">
+        <div class="champ etroit">
+          <label for="s-periode-type">Période</label>
+          <select id="s-periode-type">
+            <option value="annee">Année scolaire</option>
+            <option value="trimestre">Trimestre</option>
+            <option value="dates">Dates libres</option>
+          </select>
+        </div>
+        <div class="champ etroit bloc-periode-annee">
+          <label for="s-periode-annee">Année</label>
+          <select id="s-periode-annee"></select>
+        </div>
+        <div class="champ etroit bloc-periode-trimestre" hidden>
+          <label for="s-periode-trimestre">Trimestre</label>
+          <select id="s-periode-trimestre">
+            <option value="1">1er trimestre</option>
+            <option value="2">2e trimestre</option>
+            <option value="3">3e trimestre</option>
+          </select>
+        </div>
+        <div class="champ etroit bloc-periode-dates" hidden>
+          <label for="s-debut">Du</label><input type="date" id="s-debut">
+        </div>
+        <div class="champ etroit bloc-periode-dates" hidden>
+          <label for="s-fin">Au</label><input type="date" id="s-fin">
+        </div>
+        <div class="champ"><label for="s-classe">Classe</label><select id="s-classe"></select></div>
+        <div class="champ"><label for="s-aesh">AESH</label><select id="s-aesh"></select></div>
+      </div>
+      <p class="note" id="s-resume"></p>
+      <div class="actions">
+        <button type="button" class="btn btn-plein" id="btn-imprimer-stats">Imprimer la sélection</button>
+      </div>
+    </div>
+
+    <div class="carte carte-graphique">
+      <div class="entete-graphique"><input type="checkbox" id="chk-cles" checked><h2>Chiffres clés</h2></div>
+      <div class="grille-chiffres" id="s-cles"></div>
+    </div>
+
+    <div class="grille-cartes">
+      <div class="carte carte-graphique">
+        <div class="entete-graphique"><input type="checkbox" id="chk-modalite" checked><h2>Individuel / mutualisé</h2></div>
+        <div id="s-modalite"></div>
+      </div>
+      <div class="carte carte-graphique">
+        <div class="entete-graphique"><input type="checkbox" id="chk-niveaux" checked><h2>Répartition par niveau de classe</h2></div>
+        <div id="s-niveaux"></div>
+      </div>
+      <div class="carte carte-graphique" style="grid-column:1/-1">
+        <div class="entete-graphique"><input type="checkbox" id="chk-volume" checked><h2>Volume d'activité par AESH</h2></div>
+        <div id="s-volume-aesh"></div>
+        <p class="note-sous-graphique">Indicateur de volume, à ne pas interpréter comme une évaluation individuelle.</p>
+      </div>
+    </div>
+
+    <div class="carte carte-graphique">
+      <div class="entete-graphique"><input type="checkbox" id="chk-mois" checked><h2>Rapports transmis par mois</h2></div>
+      <div id="s-mois"></div>
+    </div>
+
+    <div class="grille-cartes">
+      <div class="carte carte-graphique">
+        <div class="entete-graphique"><input type="checkbox" id="chk-relation-pie" checked><h2>Qualité de la relation</h2></div>
+        <div id="s-relation-camembert"></div>
+      </div>
+      <div class="carte carte-graphique">
+        <div class="entete-graphique"><input type="checkbox" id="chk-relation-evol" checked><h2>Relation — évolution mensuelle</h2></div>
+        <div id="s-relation-evolution"></div>
+      </div>
+      <div class="carte carte-graphique">
+        <div class="entete-graphique"><input type="checkbox" id="chk-invest-pie" checked><h2>Tendance d'investissement</h2></div>
+        <div id="s-invest-camembert"></div>
+        <p class="note-sous-graphique" id="s-invest-camembert-note"></p>
+      </div>
+      <div class="carte carte-graphique">
+        <div class="entete-graphique"><input type="checkbox" id="chk-invest-evol" checked><h2>Investissement — évolution mensuelle</h2></div>
+        <div id="s-invest-evolution"></div>
+        <p class="note-sous-graphique" id="s-invest-evolution-note"></p>
+      </div>
+    </div>
+  </section>
+
   <!-- ============ VUE : RÉGLAGES ============ -->
   <section id="vue-reglages" class="masque">
     <div class="carte">
@@ -546,6 +670,7 @@ table.tableau td.numerique{text-align:right}
 
 <script src="auth.js"></script>
 <script src="db.js"></script>
+<script src="graphiques.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

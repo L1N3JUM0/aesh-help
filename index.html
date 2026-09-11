@@ -400,6 +400,12 @@ hr.regle{border:none;border-top:1px solid var(--seyes);margin:18px 0}
         <div><label for="f-nom">Nom</label><input type="text" id="f-nom" autocomplete="off"></div>
       </div>
 
+      <div class="champ" id="f-bloc-etab">
+        <span class="legende">Établissement de rattachement</span>
+        <div class="pastilles" id="f-etablissement"></div>
+        <p class="aide" id="f-etab-aide" hidden>Ajoutez d'abord un établissement dans Réglages.</p>
+      </div>
+
       <div class="duo champ">
         <div><label for="f-classe">Classe</label><input type="text" id="f-classe" placeholder="5e B" autocomplete="off"></div>
         <div><label for="f-heures">Heures / semaine</label><input type="text" id="f-heures" placeholder="12 h" autocomplete="off"></div>
@@ -534,6 +540,7 @@ hr.regle{border:none;border-top:1px solid var(--seyes);margin:18px 0}
           <button type="button" class="btn btn-vide" id="a-txt">Télécharger (.txt)</button>
           <button type="button" class="btn btn-vide" id="a-copier">Copier le texte</button>
         </div>
+        <button type="button" class="btn btn-vide" id="a-accueil">Retour à l'accueil</button>
         <button type="button" class="btn btn-danger" id="a-supprimer">Supprimer ce rapport</button>
       </div>
 
@@ -556,7 +563,15 @@ hr.regle{border:none;border-top:1px solid var(--seyes);margin:18px 0}
       <p class="chapeau">Saisis une fois, repris dans tous vos rapports.</p>
 
       <div class="champ"><label for="g-aesh">Votre nom</label><input type="text" id="g-aesh" autocomplete="name"></div>
-      <div class="champ"><label for="g-etab">Établissement</label><input type="text" id="g-etab" placeholder="Collège Jean Moulin" autocomplete="off"></div>
+      <div class="champ">
+        <span class="legende">Établissements</span>
+        <p class="aide">Si vous intervenez sur plusieurs établissements, ajoutez-les tous ici. Le premier est pré-sélectionné dans les fiches élèves tant qu'il n'y en a qu'un seul.</p>
+        <div id="g-etabs-liste"></div>
+        <div class="ajout">
+          <input type="text" id="g-etab-ajout" placeholder="Ajouter un établissement" autocomplete="off">
+          <button type="button" class="btn btn-vide" style="width:auto" id="g-etab-ajout-btn">Ajouter</button>
+        </div>
+      </div>
       <div class="champ">
         <label for="g-coordo">Adresse mail du coordonnateur PIAL</label>
         <p class="aide">Utilisée pour « Envoyer par mail » et pour la transmission groupée.</p>
@@ -630,11 +645,29 @@ try { localStorage.setItem("_t","1"); localStorage.removeItem("_t"); } catch(e){
 function lire(){ try { return stockageOk ? localStorage.getItem(CLE) : memoire[CLE]; } catch(e){ return null; } }
 function ecrire(v){ try { stockageOk ? localStorage.setItem(CLE,v) : (memoire[CLE]=v); } catch(e){ stockageOk=false; memoire[CLE]=v; } }
 
-var DEFAUT = { reglages:{aesh:"",etab:"",coordo:"",anonyme:true,rappelType:"Quinzaine",rappelJoursLibre:14}, eleves:[], rapports:[], matieresPerso:[], accompPerso:[], investPerso:{} };
+var DEFAUT = { reglages:{aesh:"",etablissements:[],coordo:"",anonyme:true,rappelType:"Quinzaine",rappelJoursLibre:14}, eleves:[], rapports:[], matieresPerso:[], accompPerso:[], investPerso:{} };
 var db;
 try { db = Object.assign({}, DEFAUT, JSON.parse(lire()||"{}")); } catch(e){ db = JSON.parse(JSON.stringify(DEFAUT)); }
 ["eleves","rapports","matieresPerso","accompPerso"].forEach(function(k){ if(!Array.isArray(db[k])) db[k]=[]; });
 db.reglages = Object.assign({}, DEFAUT.reglages, db.reglages||{});
+
+// migration depuis l'établissement unique (avant passage au multi-établissement) :
+// l'ancien champ reglages.etab devient le premier de la liste, et tout élève
+// sans établissement s'y rattache automatiquement — aucune perte, aucune
+// ressaisie. Idempotent : sans traces de l'ancien format, ne fait rien.
+function migrerEtablissements(){
+  if(!Array.isArray(db.reglages.etablissements)){
+    var ancien = String(db.reglages.etab==null?"":db.reglages.etab).trim();
+    db.reglages.etablissements = ancien ? [ancien] : [];
+  }
+  if(db.reglages.etablissements.length){
+    var premier = db.reglages.etablissements[0];
+    db.eleves.forEach(function(e){ if(!e.etablissement) e.etablissement = premier; });
+  }
+  delete db.reglages.etab;
+}
+migrerEtablissements();
+
 function sauver(){ ecrire(JSON.stringify(db)); }
 
 /* =============== listes =============== */
@@ -769,9 +802,11 @@ $("btn-reglages").addEventListener("click",function(){ ouvrirReglages(); });
 
 /* =============== accueil =============== */
 function rendreAccueil(){
-  $("lieu").textContent = db.reglages.etab || "";
+  var etabs = db.reglages.etablissements||[];
+  $("lieu").textContent = etabs.length===1 ? etabs[0] : "";
   majAlerteTransmission();
   var hote=$("liste-eleves"); hote.innerHTML="";
+  var etabsMultiples = etabs.length>1;
   if(!db.eleves.length){
     hote.innerHTML = '<div class="vide"><p>Aucun élève enregistré pour l\'instant.<br>Créez une fiche&nbsp;: vous ne saisirez sa classe et ses matières qu\'une seule fois.</p></div>';
     $("chapeau-eleves").textContent="";
@@ -781,9 +816,10 @@ function rendreAccueil(){
       var b=document.createElement("button");
       b.type="button"; b.className="eleve";
       var mod = el.modalite==="Mutualisé" ? "mutualisé" : "individuel";
+      var meta = (el.classe?el.classe+" · ":"")+mod+(etabsMultiples&&el.etablissement?" · "+el.etablissement:"");
       b.innerHTML = '<span class="initiales">'+initiales(el)+'</span>'+
         '<span><span class="nom">'+nomAffiche(el)+'</span><br>'+
-        '<span class="meta">'+(el.classe?el.classe+" · ":"")+mod+'</span></span>'+
+        '<span class="meta">'+meta+'</span></span>'+
         '<span class="fleche">›</span>';
       b.addEventListener("click",function(){ ouvrirRapport(el.id); });
       hote.appendChild(b);
@@ -820,7 +856,7 @@ function majAlerteTransmission(){
 }
 
 /* =============== fiche élève =============== */
-var ficheId=null, pModalite, pMatieres;
+var ficheId=null, pModalite, pMatieres, pEtablissement;
 $("btn-nouvel-eleve").addEventListener("click",function(){ ouvrirFiche(null); });
 
 function ouvrirFiche(eid){
@@ -833,6 +869,11 @@ function ouvrirFiche(eid){
   $("f-heures").value = el?txt(el.heures):"";
   $("f-notes").value = el?txt(el.notes):"";
   $("f-copartage").value = el&&el.copartage?el.copartage:1;
+
+  var etabs = db.reglages.etablissements||[];
+  var etabDefaut = el ? (el.etablissement||null) : (etabs.length===1 ? etabs[0] : null);
+  pEtablissement = pastilles($("f-etablissement"), etabs, {valeur: etabDefaut});
+  $("f-etab-aide").hidden = !!etabs.length;
 
   pModalite = pastilles($("f-modalite"), MODALITES, {valeur: el?el.modalite:"Individuel", onChange:majMutu});
   pMatieres = pastilles($("f-matieres"), MATIERES.concat(db.matieresPerso), {multi:true, valeur: el?el.matieres:[]});
@@ -851,9 +892,15 @@ $("f-matiere-btn").addEventListener("click",function(){
 $("f-enregistrer").addEventListener("click",function(){
   var prenom=$("f-prenom").value.trim();
   if(!prenom){ toast("Indiquez au moins le prénom de l'élève."); $("f-prenom").focus(); return; }
+  var etablissement=pEtablissement.get();
+  if(!etablissement){
+    toast((db.reglages.etablissements||[]).length ? "Choisissez l'établissement de rattachement." : "Ajoutez d'abord un établissement dans Réglages.");
+    return;
+  }
   var donnees={
     prenom:prenom, nom:$("f-nom").value.trim(), classe:$("f-classe").value.trim(),
     heures:$("f-heures").value.trim(), notes:$("f-notes").value,
+    etablissement:etablissement,
     modalite:pModalite.get()||"Individuel", copartage:parseInt($("f-copartage").value,10)||1,
     matieres:pMatieres.get()
   };
@@ -1006,13 +1053,14 @@ $("r-apercu").addEventListener("click",function(){
     invest:{ tendance:pInvestTendance.get(), items:investGet() },
     accomp:pAccomp.get(), matieres:pMatieres2.get(),
     commentaire:$("r-commentaire").value.trim(),
-    aesh:db.reglages.aesh, etab:db.reglages.etab
+    aesh:db.reglages.aesh, etablissement:rapportEleve.etablissement||""
   };
   db.rapports.push(r);
   sauver();
   afficherApercu(r,true);
 });
 $("retour-rapport").addEventListener("click",function(){ vue("vue-rapport"); });
+$("a-accueil").addEventListener("click",function(){ rendreAccueil(); vue("vue-eleves"); });
 
 /* =============== aperçu, texte, export =============== */
 var rapportCourant=null;
@@ -1021,6 +1069,15 @@ function texteModalite(r){
   return r.modalite==="Mutualisé"
     ? "Mutualisé (partagé avec "+r.copartage+" autre"+(r.copartage>1?"s":"")+" élève"+(r.copartage>1?"s":"")+")"
     : "Individuel";
+}
+// r.etablissement (nouveaux rapports) ; r.etab (rapports créés avant le
+// passage au multi-établissement, pas encore transmis) ; à défaut,
+// établissement actuel de la fiche élève.
+function etablissementRapport(r){
+  if(r.etablissement) return r.etablissement;
+  if(r.etab) return r.etab;
+  var el=eleveParId(r.eleveId);
+  return el ? (el.etablissement||"") : "";
 }
 
 function afficherApercu(r,nouveau){
@@ -1034,8 +1091,9 @@ function afficherApercu(r,nouveau){
     +'<span class="imp-periode">'+txt(r.periodeTexte)+'</span>'
     +'</div>';
   h+='</td></tr></thead><tbody><tr><td>';
+  var etabRapport = etablissementRapport(r);
   h+='<div class="imp-sousligne">'
-    +[r.etab?txt(r.etab):"", "Année scolaire "+anneeScolaire(r.debut||r.creeJour)].filter(function(s){return s;}).join(" · ")
+    +[etabRapport?txt(etabRapport):"", "Année scolaire "+anneeScolaire(r.debut||r.creeJour)].filter(function(s){return s;}).join(" · ")
     +'</div>';
   h+='<dl class="bloc-identite">';
   h+='<dt class="ci-eleve">Élève</dt><dd class="ci-eleve">'+txt(r.eleveNom)+'</dd>';
@@ -1043,7 +1101,7 @@ function afficherApercu(r,nouveau){
   h+='<dt class="ci-modalite">Modalité</dt><dd class="ci-modalite">'+texteModalite(r)+'</dd>';
   h+='<dt class="ci-quotite">Quotité</dt><dd class="ci-quotite">'+(r.heures?txt(r.heures):"—")+'</dd>';
   h+='<dt class="ci-aesh">AESH</dt><dd class="ci-aesh">'+(r.aesh?txt(r.aesh):"—")+'</dd>';
-  h+='<dt class="ci-etab">Établissement</dt><dd class="ci-etab">'+(r.etab?txt(r.etab):"—")+'</dd>';
+  h+='<dt class="ci-etab">Établissement</dt><dd class="ci-etab">'+(etabRapport?txt(etabRapport):"—")+'</dd>';
   h+='<dt class="ci-periode">Période</dt><dd class="ci-periode">'+r.periode+' du '+jour(r.debut)+' au '+jour(r.fin)+'</dd>';
   h+='<dt class="ci-etabli">Établi le</dt><dd class="ci-etabli">'+jour(r.creeJour)+'</dd>';
   h+='</dl>';
@@ -1073,7 +1131,8 @@ function afficherApercu(r,nouveau){
 function texteBrut(r){
   var L=[], sep="────────────────────────────────────────";
   L.push("RAPPORT D'ACCOMPAGNEMENT AESH"); L.push(sep);
-  if(r.etab) L.push("Établissement : "+r.etab);
+  var etabRapport = etablissementRapport(r);
+  if(etabRapport) L.push("Établissement : "+etabRapport);
   if(r.aesh) L.push("AESH          : "+r.aesh);
   L.push("Élève         : "+r.eleveNom+(r.classe?"   (classe : "+r.classe+")":""));
   L.push("Modalité      : "+texteModalite(r));
@@ -1156,19 +1215,16 @@ $("a-mail").addEventListener("click",function(){
   var tropLong = texte.length>1500;
   var corpsCourt = enteteBrut(r)+"\n\nRapport complet en pièce jointe.";
 
-  // 3) partage natif (mobile) en priorité : peut envoyer le fichier lui-même
-  if(navigator.share){
-    var fichier;
-    try{ fichier = new File([texte], nomFichier(r), {type:"text/plain"}); }catch(e){}
-    var avecFichier = !!(fichier && navigator.canShare && navigator.canShare({files:[fichier]}));
-    var donnees = {title:sujet};
-    if(avecFichier) donnees.files=[fichier];
-    else donnees.text = tropLong ? corpsCourt : texte;
-    if(tropLong && !avecFichier){
-      telecharger(nomFichier(r), texte);
-      toast("Le rapport est trop long pour être écrit dans le mail. Il a été téléchargé : joignez-le au message.");
-    }
-    navigator.share(donnees).catch(function(){});
+  // partage natif (mobile) seulement quand il peut réellement joindre le
+  // fichier : le Web Share API n'a pas de champ destinataire, donc l'utiliser
+  // pour un simple texte ferait perdre l'adresse du coordonnateur (bug),
+  // sans rien apporter de plus qu'un mailto:. On ne l'emprunte donc que pour
+  // son seul avantage réel sur mailto: la pièce jointe native.
+  var fichier;
+  try{ fichier = new File([texte], nomFichier(r), {type:"text/plain"}); }catch(e){}
+  var avecFichier = !!(navigator.share && fichier && navigator.canShare && navigator.canShare({files:[fichier]}));
+  if(avecFichier){
+    navigator.share({title:sujet, files:[fichier]}).catch(function(){});
     return;
   }
 
@@ -1241,13 +1297,18 @@ $("t-exporter").addEventListener("click",function(){
   var rapports = rapportsSelectionTransmission();
   if(!rapports.length){ toast("Aucun rapport à transmettre."); return; }
   var aujourdhui=isoJour(new Date());
+  var etabsPresents=[], vusEtabs={};
+  rapports.forEach(function(r){
+    var et=etablissementRapport(r);
+    if(et && !vusEtabs[et]){ vusEtabs[et]=true; etabsPresents.push(et); }
+  });
   var contenu={
-    format:"suivi-aesh/1", genere_le:aujourdhui,
-    aesh:db.reglages.aesh||"", etablissement:db.reglages.etab||"",
+    format:"suivi-aesh/2", genere_le:aujourdhui,
+    aesh:db.reglages.aesh||"", etablissements:etabsPresents,
     rapports: rapports.map(function(r){
       return {
         id:r.id, eleveId:r.eleveId, eleveNom:nomTransmission(eleveParId(r.eleveId)),
-        classe:r.classe, heures:r.heures,
+        classe:r.classe, heures:r.heures, etablissement:etablissementRapport(r),
         periode:r.periode, debut:r.debut, fin:r.fin, periodeTexte:r.periodeTexte,
         modalite:r.modalite, copartage:r.copartage,
         relation:r.relation, invest:r.invest,
@@ -1285,9 +1346,53 @@ $("tc-confirmer").addEventListener("click",function(){
 
 /* =============== réglages =============== */
 var pAnonyme, pRappel;
+
+function rendreEtablissements(){
+  var hote=$("g-etabs-liste");
+  hote.innerHTML="";
+  (db.reglages.etablissements||[]).forEach(function(nom){
+    var ligne=document.createElement("div");
+    ligne.className="duo"; ligne.style.marginBottom="8px";
+    var input=document.createElement("input");
+    input.type="text"; input.value=nom;
+    input.addEventListener("change",function(){
+      var v=input.value.trim();
+      if(!v){ input.value=nom; return; }
+      renommerEtablissement(nom, v);
+    });
+    var btnSup=document.createElement("button");
+    btnSup.type="button"; btnSup.className="btn btn-danger"; btnSup.style.width="auto"; btnSup.textContent="Supprimer";
+    btnSup.addEventListener("click",function(){ supprimerEtablissement(nom); });
+    ligne.appendChild(input); ligne.appendChild(btnSup);
+    hote.appendChild(ligne);
+  });
+}
+function renommerEtablissement(ancien, nouveau){
+  if(ancien===nouveau) return;
+  if(db.reglages.etablissements.indexOf(nouveau)>-1){ toast("Cet établissement existe déjà."); rendreEtablissements(); return; }
+  var i=db.reglages.etablissements.indexOf(ancien);
+  if(i<0) return;
+  db.reglages.etablissements[i]=nouveau;
+  db.eleves.forEach(function(e){ if(e.etablissement===ancien) e.etablissement=nouveau; });
+  sauver(); rendreEtablissements(); rendreAccueil(); toast("Établissement renommé.");
+}
+function supprimerEtablissement(nom){
+  var n = db.eleves.filter(function(e){ return e.etablissement===nom; }).length;
+  if(n>0){ toast("Impossible : "+n+" élève"+(n>1?"s":"")+" rattaché"+(n>1?"s":"")+" à cet établissement. Réattribuez-les d'abord."); return; }
+  if(!confirm("Supprimer l'établissement « "+nom+" » ?")) return;
+  db.reglages.etablissements = db.reglages.etablissements.filter(function(e){ return e!==nom; });
+  sauver(); rendreEtablissements(); rendreAccueil(); toast("Établissement supprimé.");
+}
+$("g-etab-ajout-btn").addEventListener("click",function(){
+  var v=$("g-etab-ajout").value.trim(); if(!v) return;
+  if(db.reglages.etablissements.indexOf(v)>-1){ toast("Cet établissement existe déjà."); return; }
+  db.reglages.etablissements.push(v); sauver(); $("g-etab-ajout").value="";
+  rendreEtablissements(); rendreAccueil(); toast("Établissement ajouté.");
+});
+
 function ouvrirReglages(){
   $("g-aesh").value=txt(db.reglages.aesh);
-  $("g-etab").value=txt(db.reglages.etab);
+  rendreEtablissements();
   $("g-coordo").value=txt(db.reglages.coordo);
   pAnonyme = pastilles($("g-anonyme"), ["Prénom + initiale","Nom complet"], {
     valeur: db.reglages.anonyme?"Prénom + initiale":"Nom complet",
@@ -1329,10 +1434,10 @@ $("g-archiver").addEventListener("click",function(){
   sauver(); rendreAccueil(); ouvrirReglages();
   toast(aArchiver.length+" rapport(s) archivé(s).");
 });
-["g-aesh","g-etab","g-coordo"].forEach(function(k){
+["g-aesh","g-coordo"].forEach(function(k){
   $(k).addEventListener("input",function(){
-    db.reglages[k==="g-aesh"?"aesh":k==="g-etab"?"etab":"coordo"]=this.value;
-    sauver(); $("lieu").textContent=db.reglages.etab||"";
+    db.reglages[k==="g-aesh"?"aesh":"coordo"]=this.value;
+    sauver();
   });
 });
 $("g-rappel-libre").addEventListener("input",function(){
@@ -1356,6 +1461,7 @@ $("g-fichier").addEventListener("change",function(){
       db.reglages=Object.assign({},DEFAUT.reglages,db.reglages||{});
       if(!db.investPerso || typeof db.investPerso!=="object" || Array.isArray(db.investPerso)) db.investPerso={};
       INVEST_GROUPES.forEach(function(g){ if(!Array.isArray(db.investPerso[g.id])) db.investPerso[g.id]=[]; });
+      migrerEtablissements();
       sauver(); rendreAccueil(); vue("vue-eleves");
       toast("Sauvegarde importée : "+db.eleves.length+" élève(s).");
     }catch(e){ toast("Ce fichier n'est pas une sauvegarde valide."); }

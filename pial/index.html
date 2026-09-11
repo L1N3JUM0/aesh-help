@@ -384,6 +384,7 @@ table.tableau td.numerique{text-align:right}
       <div class="ligne-filtres">
         <div class="champ"><label for="f-aesh">AESH</label><select id="f-aesh"></select></div>
         <div class="champ"><label for="f-eleve">Élève</label><select id="f-eleve"></select></div>
+        <div class="champ"><label for="f-etablissement">Établissement</label><select id="f-etablissement"></select></div>
         <div class="champ"><label for="f-classe">Classe</label><select id="f-classe"></select></div>
         <div class="champ etroit"><label for="f-modalite">Modalité</label><select id="f-modalite"></select></div>
         <div class="champ etroit"><label for="f-relation">Relation</label><select id="f-relation"></select></div>
@@ -436,6 +437,7 @@ table.tableau td.numerique{text-align:right}
       <p class="chapeau" id="fiche-sous-titre"></p>
       <div class="actions">
         <button type="button" class="btn btn-plein" id="btn-imprimer-fiche">Imprimer tous ces rapports (préparation ESS)</button>
+        <button type="button" class="btn btn-danger" id="btn-supprimer-eleve">Supprimer cet élève et ses rapports</button>
       </div>
     </div>
     <div class="carte">
@@ -505,6 +507,7 @@ table.tableau td.numerique{text-align:right}
         </div>
         <div class="champ"><label for="s-classe">Classe</label><select id="s-classe"></select></div>
         <div class="champ"><label for="s-aesh">AESH</label><select id="s-aesh"></select></div>
+        <div class="champ"><label for="s-etablissement">Établissement</label><select id="s-etablissement"></select></div>
       </div>
       <p class="note" id="s-resume"></p>
       <div class="actions">
@@ -617,6 +620,7 @@ table.tableau td.numerique{text-align:right}
   <div class="modale">
     <p id="modale-message"></p>
     <div class="actions">
+      <button type="button" class="btn btn-vide" id="modale-extra" hidden>Exporter une sauvegarde</button>
       <button type="button" class="btn btn-vide" id="modale-annuler">Annuler</button>
       <button type="button" class="btn btn-danger" id="modale-confirmer">Confirmer</button>
     </div>

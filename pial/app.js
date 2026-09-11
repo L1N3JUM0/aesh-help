@@ -39,21 +39,29 @@ function lireFichierTexte(fichier) {
 
 /* boîte de confirmation générique (mêmes principes que côté AESH : jamais
    de suppression/purge/restauration sans passer par une confirmation
-   explicite, avec un libellé de bouton non ambigu). */
-function confirmationForte(message, libelleBouton, cb) {
-  var voile = $("voile-confirmation"), btnOk = $("modale-confirmer"), btnAnnuler = $("modale-annuler");
+   explicite, avec un libellé de bouton non ambigu). "extra" (optionnel :
+   {libelle, cb}) ajoute un troisième bouton qui déclenche une action (ex.
+   export de sauvegarde) SANS fermer la modale, pour laisser l'utilisateur
+   confirmer ou annuler ensuite en connaissance de cause. */
+function confirmationForte(message, libelleBouton, cb, extra) {
+  var voile = $("voile-confirmation"), btnOk = $("modale-confirmer"), btnAnnuler = $("modale-annuler"), btnExtra = $("modale-extra");
   $("modale-message").textContent = message;
   btnOk.textContent = libelleBouton || "Confirmer";
+  btnExtra.hidden = !extra;
+  if (extra) btnExtra.textContent = extra.libelle || "Exporter une sauvegarde";
   voile.hidden = false;
   function nettoyer() {
     voile.hidden = true;
     btnOk.removeEventListener("click", surConfirmer);
     btnAnnuler.removeEventListener("click", surAnnuler);
+    btnExtra.removeEventListener("click", surExtra);
   }
   function surConfirmer() { nettoyer(); cb(); }
   function surAnnuler() { nettoyer(); }
+  function surExtra() { extra.cb(); }
   btnOk.addEventListener("click", surConfirmer);
   btnAnnuler.addEventListener("click", surAnnuler);
+  if (extra) btnExtra.addEventListener("click", surExtra);
 }
 
 /* =============== état en mémoire =============== */
@@ -207,8 +215,8 @@ function importerUnFichier(fichier) {
     var enveloppe;
     try { enveloppe = JSON.parse(texte); }
     catch (e) { return { nom: fichier.name, erreur: "Fichier JSON invalide." }; }
-    if (!enveloppe || enveloppe.format !== "suivi-aesh/1") {
-      return { nom: fichier.name, erreur: "Ce fichier n'est pas une transmission reconnue (format attendu : suivi-aesh/1)." };
+    if (!enveloppe || (enveloppe.format !== "suivi-aesh/1" && enveloppe.format !== "suivi-aesh/2")) {
+      return { nom: fichier.name, erreur: "Ce fichier n'est pas une transmission reconnue (formats attendus : suivi-aesh/1 ou suivi-aesh/2)." };
     }
     return PialDB.importerFichier(enveloppe, fichier.name).then(function (compte) {
       return { nom: fichier.name, compte: compte };
@@ -275,28 +283,30 @@ function remplirSelectEleves() {
 }
 function initialiserFiltres() {
   remplirSelect("f-aesh", valeursDistinctes("aesh"), "Toutes les AESH");
+  remplirSelect("f-etablissement", valeursDistinctes("etablissement"), "Tous les établissements");
   remplirSelect("f-classe", valeursDistinctes("classe"), "Toutes les classes");
   remplirSelectEleves();
   remplirSelect("f-modalite", ["Individuel", "Mutualisé"], "Toutes les modalités");
   remplirSelect("f-relation", ["Fluide", "En construction", "Difficile"], "Toutes les relations");
 }
-["f-aesh", "f-eleve", "f-classe", "f-modalite", "f-relation", "f-debut", "f-fin"].forEach(function (id) {
+["f-aesh", "f-eleve", "f-etablissement", "f-classe", "f-modalite", "f-relation", "f-debut", "f-fin"].forEach(function (id) {
   $(id).addEventListener("change", rendreRapports);
 });
 $("f-reinitialiser").addEventListener("click", function () {
-  ["f-aesh", "f-eleve", "f-classe", "f-modalite", "f-relation"].forEach(function (id) { $(id).value = ""; });
+  ["f-aesh", "f-eleve", "f-etablissement", "f-classe", "f-modalite", "f-relation"].forEach(function (id) { $(id).value = ""; });
   $("f-debut").value = ""; $("f-fin").value = "";
   selectionRapports = {};
   rendreRapports();
 });
 
 function rapportsFiltres() {
-  var aesh = $("f-aesh").value, eleve = $("f-eleve").value, classe = $("f-classe").value,
-    modalite = $("f-modalite").value, relation = $("f-relation").value,
+  var aesh = $("f-aesh").value, eleve = $("f-eleve").value, etablissement = $("f-etablissement").value,
+    classe = $("f-classe").value, modalite = $("f-modalite").value, relation = $("f-relation").value,
     debut = $("f-debut").value, fin = $("f-fin").value;
   return cache.filter(function (r) {
     if (aesh && r.aesh !== aesh) return false;
     if (eleve && r.eleveId !== eleve) return false;
+    if (etablissement && r.etablissement !== etablissement) return false;
     if (classe && r.classe !== classe) return false;
     if (modalite && r.modalite !== modalite) return false;
     if (relation && r.relation !== relation) return false;
@@ -457,6 +467,30 @@ function ouvrirFicheEleve(eleveId) {
 $("retour-fiche").addEventListener("click", function () { vue("vue-rapports"); });
 $("btn-imprimer-fiche").addEventListener("click", function () { imprimerRapports(rapportsEleveCourant); });
 
+/* =============== purge d'un élève (quand il quitte le PIAL) =============== */
+$("btn-supprimer-eleve").addEventListener("click", function () {
+  if (!eleveCourantId) return;
+  var n = rapportsEleveCourant.length;
+  var nom = n ? rapportsEleveCourant[rapportsEleveCourant.length - 1].eleveNom : "cet élève";
+  var msg = "Supprimer " + nom + " et " + n + " rapport" + (n > 1 ? "s" : "") + " ? "
+    + "Cette suppression est définitive. Il s'agit peut-être de la seule copie conservée de ces rapports. "
+    + "Exportez une sauvegarde complète avant de continuer.";
+  confirmationForte(msg, "Supprimer définitivement", function () {
+    var eleveId = eleveCourantId;
+    PialDB.purgerParEleve(eleveId).then(function () {
+      return Promise.all([rafraichirCache(), rafraichirImports()]);
+    }).then(function () {
+      initialiserFiltres(); initialiserPurge(); rendreRapports(); rendreImports(); rendreIndicateurs();
+      initialiserFiltresStats(); rendreStats();
+      vue("vue-rapports");
+      toast(n + " rapport(s) supprimé(s) avec l'élève.");
+    });
+  }, {
+    libelle: "Exporter une sauvegarde",
+    cb: exporterSauvegarde
+  });
+});
+
 /* =============== indicateurs =============== */
 function grouperParEleve() {
   var groupes = {};
@@ -581,6 +615,7 @@ function initialiserFiltresStats() {
   else if (annees.length) selAnnee.value = String(annees[annees.length - 1]);
   remplirSelect("s-classe", valeursDistinctes("classe"), "Toutes les classes");
   remplirSelect("s-aesh", valeursDistinctes("aesh"), "Toutes les AESH");
+  remplirSelect("s-etablissement", valeursDistinctes("etablissement"), "Tous les établissements");
 }
 
 function majVisibiliteBlocsPeriode() {
@@ -617,11 +652,12 @@ function calculerPeriodeStats() {
 
 function rapportsStats(periode) {
   if (!periode.debut || !periode.fin) return [];
-  var classe = $("s-classe").value, aesh = $("s-aesh").value;
+  var classe = $("s-classe").value, aesh = $("s-aesh").value, etablissement = $("s-etablissement").value;
   return cache.filter(function (r) {
     if (!r.creeJour || r.creeJour < periode.debut || r.creeJour > periode.fin) return false;
     if (classe && r.classe !== classe) return false;
     if (aesh && r.aesh !== aesh) return false;
+    if (etablissement && r.etablissement !== etablissement) return false;
     return true;
   });
 }
@@ -731,7 +767,7 @@ function rendreStats() {
   rendreRelation(liste, mois, texteVide);
   rendreInvestissement(liste, mois, texteVide);
 }
-["s-periode-type", "s-periode-annee", "s-periode-trimestre", "s-debut", "s-fin", "s-classe", "s-aesh"].forEach(function (id) {
+["s-periode-type", "s-periode-annee", "s-periode-trimestre", "s-debut", "s-fin", "s-classe", "s-aesh", "s-etablissement"].forEach(function (id) {
   $(id).addEventListener("change", rendreStats);
 });
 
@@ -821,13 +857,14 @@ $("form-changer-mdp").addEventListener("submit", function (evt) {
 });
 
 /* =============== réglages : sauvegarde / restauration =============== */
-$("btn-exporter-sauvegarde").addEventListener("click", function () {
-  PialDB.exporterTout().then(function (donnees) {
+function exporterSauvegarde() {
+  return PialDB.exporterTout().then(function (donnees) {
     var contenu = { format: "pial-suivi/1", exporte_le: isoJour(new Date()), rapports: donnees.rapports, imports: donnees.imports };
     telecharger("sauvegarde-pial-" + isoJour(new Date()) + ".json", JSON.stringify(contenu, null, 2), "application/json");
     toast("Sauvegarde téléchargée.");
   });
-});
+}
+$("btn-exporter-sauvegarde").addEventListener("click", exporterSauvegarde);
 $("btn-restaurer-sauvegarde").addEventListener("click", function () { $("entree-restauration").click(); });
 $("entree-restauration").addEventListener("change", function () {
   var fichier = this.files[0]; this.value = ""; if (!fichier) return;

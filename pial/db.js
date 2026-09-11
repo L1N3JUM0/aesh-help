@@ -5,7 +5,7 @@
    Base "pial-suivi", deux object stores :
      - rapports : keyPath "id" (id du rapport côté AESH, sert de clé de
        dédoublonnage). Index : eleveId, classe, aesh, modalite, relation,
-       debut, creeJour.
+       debut, creeJour, etablissement (v2 du schéma).
      - imports  : clé auto-incrémentée, un enregistrement par fichier de
        transmission importé (bilan + traçabilité).
    API façon promesses, exposée sur l'objet global PialDB.
@@ -13,7 +13,7 @@
 var PialDB = (function () {
 
   var NOM_BASE = "pial-suivi";
-  var VERSION = 1;
+  var VERSION = 2;
   var promesseBase = null;
 
   function ouvrir() {
@@ -22,8 +22,9 @@ var PialDB = (function () {
       var req = indexedDB.open(NOM_BASE, VERSION);
       req.onupgradeneeded = function (evt) {
         var db = evt.target.result;
+        var magasin;
         if (!db.objectStoreNames.contains("rapports")) {
-          var magasin = db.createObjectStore("rapports", { keyPath: "id" });
+          magasin = db.createObjectStore("rapports", { keyPath: "id" });
           magasin.createIndex("eleveId", "eleveId", { unique: false });
           magasin.createIndex("classe", "classe", { unique: false });
           magasin.createIndex("aesh", "aesh", { unique: false });
@@ -31,6 +32,15 @@ var PialDB = (function () {
           magasin.createIndex("relation", "relation", { unique: false });
           magasin.createIndex("debut", "debut", { unique: false });
           magasin.createIndex("creeJour", "creeJour", { unique: false });
+          magasin.createIndex("etablissement", "etablissement", { unique: false });
+        } else {
+          // migration v1 -> v2 : ajoute l'index etablissement sans toucher
+          // aux données existantes (le champ etablissement existe déjà sur
+          // chaque rapport stocké, seul l'index manquait).
+          magasin = evt.target.transaction.objectStore("rapports");
+          if (!magasin.indexNames.contains("etablissement")) {
+            magasin.createIndex("etablissement", "etablissement", { unique: false });
+          }
         }
         if (!db.objectStoreNames.contains("imports")) {
           db.createObjectStore("imports", { keyPath: "id", autoIncrement: true });
@@ -64,9 +74,14 @@ var PialDB = (function () {
 
   // vérifie la forme minimale d'un rapport transmis, renvoie l'enregistrement
   // normalisé à stocker, ou null si la structure est invalide.
+  // En v1, l'établissement est un champ unique porté par l'enveloppe ; en
+  // v2, chaque rapport porte le sien (issu de la fiche élève côté AESH). On
+  // normalise les deux vers le même champ "etablissement" du rapport stocké
+  // pour que le reste du code n'ait pas à distinguer les deux formats.
   function normaliserRapport(r, enveloppe, nomFichier) {
     if (!r || typeof r !== "object") return null;
     if (!r.id || !r.eleveId) return null;
+    var etablissement = enveloppe.format === "suivi-aesh/2" ? (r.etablissement || "") : (enveloppe.etablissement || "");
     return {
       id: r.id, eleveId: r.eleveId, eleveNom: r.eleveNom || "",
       classe: r.classe || "", heures: r.heures || "",
@@ -79,7 +94,7 @@ var PialDB = (function () {
       matieres: Array.isArray(r.matieres) ? r.matieres : [],
       commentaire: r.commentaire || "",
       creeJour: r.creeJour || "",
-      aesh: enveloppe.aesh || "", etablissement: enveloppe.etablissement || "",
+      aesh: enveloppe.aesh || "", etablissement: etablissement,
       importeLe: new Date().toISOString(), sourceFichier: nomFichier || ""
     };
   }
@@ -99,10 +114,13 @@ var PialDB = (function () {
     });
   }
 
-  // importe une enveloppe de transmission ({format, aesh, etablissement, rapports, ...}).
-  // rejette si le format n'est pas reconnu. Résout avec {ajoutes, connus, ignores}.
+  // importe une enveloppe de transmission ({format, aesh, etablissement(s), rapports, ...}).
+  // accepte suivi-aesh/1 (établissement unique porté par l'enveloppe) et
+  // suivi-aesh/2 (établissement par rapport, enveloppe.etablissements pour
+  // information). Rejette si le format n'est pas reconnu. Résout avec
+  // {ajoutes, connus, ignores}.
   function importerFichier(enveloppe, nomFichier) {
-    if (!enveloppe || enveloppe.format !== "suivi-aesh/1") {
+    if (!enveloppe || (enveloppe.format !== "suivi-aesh/1" && enveloppe.format !== "suivi-aesh/2")) {
       return Promise.reject(new Error("format-inconnu"));
     }
     return ouvrir().then(function (db) {
@@ -119,9 +137,11 @@ var PialDB = (function () {
         });
       });
       return Promise.all(promesses).then(function () {
+        var etablissementImport = enveloppe.etablissement
+          || (Array.isArray(enveloppe.etablissements) ? enveloppe.etablissements.join(", ") : "");
         t.objectStore("imports").add({
           nomFichier: nomFichier || "", aesh: enveloppe.aesh || "",
-          etablissement: enveloppe.etablissement || "", genereLe: enveloppe.genere_le || "",
+          etablissement: etablissementImport, genereLe: enveloppe.genere_le || "",
           periode: enveloppe.periode || null,
           nbAjoutes: compte.ajoutes, nbConnus: compte.connus, nbIgnores: compte.ignores,
           importeLe: new Date().toISOString()
@@ -187,6 +207,26 @@ var PialDB = (function () {
     });
   }
 
+  // purge tous les rapports d'un élève (curseur sur l'index eleveId) —
+  // utilisé quand un élève quitte le PIAL. Renvoie le nombre supprimé.
+  function purgerParEleve(eleveId) {
+    return ouvrir().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var supprimes = 0;
+        var index = db.transaction("rapports", "readwrite").objectStore("rapports").index("eleveId");
+        var req = index.openCursor(IDBKeyRange.only(eleveId));
+        req.onsuccess = function (evt) {
+          var curseur = evt.target.result;
+          if (!curseur) { resolve(supprimes); return; }
+          curseur.delete();
+          supprimes++;
+          curseur.continue();
+        };
+        req.onerror = function () { reject(req.error); };
+      });
+    });
+  }
+
   /* ---------- sauvegarde / restauration ---------- */
 
   function exporterTout() {
@@ -213,6 +253,7 @@ var PialDB = (function () {
     tousLesImports: tousLesImports,
     rapportsDeEleve: rapportsDeEleve,
     purgerAvecPredicat: purgerAvecPredicat,
+    purgerParEleve: purgerParEleve,
     exporterTout: exporterTout,
     remplacerTout: remplacerTout
   };

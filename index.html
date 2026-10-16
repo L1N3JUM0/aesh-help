@@ -611,6 +611,7 @@ hr.regle{border:none;border-top:1px solid var(--seyes);margin:18px 0}
       <h2>Sauvegarde</h2>
       <p class="chapeau">Tout est stocké dans ce téléphone, rien n'est envoyé sur internet. Si vous changez d'appareil ou effacez les données du navigateur, tout est perdu&nbsp;: pensez à exporter de temps en temps.</p>
       <div id="etat-stockage"></div>
+      <div class="note" id="bandeau-persistance" hidden>Votre navigateur n'a pas garanti la conservation de vos données&nbsp;: il pourrait les effacer en cas de manque de place ou de nettoyage automatique. Pour les protéger, installez l'application sur l'écran d'accueil (voir le guide d'utilisation) et faites une sauvegarde régulièrement.</div>
       <div class="actions">
         <button type="button" class="btn btn-vide" id="g-export">Exporter mes données</button>
         <button type="button" class="btn btn-vide" id="g-import">Importer une sauvegarde</button>
@@ -1408,6 +1409,7 @@ function ouvrirReglages(){
       rendreAccueil();
     }
   });
+  verifierPersistance();
   $("etat-stockage").innerHTML = stockageOk ? "" :
     '<div class="note alerte">La sauvegarde ne fonctionne pas ici : vos données disparaîtront en fermant la page. Téléchargez le fichier et ouvrez-le depuis votre téléphone, ou hébergez-le sur une adresse web.</div>';
   var n=db.rapports.length, blocArchivage=$("bloc-archivage");
@@ -1473,7 +1475,40 @@ $("g-effacer").addEventListener("click",function(){
   db=JSON.parse(JSON.stringify(DEFAUT)); sauver(); rendreAccueil(); vue("vue-eleves"); toast("Données effacées.");
 });
 
+/* =============== stockage persistant ===============
+   Demande au navigateur de ne pas évincer nos données (localStorage) en cas
+   de manque de place ou de nettoyage automatique. Purement opportuniste :
+   jamais bloquant, sans effet si l'API est absente ; un refus affiche
+   seulement un bandeau discret dans Réglages. */
+var persistance = "inconnu"; // "accorde" | "refuse" | "inconnu"
+function majBandeauPersistance(){
+  $("bandeau-persistance").hidden = persistance!=="refuse" || !stockageOk;
+}
+function demanderPersistance(){
+  var s = navigator.storage;
+  if(!s || !s.persist) return;
+  try{
+    (s.persisted ? s.persisted() : Promise.resolve(false)).then(function(deja){
+      return deja || s.persist();
+    }).then(function(ok){
+      persistance = ok ? "accorde" : "refuse";
+      majBandeauPersistance();
+    }).catch(function(){});
+  }catch(e){}
+}
+// à l'ouverture de Réglages : la permission a pu être accordée entre-temps
+// (installation sur l'écran d'accueil, par exemple) ; on ne redemande pas.
+function verifierPersistance(){
+  majBandeauPersistance();
+  var s = navigator.storage;
+  if(persistance!=="refuse" || !s || !s.persisted) return;
+  try{
+    s.persisted().then(function(ok){ if(ok){ persistance="accorde"; majBandeauPersistance(); } }).catch(function(){});
+  }catch(e){}
+}
+
 /* =============== démarrage =============== */
+demanderPersistance();
 rendreAccueil();
 vue(db.reglages.aesh ? "vue-eleves" : "vue-reglages");
 

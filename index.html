@@ -640,6 +640,11 @@ hr.regle{border:none;border-top:1px solid var(--seyes);margin:18px 0}
           <button type="button" class="btn btn-plein" id="s-restaurer">Restaurer</button>
         </div>
       </div>
+      <hr class="regle">
+      <span class="legende">Pas de sauvegarde&nbsp;?</span>
+      <p class="aide">Vous pouvez reconstruire une partie de la liste de vos élèves à partir d'un fichier de transmission au PIAL (transmission_….json). Les noms de famille et les notes personnelles n'y figurent pas&nbsp;: ils ne pourront pas être récupérés.</p>
+      <button type="button" class="btn btn-vide" id="g-transmission">Reconstruire depuis une transmission</button>
+      <input type="file" id="g-fichier-transmission" accept="application/json,.json" hidden>
       <div class="actions">
         <button type="button" class="btn btn-danger" id="g-effacer">Tout effacer</button>
       </div>
@@ -973,7 +978,7 @@ $("f-enregistrer").addEventListener("click",function(){
     matieres:pMatieres.get(), modifie:new Date().toISOString()
   };
   if(ficheId){
-    db.eleves.forEach(function(e,i){ if(e.id===ficheId) db.eleves[i]=Object.assign(e,donnees); });
+    db.eleves.forEach(function(e,i){ if(e.id===ficheId){ db.eleves[i]=Object.assign(e,donnees); delete e.reconstruite; } });
   } else {
     donnees.id=id(); db.eleves.push(donnees);
   }
@@ -1545,7 +1550,7 @@ $("g-sauvegarder").addEventListener("click",sauvegarder);
    Remplacer / Fusionner, puis confirmation renforcée avec les compteurs
    exacts. Rien n'est écrit avant cette confirmation. */
 var MSG_PAS_SAUVEGARDE = "Ce fichier n'est pas une sauvegarde Suivi AESH. Choisissez un fichier sauvegarde_suivi-aesh_AAAA-MM-JJ.json créé par « Sauvegarder mes données ».";
-var MSG_TRANSMISSION = "Ce fichier est une transmission au PIAL, pas une sauvegarde. Il ne contient ni les noms de famille ni vos notes personnelles, et ne permet pas de restaurer l'application.";
+var MSG_TRANSMISSION = "Ce fichier est une transmission au PIAL, pas une sauvegarde. Il ne contient ni les noms de famille ni vos notes personnelles, et ne permet pas de restaurer l'application. Pour retrouver une partie de vos élèves à partir de ce fichier, utilisez « Reconstruire depuis une transmission » plus bas.";
 
 // renvoie {erreur} ou {donnees, exporteLe, ancienne, ignores}
 function analyserSauvegarde(texte){
@@ -1601,7 +1606,7 @@ function fusionner(courant, sauvegarde){
     source.forEach(function(x){
       var i=index[x.id];
       if(i===undefined){ index[x.id]=cible.length; cible.push(copie(x)); st[cle+"Ajoutes"]++; }
-      else if(horodatage(x) > horodatage(cible[i])){ cible[i]=copie(x); st[cle+"Remplaces"]++; }
+      else if(horodatage(x) > horodatage(cible[i]) || (cible[i].reconstruite && !x.reconstruite)){ cible[i]=copie(x); st[cle+"Remplaces"]++; }
       else { st[cle+"Conserves"]++; if(completer) completer(cible[i], x); }
     });
   }
@@ -1706,6 +1711,73 @@ $("s-restaurer").addEventListener("click",function(){
       toast("Fusion terminée : "+pluriel(db.eleves.length,"élève")+", "+pluriel(db.rapports.length,"rapport")+".");
     }, "Fusionner");
   }
+});
+
+/* reconstruction partielle depuis un fichier de transmission (suivi-aesh/1
+   ou /2) : recours quand il n'existe aucune sauvegarde. La transmission ne
+   porte que le prénom et l'initiale du nom, et jamais les notes : les fiches
+   créées sont marquées "reconstruite" (une vraie sauvegarde fusionnée plus
+   tard les remplace) et un élève déjà présent n'est jamais modifié. */
+function analyserTransmission(texte){
+  var d;
+  try{ d=JSON.parse(texte); }catch(e){ return {erreur:"Ce fichier est illisible : ce n'est pas un fichier JSON valide, ou il est endommagé. Rien n'a été modifié."}; }
+  var format = d && typeof d.format==="string" ? d.format : "";
+  if(/^suivi-aesh-backup\//.test(format)) return {erreur:"Ce fichier est une sauvegarde complète : utilisez plutôt « Restaurer une sauvegarde », qui récupère tout, noms de famille et notes compris."};
+  if((format!=="suivi-aesh/1" && format!=="suivi-aesh/2") || !Array.isArray(d.rapports)){
+    return {erreur:"Ce fichier n'est pas une transmission au PIAL reconnue (formats attendus : suivi-aesh/1 ou suivi-aesh/2). Rien n'a été modifié."};
+  }
+  var genere = /^\d{4}-\d{2}-\d{2}$/.test(txt(d.genere_le)) ? d.genere_le : "";
+  var note = "Fiche reconstruite le "+jour(isoJour(new Date()))+" depuis une transmission au PIAL"+(genere?" du "+jour(genere):"")
+    +" : nom de famille et notes personnelles à ressaisir.";
+  var parEleve={}, ordre=[];
+  // du plus ancien au plus récent : le dernier rapport donne classe, matières, etc.
+  d.rapports.filter(function(r){ return r && typeof r==="object" && typeof r.eleveId==="string" && r.eleveId; })
+    .sort(function(a,b){ return txt(a.creeJour).localeCompare(txt(b.creeJour)); })
+    .forEach(function(r){
+      var m = /^(.*?)\s+(\S)\.$/.exec(txt(r.eleveNom).trim());
+      if(!parEleve[r.eleveId]) ordre.push(r.eleveId);
+      parEleve[r.eleveId] = {
+        id:r.eleveId, prenom: m ? m[1] : txt(r.eleveNom).trim(), nom: m ? m[2] : "",
+        classe:txt(r.classe), heures:txt(r.heures),
+        etablissement: txt(format==="suivi-aesh/2" ? r.etablissement : d.etablissement),
+        modalite: r.modalite==="Mutualisé" ? "Mutualisé" : "Individuel",
+        copartage: parseInt(r.copartage,10)||1,
+        matieres: Array.isArray(r.matieres) ? r.matieres.slice() : [],
+        notes:note, reconstruite:true
+      };
+    });
+  var trouves = ordre.map(function(k){ return parEleve[k]; });
+  var nouveaux = trouves.filter(function(e){ return !eleveParId(e.id); });
+  return { trouves:trouves.length, nouveaux:nouveaux, genere:genere };
+}
+$("g-transmission").addEventListener("click",function(){ $("g-fichier-transmission").click(); });
+$("g-fichier-transmission").addEventListener("change",function(){
+  var f=this.files[0]; if(!f) return;
+  var lecteur=new FileReader();
+  lecteur.onload=function(){
+    fermerRestauration();
+    var a=analyserTransmission(lecteur.result);
+    if(a.erreur){ erreurRestauration(a.erreur); return; }
+    if(!a.trouves){ erreurRestauration("Ce fichier de transmission ne contient aucun élève."); return; }
+    if(!a.nouveaux.length){ erreurRestauration("Les "+pluriel(a.trouves,"élève")+" de ce fichier sont déjà dans l'application : rien à ajouter."); return; }
+    var dejaLa = a.trouves-a.nouveaux.length;
+    var msg = "Reconstruire depuis la transmission"+(a.genere?" du "+jour(a.genere):"")+" ?\n\n"
+      +pluriel(a.trouves,"élève")+" dans ce fichier : "+pluriel(a.nouveaux.length,"fiche")+" à ajouter"
+      +(dejaLa?", "+dejaLa+" déjà présent"+(dejaLa>1?"s":"")+" laissé"+(dejaLa>1?"s":"")+" tel"+(dejaLa>1?"s":"")+" quel"+(dejaLa>1?"s":""):"")+".\n\n"
+      +"Attention : les noms de famille (seule l'initiale figure dans la transmission) et les notes personnelles ne peuvent pas être récupérés. Les rapports ne sont pas importés.";
+    confirmationForte(msg, function(){
+      var d=copie(db);
+      a.nouveaux.forEach(function(e){
+        d.eleves.push(e);
+        if(e.etablissement && d.reglages.etablissements.indexOf(e.etablissement)<0) d.reglages.etablissements.push(e.etablissement);
+      });
+      migrerEtablissements(d);
+      adopterDonnees(d);
+      toast(pluriel(a.nouveaux.length,"élève")+" ajouté"+(a.nouveaux.length>1?"s":"")+". Complétez le nom de famille dans chaque fiche.");
+    }, "Ajouter les élèves");
+  };
+  lecteur.onerror=function(){ erreurRestauration("Impossible de lire ce fichier. Rien n'a été modifié."); };
+  lecteur.readAsText(f); this.value="";
 });
 
 $("g-effacer").addEventListener("click",function(){

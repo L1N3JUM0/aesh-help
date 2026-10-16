@@ -328,6 +328,14 @@ hr.regle{border:none;border-top:1px solid var(--seyes);margin:18px 0}
       <h2>Mes élèves</h2>
       <p class="chapeau" id="chapeau-eleves"></p>
       <div class="note alerte" id="alerte-transmission" hidden></div>
+      <div class="note" id="rappel-sauvegarde" hidden>
+        <span id="rappel-sauvegarde-texte"></span>
+        <span style="display:block">
+          <button type="button" class="btn-lien" id="rs-sauver">Sauvegarder maintenant</button>
+          &nbsp;·&nbsp;
+          <button type="button" class="btn-lien" id="rs-masquer">Masquer</button>
+        </span>
+      </div>
       <div id="liste-eleves"></div>
       <div class="actions">
         <button type="button" class="btn btn-vide" id="btn-nouvel-eleve">Ajouter un élève</button>
@@ -612,6 +620,7 @@ hr.regle{border:none;border-top:1px solid var(--seyes);margin:18px 0}
       <p class="chapeau">Tout est stocké dans cet appareil, rien n'est envoyé sur internet. Si vous changez d'appareil ou effacez les données du navigateur, tout est perdu&nbsp;: faites une sauvegarde régulièrement.</p>
       <div id="etat-stockage"></div>
       <div class="note" id="bandeau-persistance" hidden>Votre navigateur n'a pas garanti la conservation de vos données&nbsp;: il pourrait les effacer en cas de manque de place ou de nettoyage automatique. Pour les protéger, installez l'application sur l'écran d'accueil (voir le guide d'utilisation) et faites une sauvegarde régulièrement.</div>
+      <p class="aide" id="s-derniere"></p>
       <div class="actions">
         <button type="button" class="btn btn-plein" id="g-sauvegarder">Sauvegarder mes données</button>
         <p class="aide" style="margin:0">La sauvegarde contient tout&nbsp;: noms complets, notes personnelles, rapports et réglages. Elle vous est destinée, ne la transmettez pas au PIAL. Rangez-la comme un document professionnel confidentiel.</p>
@@ -839,6 +848,7 @@ function rendreAccueil(){
   var etabs = db.reglages.etablissements||[];
   $("lieu").textContent = etabs.length===1 ? etabs[0] : "";
   majAlerteTransmission();
+  majRappelSauvegarde();
   var hote=$("liste-eleves"); hote.innerHTML="";
   var etabsMultiples = etabs.length>1;
   if(!db.eleves.length){
@@ -888,6 +898,30 @@ function majAlerteTransmission(){
   hote.hidden=false;
   hote.textContent = enRetard.length+" rapport"+(enRetard.length>1?"s":"")+" en attente de transmission au PIAL.";
 }
+
+// rappel discret si aucune sauvegarde depuis plus de 30 jours (ou jamais) ;
+// « Masquer » le fait taire 7 jours, il revient ensuite tant qu'aucune
+// sauvegarde n'a été faite. Rien à rappeler tant qu'il n'y a aucun élève.
+var RAPPEL_SAUVEGARDE_JOURS = 30, RAPPEL_SAUVEGARDE_SILENCE = 7;
+function joursDepuis(iso){
+  return Math.round((new Date(isoJour(new Date())+"T00:00:00") - new Date(iso+"T00:00:00"))/864e5);
+}
+function majRappelSauvegarde(){
+  var hote=$("rappel-sauvegarde"), derniere=db.reglages.derniereSauvegarde, masque=db.reglages.rappelSauvegardeMasqueLe;
+  var aJour = derniere && joursDepuis(derniere)<=RAPPEL_SAUVEGARDE_JOURS;
+  var silence = masque && joursDepuis(masque)<RAPPEL_SAUVEGARDE_SILENCE;
+  if(!db.eleves.length || aJour || silence){ hote.hidden=true; return; }
+  hote.hidden=false;
+  $("rappel-sauvegarde-texte").textContent = (derniere
+    ? "Dernière sauvegarde de vos données le "+jour(derniere)+", il y a "+joursDepuis(derniere)+" jours."
+    : "Vous n'avez encore jamais sauvegardé vos données.")
+    +" Un nettoyage du navigateur peut tout effacer.";
+}
+$("rs-sauver").addEventListener("click",function(){ sauvegarder(); });
+$("rs-masquer").addEventListener("click",function(){
+  db.reglages.rappelSauvegardeMasqueLe = isoJour(new Date());
+  sauver(); majRappelSauvegarde();
+});
 
 /* =============== fiche élève =============== */
 var ficheId=null, pModalite, pMatieres, pEtablissement;
@@ -1445,6 +1479,7 @@ function ouvrirReglages(){
   });
   verifierPersistance();
   fermerRestauration();
+  majDerniereSauvegarde();
   $("etat-stockage").innerHTML = stockageOk ? "" :
     '<div class="note alerte">La sauvegarde ne fonctionne pas ici : vos données disparaîtront en fermant la page. Téléchargez le fichier et ouvrez-le depuis votre téléphone, ou hébergez-le sur une adresse web.</div>';
   var n=db.rapports.length, blocArchivage=$("bloc-archivage");
@@ -1487,6 +1522,9 @@ $("g-rappel-libre").addEventListener("input",function(){
 var FORMAT_SAUVEGARDE = "suivi-aesh-backup/1";
 function sauvegarder(){
   var maintenant = new Date(), jourIso = isoJour(maintenant);
+  // posée avant l'export pour que la sauvegarde elle-même la contienne
+  db.reglages.derniereSauvegarde = jourIso;
+  sauver();
   var contenu = {
     format:FORMAT_SAUVEGARDE, exporte_le:maintenant.toISOString(),
     application:"Suivi AESH",
@@ -1496,6 +1534,11 @@ function sauvegarder(){
   var nom = "sauvegarde_suivi-aesh_"+jourIso+".json";
   telecharger(nom, JSON.stringify(contenu,null,2), "application/json");
   toast("Sauvegarde téléchargée : "+nom);
+  majRappelSauvegarde(); majDerniereSauvegarde();
+}
+function majDerniereSauvegarde(){
+  var d=db.reglages.derniereSauvegarde;
+  $("s-derniere").textContent = d ? "Dernière sauvegarde : le "+jour(d)+"." : "Aucune sauvegarde enregistrée pour l'instant.";
 }
 $("g-sauvegarder").addEventListener("click",sauvegarder);
 /* restauration : lecture et validation du fichier, puis choix explicite
@@ -1579,6 +1622,7 @@ function fusionner(courant, sauvegarde){
     union(d.investPerso[k], sauvegarde.investPerso[k]);
   });
   ["aesh","coordo"].forEach(function(k){ if(!d.reglages[k] && sauvegarde.reglages[k]) d.reglages[k]=sauvegarde.reglages[k]; });
+  if(txt(sauvegarde.reglages.derniereSauvegarde) > txt(d.reglages.derniereSauvegarde)) d.reglages.derniereSauvegarde = sauvegarde.reglages.derniereSauvegarde;
   migrerEtablissements(d);
   return { donnees:d, stats:st };
 }

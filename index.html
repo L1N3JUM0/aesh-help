@@ -609,11 +609,12 @@ hr.regle{border:none;border-top:1px solid var(--seyes);margin:18px 0}
 
     <div class="feuille">
       <h2>Sauvegarde</h2>
-      <p class="chapeau">Tout est stocké dans ce téléphone, rien n'est envoyé sur internet. Si vous changez d'appareil ou effacez les données du navigateur, tout est perdu&nbsp;: pensez à exporter de temps en temps.</p>
+      <p class="chapeau">Tout est stocké dans cet appareil, rien n'est envoyé sur internet. Si vous changez d'appareil ou effacez les données du navigateur, tout est perdu&nbsp;: faites une sauvegarde régulièrement.</p>
       <div id="etat-stockage"></div>
       <div class="note" id="bandeau-persistance" hidden>Votre navigateur n'a pas garanti la conservation de vos données&nbsp;: il pourrait les effacer en cas de manque de place ou de nettoyage automatique. Pour les protéger, installez l'application sur l'écran d'accueil (voir le guide d'utilisation) et faites une sauvegarde régulièrement.</div>
       <div class="actions">
-        <button type="button" class="btn btn-vide" id="g-export">Exporter mes données</button>
+        <button type="button" class="btn btn-plein" id="g-sauvegarder">Sauvegarder mes données</button>
+        <p class="aide" style="margin:0">La sauvegarde contient tout&nbsp;: noms complets, notes personnelles, rapports et réglages. Elle vous est destinée, ne la transmettez pas au PIAL. Rangez-la comme un document professionnel confidentiel.</p>
         <button type="button" class="btn btn-vide" id="g-import">Importer une sauvegarde</button>
         <input type="file" id="g-fichier" accept="application/json,.json" hidden>
         <button type="button" class="btn btn-danger" id="g-effacer">Tout effacer</button>
@@ -1446,10 +1447,23 @@ $("g-rappel-libre").addEventListener("input",function(){
   db.reglages.rappelJoursLibre = parseInt(this.value,10)||14;
   sauver(); rendreAccueil();
 });
-$("g-export").addEventListener("click",function(){
-  telecharger("sauvegarde-suivi-aesh-"+isoJour(new Date())+".json", JSON.stringify(db,null,2), "application/json");
-  toast("Sauvegarde téléchargée.");
-});
+/* sauvegarde complète : destinée à l'AESH elle-même, elle contient tout
+   (noms complets, notes personnelles), contrairement à la transmission PIAL.
+   L'en-tête "format" la distingue sans ambiguïté des fichiers suivi-aesh/N. */
+var FORMAT_SAUVEGARDE = "suivi-aesh-backup/1";
+function sauvegarder(){
+  var maintenant = new Date(), jourIso = isoJour(maintenant);
+  var contenu = {
+    format:FORMAT_SAUVEGARDE, exporte_le:maintenant.toISOString(),
+    application:"Suivi AESH",
+    compteurs:{ eleves:db.eleves.length, rapports:db.rapports.length },
+    donnees:db
+  };
+  var nom = "sauvegarde_suivi-aesh_"+jourIso+".json";
+  telecharger(nom, JSON.stringify(contenu,null,2), "application/json");
+  toast("Sauvegarde téléchargée : "+nom);
+}
+$("g-sauvegarder").addEventListener("click",sauvegarder);
 $("g-import").addEventListener("click",function(){ $("g-fichier").click(); });
 $("g-fichier").addEventListener("change",function(){
   var f=this.files[0]; if(!f) return;

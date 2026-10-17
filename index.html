@@ -208,7 +208,7 @@ input:focus,select:focus,textarea:focus{
   padding:20px;max-width:380px;width:100%;
   box-shadow:0 4px 24px rgba(0,0,0,.3);
 }
-.modale p{margin:0 0 18px;font-size:15px;line-height:1.45;color:var(--texte)}
+.modale p{margin:0 0 18px;font-size:15px;line-height:1.45;color:var(--texte);white-space:pre-line}
 .masque{display:none}
 hr.regle{border:none;border-top:1px solid var(--seyes);margin:18px 0}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
@@ -328,6 +328,14 @@ hr.regle{border:none;border-top:1px solid var(--seyes);margin:18px 0}
       <h2>Mes élèves</h2>
       <p class="chapeau" id="chapeau-eleves"></p>
       <div class="note alerte" id="alerte-transmission" hidden></div>
+      <div class="note" id="rappel-sauvegarde" hidden>
+        <span id="rappel-sauvegarde-texte"></span>
+        <span style="display:block">
+          <button type="button" class="btn-lien" id="rs-sauver">Sauvegarder maintenant</button>
+          &nbsp;·&nbsp;
+          <button type="button" class="btn-lien" id="rs-masquer">Masquer</button>
+        </span>
+      </div>
       <div id="liste-eleves"></div>
       <div class="actions">
         <button type="button" class="btn btn-vide" id="btn-nouvel-eleve">Ajouter un élève</button>
@@ -609,12 +617,35 @@ hr.regle{border:none;border-top:1px solid var(--seyes);margin:18px 0}
 
     <div class="feuille">
       <h2>Sauvegarde</h2>
-      <p class="chapeau">Tout est stocké dans ce téléphone, rien n'est envoyé sur internet. Si vous changez d'appareil ou effacez les données du navigateur, tout est perdu&nbsp;: pensez à exporter de temps en temps.</p>
+      <p class="chapeau">Tout est stocké dans cet appareil, rien n'est envoyé sur internet. Si vous changez d'appareil ou effacez les données du navigateur, tout est perdu&nbsp;: faites une sauvegarde régulièrement.</p>
       <div id="etat-stockage"></div>
+      <div class="note" id="bandeau-persistance" hidden>Votre navigateur n'a pas garanti la conservation de vos données&nbsp;: il pourrait les effacer en cas de manque de place ou de nettoyage automatique. Pour les protéger, installez l'application sur l'écran d'accueil (voir le guide d'utilisation) et faites une sauvegarde régulièrement.</div>
+      <p class="aide" id="s-derniere"></p>
       <div class="actions">
-        <button type="button" class="btn btn-vide" id="g-export">Exporter mes données</button>
-        <button type="button" class="btn btn-vide" id="g-import">Importer une sauvegarde</button>
+        <button type="button" class="btn btn-plein" id="g-sauvegarder">Sauvegarder mes données</button>
+        <p class="aide" style="margin:0">La sauvegarde contient tout&nbsp;: noms complets, notes personnelles, rapports et réglages. Elle vous est destinée, ne la transmettez pas au PIAL. Rangez-la comme un document professionnel confidentiel.</p>
+        <button type="button" class="btn btn-vide" id="g-restaurer">Restaurer une sauvegarde</button>
         <input type="file" id="g-fichier" accept="application/json,.json" hidden>
+      </div>
+      <div class="note alerte" id="s-erreur" hidden style="margin-top:14px"></div>
+      <div id="s-restauration" hidden style="margin-top:18px">
+        <div class="note" id="s-resume"></div>
+        <div class="champ">
+          <span class="legende">Que faire des données actuelles&nbsp;?</span>
+          <div class="pastilles" id="s-mode"></div>
+          <p class="aide" id="s-mode-aide" style="margin-top:8px"></p>
+        </div>
+        <div class="actions-2">
+          <button type="button" class="btn btn-vide" id="s-annuler">Annuler</button>
+          <button type="button" class="btn btn-plein" id="s-restaurer">Restaurer</button>
+        </div>
+      </div>
+      <hr class="regle">
+      <span class="legende">Pas de sauvegarde&nbsp;?</span>
+      <p class="aide">Vous pouvez reconstruire une partie de la liste de vos élèves à partir d'un fichier de transmission au PIAL (transmission_….json). Les noms de famille et les notes personnelles n'y figurent pas&nbsp;: ils ne pourront pas être récupérés.</p>
+      <button type="button" class="btn btn-vide" id="g-transmission">Reconstruire depuis une transmission</button>
+      <input type="file" id="g-fichier-transmission" accept="application/json,.json" hidden>
+      <div class="actions">
         <button type="button" class="btn btn-danger" id="g-effacer">Tout effacer</button>
       </div>
     </div>
@@ -645,28 +676,41 @@ try { localStorage.setItem("_t","1"); localStorage.removeItem("_t"); } catch(e){
 function lire(){ try { return stockageOk ? localStorage.getItem(CLE) : memoire[CLE]; } catch(e){ return null; } }
 function ecrire(v){ try { stockageOk ? localStorage.setItem(CLE,v) : (memoire[CLE]=v); } catch(e){ stockageOk=false; memoire[CLE]=v; } }
 
-var DEFAUT = { reglages:{aesh:"",etablissements:[],coordo:"",anonyme:true,rappelType:"Quinzaine",rappelJoursLibre:14}, eleves:[], rapports:[], matieresPerso:[], accompPerso:[], investPerso:{} };
-var db;
-try { db = Object.assign({}, DEFAUT, JSON.parse(lire()||"{}")); } catch(e){ db = JSON.parse(JSON.stringify(DEFAUT)); }
-["eleves","rapports","matieresPerso","accompPerso"].forEach(function(k){ if(!Array.isArray(db[k])) db[k]=[]; });
-db.reglages = Object.assign({}, DEFAUT.reglages, db.reglages||{});
+// reglages.etablissements est volontairement absent : migrerEtablissements()
+// le crée (en reprenant l'ancien champ "etab" s'il existe).
+var DEFAUT = { reglages:{aesh:"",coordo:"",anonyme:true,rappelType:"Quinzaine",rappelJoursLibre:14}, eleves:[], rapports:[], matieresPerso:[], accompPerso:[], investPerso:{} };
+function copie(o){ return JSON.parse(JSON.stringify(o)); }
+
+// remet d'aplomb des données brutes (localStorage ou fichier de sauvegarde) :
+// champs manquants complétés par des copies de DEFAUT (jamais partagées),
+// migration multi-établissement appliquée.
+function normaliser(brut){
+  var d = Object.assign(copie(DEFAUT), (brut && typeof brut==="object" && !Array.isArray(brut)) ? brut : {});
+  ["eleves","rapports","matieresPerso","accompPerso"].forEach(function(k){ if(!Array.isArray(d[k])) d[k]=[]; });
+  d.reglages = Object.assign(copie(DEFAUT.reglages), (d.reglages && typeof d.reglages==="object") ? d.reglages : {});
+  if(!d.investPerso || typeof d.investPerso!=="object" || Array.isArray(d.investPerso)) d.investPerso={};
+  migrerEtablissements(d);
+  return d;
+}
 
 // migration depuis l'établissement unique (avant passage au multi-établissement) :
 // l'ancien champ reglages.etab devient le premier de la liste, et tout élève
 // sans établissement s'y rattache automatiquement — aucune perte, aucune
 // ressaisie. Idempotent : sans traces de l'ancien format, ne fait rien.
-function migrerEtablissements(){
-  if(!Array.isArray(db.reglages.etablissements)){
-    var ancien = String(db.reglages.etab==null?"":db.reglages.etab).trim();
-    db.reglages.etablissements = ancien ? [ancien] : [];
+function migrerEtablissements(d){
+  if(!Array.isArray(d.reglages.etablissements)){
+    var ancien = String(d.reglages.etab==null?"":d.reglages.etab).trim();
+    d.reglages.etablissements = ancien ? [ancien] : [];
   }
-  if(db.reglages.etablissements.length){
-    var premier = db.reglages.etablissements[0];
-    db.eleves.forEach(function(e){ if(!e.etablissement) e.etablissement = premier; });
+  if(d.reglages.etablissements.length){
+    var premier = d.reglages.etablissements[0];
+    d.eleves.forEach(function(e){ if(!e.etablissement) e.etablissement = premier; });
   }
-  delete db.reglages.etab;
+  delete d.reglages.etab;
 }
-migrerEtablissements();
+
+var db;
+try { db = normaliser(JSON.parse(lire()||"{}")); } catch(e){ db = normaliser({}); }
 
 function sauver(){ ecrire(JSON.stringify(db)); }
 
@@ -687,7 +731,9 @@ var RELATIONS = [
   {v:"Difficile", d:"à retravailler"}
 ];
 var PERIODES = ["Semaine","Quinzaine","Mois","Trimestre"];
-var MODALITES = ["Individuel","Mutualisé"];
+// "ULIS" : élève suivi au sein du dispositif ULIS (collectif). Distinct de
+// "Mutualisé" pour ne pas fausser les statistiques individuel/mutualisé.
+var MODALITES = ["Individuel","Mutualisé","ULIS"];
 
 var RAPPELS = ["Jour","Semaine","Quinzaine","Mois","Période libre"];
 var RAPPEL_JOURS = {"Jour":1,"Semaine":7,"Quinzaine":14,"Mois":30};
@@ -718,16 +764,19 @@ var INVEST_GROUPES = [
     "Tensions avec les camarades","S'intègre bien au groupe"
   ]}
 ];
-if(!db.investPerso || typeof db.investPerso!=="object" || Array.isArray(db.investPerso)) db.investPerso={};
-INVEST_GROUPES.forEach(function(g){ if(!Array.isArray(db.investPerso[g.id])) db.investPerso[g.id]=[]; });
+function completerInvest(d){
+  INVEST_GROUPES.forEach(function(g){ if(!Array.isArray(d.investPerso[g.id])) d.investPerso[g.id]=[]; });
+}
+completerInvest(db);
 
 /* =============== utilitaires =============== */
 function $(id){ return document.getElementById(id); }
 function txt(s){ return String(s==null?"":s); }
 function toast(m){ var t=$("toast"); t.textContent=m; t.classList.add("on"); clearTimeout(t._t); t._t=setTimeout(function(){t.classList.remove("on");},2400); }
-function confirmationForte(message, cb){
+function confirmationForte(message, cb, libelle){
   var voile=$("voile-confirmation"), btnOk=$("modale-confirmer"), btnAnnuler=$("modale-annuler");
   $("modale-message").textContent=message;
+  btnOk.textContent=libelle||"Supprimer définitivement";
   voile.hidden=false;
   function nettoyer(){ voile.hidden=true; btnOk.removeEventListener("click",surConfirmer); btnAnnuler.removeEventListener("click",surAnnuler); }
   function surConfirmer(){ nettoyer(); cb(); }
@@ -744,6 +793,7 @@ function anneeScolaire(iso){
 }
 function isoJour(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
 function sansAccent(s){ return s.normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^A-Za-z0-9]+/g,"-").replace(/^-|-$/g,""); }
+function pluriel(n, mot){ return n+" "+mot+(n>1?"s":""); }
 function id(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 
 function nomAffiche(el){
@@ -805,6 +855,7 @@ function rendreAccueil(){
   var etabs = db.reglages.etablissements||[];
   $("lieu").textContent = etabs.length===1 ? etabs[0] : "";
   majAlerteTransmission();
+  majRappelSauvegarde();
   var hote=$("liste-eleves"); hote.innerHTML="";
   var etabsMultiples = etabs.length>1;
   if(!db.eleves.length){
@@ -815,7 +866,7 @@ function rendreAccueil(){
     db.eleves.forEach(function(el){
       var b=document.createElement("button");
       b.type="button"; b.className="eleve";
-      var mod = el.modalite==="Mutualisé" ? "mutualisé" : "individuel";
+      var mod = el.modalite==="Mutualisé" ? "mutualisé" : el.modalite==="ULIS" ? "ULIS" : "individuel";
       var meta = (el.classe?el.classe+" · ":"")+mod+(etabsMultiples&&el.etablissement?" · "+el.etablissement:"");
       b.innerHTML = '<span class="initiales">'+initiales(el)+'</span>'+
         '<span><span class="nom">'+nomAffiche(el)+'</span><br>'+
@@ -854,6 +905,30 @@ function majAlerteTransmission(){
   hote.hidden=false;
   hote.textContent = enRetard.length+" rapport"+(enRetard.length>1?"s":"")+" en attente de transmission au PIAL.";
 }
+
+// rappel discret si aucune sauvegarde depuis plus de 30 jours (ou jamais) ;
+// « Masquer » le fait taire 7 jours, il revient ensuite tant qu'aucune
+// sauvegarde n'a été faite. Rien à rappeler tant qu'il n'y a aucun élève.
+var RAPPEL_SAUVEGARDE_JOURS = 30, RAPPEL_SAUVEGARDE_SILENCE = 7;
+function joursDepuis(iso){
+  return Math.round((new Date(isoJour(new Date())+"T00:00:00") - new Date(iso+"T00:00:00"))/864e5);
+}
+function majRappelSauvegarde(){
+  var hote=$("rappel-sauvegarde"), derniere=db.reglages.derniereSauvegarde, masque=db.reglages.rappelSauvegardeMasqueLe;
+  var aJour = derniere && joursDepuis(derniere)<=RAPPEL_SAUVEGARDE_JOURS;
+  var silence = masque && joursDepuis(masque)<RAPPEL_SAUVEGARDE_SILENCE;
+  if(!db.eleves.length || aJour || silence){ hote.hidden=true; return; }
+  hote.hidden=false;
+  $("rappel-sauvegarde-texte").textContent = (derniere
+    ? "Dernière sauvegarde de vos données le "+jour(derniere)+", il y a "+joursDepuis(derniere)+" jours."
+    : "Vous n'avez encore jamais sauvegardé vos données.")
+    +" Un nettoyage du navigateur peut tout effacer.";
+}
+$("rs-sauver").addEventListener("click",function(){ sauvegarder(); });
+$("rs-masquer").addEventListener("click",function(){
+  db.reglages.rappelSauvegardeMasqueLe = isoJour(new Date());
+  sauver(); majRappelSauvegarde();
+});
 
 /* =============== fiche élève =============== */
 var ficheId=null, pModalite, pMatieres, pEtablissement;
@@ -902,10 +977,10 @@ $("f-enregistrer").addEventListener("click",function(){
     heures:$("f-heures").value.trim(), notes:$("f-notes").value,
     etablissement:etablissement,
     modalite:pModalite.get()||"Individuel", copartage:parseInt($("f-copartage").value,10)||1,
-    matieres:pMatieres.get()
+    matieres:pMatieres.get(), modifie:new Date().toISOString()
   };
   if(ficheId){
-    db.eleves.forEach(function(e,i){ if(e.id===ficheId) db.eleves[i]=Object.assign(e,donnees); });
+    db.eleves.forEach(function(e,i){ if(e.id===ficheId){ db.eleves[i]=Object.assign(e,donnees); delete e.reconstruite; } });
   } else {
     donnees.id=id(); db.eleves.push(donnees);
   }
@@ -1008,7 +1083,7 @@ function ouvrirRapport(eid){
                  .sort(function(a,b){return b.cree.localeCompare(a.cree);})[0];
 
   $("titre-rapport").textContent = "Rapport — "+nomAffiche(rapportEleve);
-  var mod = rapportEleve.modalite==="Mutualisé" ? "accompagnement mutualisé" : "accompagnement individuel";
+  var mod = rapportEleve.modalite==="Mutualisé" ? "accompagnement mutualisé" : rapportEleve.modalite==="ULIS" ? "accompagnement en ULIS" : "accompagnement individuel";
   $("chapeau-rapport").innerHTML = (rapportEleve.classe?rapportEleve.classe+" · ":"")+mod+
     ' &nbsp;<button type="button" class="btn-lien" id="lien-fiche">modifier la fiche</button>';
   $("lien-fiche").addEventListener("click",function(){ ouvrirFiche(rapportEleve.id); });
@@ -1066,6 +1141,7 @@ $("a-accueil").addEventListener("click",function(){ rendreAccueil(); vue("vue-el
 var rapportCourant=null;
 
 function texteModalite(r){
+  if(r.modalite==="ULIS") return "ULIS";
   return r.modalite==="Mutualisé"
     ? "Mutualisé (partagé avec "+r.copartage+" autre"+(r.copartage>1?"s":"")+" élève"+(r.copartage>1?"s":"")+")"
     : "Individuel";
@@ -1337,7 +1413,8 @@ $("tc-mail").addEventListener("click",function(){
 $("tc-confirmer").addEventListener("click",function(){
   var t=transmissionEnCours; if(!t) return;
   var idsAMarquer={}; t.ids.forEach(function(i){ idsAMarquer[i]=true; });
-  db.rapports.forEach(function(r){ if(idsAMarquer[r.id]) r.transmisLe=t.date; });
+  var maintenant=new Date().toISOString();
+  db.rapports.forEach(function(r){ if(idsAMarquer[r.id]){ r.transmisLe=t.date; r.modifie=maintenant; } });
   sauver();
   transmissionEnCours=null;
   rendreAccueil(); vue("vue-eleves");
@@ -1408,6 +1485,9 @@ function ouvrirReglages(){
       rendreAccueil();
     }
   });
+  verifierPersistance();
+  fermerRestauration();
+  majDerniereSauvegarde();
   $("etat-stockage").innerHTML = stockageOk ? "" :
     '<div class="note alerte">La sauvegarde ne fonctionne pas ici : vos données disparaîtront en fermant la page. Téléchargez le fichier et ouvrez-le depuis votre téléphone, ou hébergez-le sur une adresse web.</div>';
   var n=db.rapports.length, blocArchivage=$("bloc-archivage");
@@ -1444,36 +1524,304 @@ $("g-rappel-libre").addEventListener("input",function(){
   db.reglages.rappelJoursLibre = parseInt(this.value,10)||14;
   sauver(); rendreAccueil();
 });
-$("g-export").addEventListener("click",function(){
-  telecharger("sauvegarde-suivi-aesh-"+isoJour(new Date())+".json", JSON.stringify(db,null,2), "application/json");
-  toast("Sauvegarde téléchargée.");
-});
-$("g-import").addEventListener("click",function(){ $("g-fichier").click(); });
+/* sauvegarde complète : destinée à l'AESH elle-même, elle contient tout
+   (noms complets, notes personnelles), contrairement à la transmission PIAL.
+   L'en-tête "format" la distingue sans ambiguïté des fichiers suivi-aesh/N. */
+var FORMAT_SAUVEGARDE = "suivi-aesh-backup/1";
+function sauvegarder(){
+  var maintenant = new Date(), jourIso = isoJour(maintenant);
+  // posée avant l'export pour que la sauvegarde elle-même la contienne
+  db.reglages.derniereSauvegarde = jourIso;
+  sauver();
+  var contenu = {
+    format:FORMAT_SAUVEGARDE, exporte_le:maintenant.toISOString(),
+    application:"Suivi AESH",
+    compteurs:{ eleves:db.eleves.length, rapports:db.rapports.length },
+    donnees:db
+  };
+  var nom = "sauvegarde_suivi-aesh_"+jourIso+".json";
+  telecharger(nom, JSON.stringify(contenu,null,2), "application/json");
+  toast("Sauvegarde téléchargée : "+nom);
+  majRappelSauvegarde(); majDerniereSauvegarde();
+}
+function majDerniereSauvegarde(){
+  var d=db.reglages.derniereSauvegarde;
+  $("s-derniere").textContent = d ? "Dernière sauvegarde : le "+jour(d)+"." : "Aucune sauvegarde enregistrée pour l'instant.";
+}
+$("g-sauvegarder").addEventListener("click",sauvegarder);
+/* restauration : lecture et validation du fichier, puis choix explicite
+   Remplacer / Fusionner, puis confirmation renforcée avec les compteurs
+   exacts. Rien n'est écrit avant cette confirmation. */
+var MSG_PAS_SAUVEGARDE = "Ce fichier n'est pas une sauvegarde Suivi AESH. Choisissez un fichier sauvegarde_suivi-aesh_AAAA-MM-JJ.json créé par « Sauvegarder mes données ».";
+var MSG_TRANSMISSION = "Ce fichier est une transmission au PIAL, pas une sauvegarde. Il ne contient ni les noms de famille ni vos notes personnelles, et ne permet pas de restaurer l'application. Pour retrouver une partie de vos élèves à partir de ce fichier, utilisez « Reconstruire depuis une transmission » plus bas.";
+
+// renvoie {erreur} ou {donnees, exporteLe, ancienne, ignores}
+function analyserSauvegarde(texte){
+  var d;
+  try{ d=JSON.parse(texte); }catch(e){ return {erreur:"Ce fichier est illisible : ce n'est pas un fichier JSON valide, ou il est endommagé. Rien n'a été modifié."}; }
+  if(!d || typeof d!=="object" || Array.isArray(d)) return {erreur:MSG_PAS_SAUVEGARDE};
+  var format = typeof d.format==="string" ? d.format : "";
+  if(/^suivi-aesh\/\d+$/.test(format)) return {erreur:MSG_TRANSMISSION};
+  if(/^pial-suivi\//.test(format)) return {erreur:"Ce fichier est un export de l'espace coordonnateur PIAL, pas une sauvegarde de votre application."};
+  var m = /^suivi-aesh-backup\/(\d+)$/.exec(format), donnees, ancienne=false;
+  if(m){
+    if(parseInt(m[1],10)>1) return {erreur:"Cette sauvegarde a été créée par une version plus récente de l'application ("+format+"). Rechargez l'application avec du réseau pour la mettre à jour, puis réessayez."};
+    donnees = d.donnees;
+  } else if(!format && Array.isArray(d.eleves) && d.reglages && typeof d.reglages==="object"){
+    // ancien « Exporter mes données » (avant l'en-tête versionné) : même
+    // contenu complet, simplement sans enveloppe. Accepté pour ne pas laisser
+    // sans recours celles qui ont suivi l'ancienne consigne.
+    donnees = d; ancienne = true;
+  } else {
+    return {erreur:MSG_PAS_SAUVEGARDE};
+  }
+  if(!donnees || typeof donnees!=="object" || !Array.isArray(donnees.eleves) || (donnees.rapports!=null && !Array.isArray(donnees.rapports))){
+    return {erreur:"Cette sauvegarde est incomplète ou endommagée : la liste des élèves est introuvable. Rien n'a été modifié."};
+  }
+  donnees = copie(donnees);
+  var ignores = 0;
+  function valide(x){
+    var ok = !!(x && typeof x==="object" && typeof x.id==="string" && x.id);
+    if(!ok) ignores++;
+    return ok;
+  }
+  donnees.eleves = donnees.eleves.filter(valide);
+  donnees.rapports = (donnees.rapports||[]).filter(valide);
+  donnees.rapports.forEach(function(r){
+    if(typeof r.cree!=="string") r.cree = txt(r.creeJour);
+    if(!Array.isArray(r.accomp)) r.accomp=[];
+    if(!Array.isArray(r.matieres)) r.matieres=[];
+  });
+  var exporte = m && d.exporte_le ? new Date(d.exporte_le) : null;
+  return { donnees:normaliser(donnees), exporteLe: exporte && !isNaN(exporte) ? isoJour(exporte) : "", ancienne:ancienne, ignores:ignores };
+}
+
+// fusion : dédoublonnage par identifiant. Un élément présent des deux côtés
+// n'est remplacé que si la version de la sauvegarde est strictement plus
+// récente (modifie, à défaut cree) ; rien n'est jamais supprimé.
+function horodatage(x){ return txt(x.modifie||x.cree); }
+function fusionner(courant, sauvegarde){
+  var d = copie(courant);
+  var st = { elevesAjoutes:0, elevesRemplaces:0, elevesConserves:0, rapportsAjoutes:0, rapportsRemplaces:0, rapportsConserves:0 };
+  function fusionListe(cible, source, cle, completer){
+    var index={};
+    cible.forEach(function(x,i){ index[x.id]=i; });
+    source.forEach(function(x){
+      var i=index[x.id];
+      if(i===undefined){ index[x.id]=cible.length; cible.push(copie(x)); st[cle+"Ajoutes"]++; }
+      else if(horodatage(x) > horodatage(cible[i]) || (cible[i].reconstruite && !x.reconstruite)){ cible[i]=copie(x); st[cle+"Remplaces"]++; }
+      else { st[cle+"Conserves"]++; if(completer) completer(cible[i], x); }
+    });
+  }
+  function union(cible, source){
+    (source||[]).forEach(function(v){ if(cible.indexOf(v)<0) cible.push(v); });
+  }
+  fusionListe(d.eleves, sauvegarde.eleves, "eleves");
+  // un rapport conservé reste tel quel, mais s'il n'est connu comme transmis
+  // que dans la sauvegarde, on reprend cette date : c'est un fait, pas une version.
+  fusionListe(d.rapports, sauvegarde.rapports, "rapports", function(local, sauv){
+    if(!local.transmisLe && sauv.transmisLe) local.transmisLe = sauv.transmisLe;
+  });
+  union(d.matieresPerso, sauvegarde.matieresPerso);
+  union(d.accompPerso, sauvegarde.accompPerso);
+  union(d.reglages.etablissements, sauvegarde.reglages.etablissements);
+  Object.keys(sauvegarde.investPerso||{}).forEach(function(k){
+    if(!Array.isArray(d.investPerso[k])) d.investPerso[k]=[];
+    union(d.investPerso[k], sauvegarde.investPerso[k]);
+  });
+  ["aesh","coordo"].forEach(function(k){ if(!d.reglages[k] && sauvegarde.reglages[k]) d.reglages[k]=sauvegarde.reglages[k]; });
+  if(txt(sauvegarde.reglages.derniereSauvegarde) > txt(d.reglages.derniereSauvegarde)) d.reglages.derniereSauvegarde = sauvegarde.reglages.derniereSauvegarde;
+  migrerEtablissements(d);
+  return { donnees:d, stats:st };
+}
+
+function adopterDonnees(d){
+  db = d; completerInvest(db);
+  sauver(); rendreAccueil(); vue("vue-eleves");
+}
+
+var restauration=null, pModeRestau;
+var AIDE_MODES = {
+  "Remplacer":"Efface toutes les données actuelles de l'application (élèves, rapports, réglages) et les remplace par celles de la sauvegarde.",
+  "Fusionner":"Ajoute les élèves et rapports absents de l'application. Un élément présent des deux côtés (même identifiant) garde sa version la plus récente : rien de plus récent dans l'application n'est écrasé, rien n'est supprimé."
+};
+function fermerRestauration(){
+  restauration=null;
+  $("s-restauration").hidden=true;
+  $("s-erreur").hidden=true;
+}
+function erreurRestauration(message){
+  fermerRestauration();
+  $("s-erreur").textContent=message;
+  $("s-erreur").hidden=false;
+}
+function ouvrirRestauration(analyse, nomFichier){
+  restauration=analyse;
+  $("s-erreur").hidden=true;
+  var src=analyse.donnees;
+  $("s-resume").textContent =
+    "Fichier « "+nomFichier+" »"+(analyse.exporteLe?" — sauvegarde du "+jour(analyse.exporteLe):"")
+    +(analyse.ancienne?" (ancien format, sans en-tête)":"")+" : "
+    +pluriel(src.eleves.length,"élève")+", "+pluriel(src.rapports.length,"rapport")+"."
+    +" Actuellement dans l'application : "+pluriel(db.eleves.length,"élève")+", "+pluriel(db.rapports.length,"rapport")+"."
+    +(analyse.ignores?" "+pluriel(analyse.ignores,"élément")+" illisible"+(analyse.ignores>1?"s":"")+" sera ignoré"+(analyse.ignores>1?"s":"")+".":"");
+  pModeRestau = pastilles($("s-mode"), ["Remplacer","Fusionner"], {valeur:null, onChange:function(v){
+    $("s-mode-aide").textContent = AIDE_MODES[v]||"";
+  }});
+  $("s-mode-aide").textContent="Choisissez un mode.";
+  $("s-restauration").hidden=false;
+  $("s-restauration").scrollIntoView({block:"nearest"});
+}
+
+$("g-restaurer").addEventListener("click",function(){ $("g-fichier").click(); });
 $("g-fichier").addEventListener("change",function(){
   var f=this.files[0]; if(!f) return;
   var lecteur=new FileReader();
   lecteur.onload=function(){
-    try{
-      var d=JSON.parse(lecteur.result);
-      if(!d || !Array.isArray(d.eleves)) throw new Error("format");
-      db=Object.assign({},DEFAUT,d);
-      ["eleves","rapports","matieresPerso","accompPerso"].forEach(function(k){ if(!Array.isArray(db[k])) db[k]=[]; });
-      db.reglages=Object.assign({},DEFAUT.reglages,db.reglages||{});
-      if(!db.investPerso || typeof db.investPerso!=="object" || Array.isArray(db.investPerso)) db.investPerso={};
-      INVEST_GROUPES.forEach(function(g){ if(!Array.isArray(db.investPerso[g.id])) db.investPerso[g.id]=[]; });
-      migrerEtablissements();
-      sauver(); rendreAccueil(); vue("vue-eleves");
-      toast("Sauvegarde importée : "+db.eleves.length+" élève(s).");
-    }catch(e){ toast("Ce fichier n'est pas une sauvegarde valide."); }
+    var analyse=analyserSauvegarde(lecteur.result);
+    if(analyse.erreur) erreurRestauration(analyse.erreur);
+    else ouvrirRestauration(analyse, f.name);
   };
+  lecteur.onerror=function(){ erreurRestauration("Impossible de lire ce fichier. Rien n'a été modifié."); };
   lecteur.readAsText(f); this.value="";
 });
-$("g-effacer").addEventListener("click",function(){
-  if(!confirm("Effacer définitivement tous les élèves et tous les rapports ?")) return;
-  db=JSON.parse(JSON.stringify(DEFAUT)); sauver(); rendreAccueil(); vue("vue-eleves"); toast("Données effacées.");
+$("s-annuler").addEventListener("click",fermerRestauration);
+$("s-restaurer").addEventListener("click",function(){
+  var a=restauration; if(!a) return;
+  var mode=pModeRestau.get();
+  if(!mode){ toast("Choisissez Remplacer ou Fusionner."); return; }
+  var src=a.donnees;
+  var entete = "Sauvegarde"+(a.exporteLe?" du "+jour(a.exporteLe):"")+" : "+pluriel(src.eleves.length,"élève")+", "+pluriel(src.rapports.length,"rapport")+".";
+  if(mode==="Remplacer"){
+    var msg = "Remplacer vos données ?\n\n"+entete+"\n\n"
+      +"Actuellement dans l'application : "+pluriel(db.eleves.length,"élève")+", "+pluriel(db.rapports.length,"rapport")
+      +". Ils seront tous supprimés et remplacés par le contenu de la sauvegarde, réglages compris.\n\nCette opération est définitive.";
+    confirmationForte(msg, function(){
+      adopterDonnees(copie(src)); fermerRestauration();
+      toast("Sauvegarde restaurée : "+pluriel(db.eleves.length,"élève")+", "+pluriel(db.rapports.length,"rapport")+".");
+    }, "Remplacer mes données");
+  } else {
+    var essai=fusionner(db, src), st=essai.stats;
+    var msg2 = "Fusionner la sauvegarde ?\n\n"+entete+"\n"
+      +"Actuellement dans l'application : "+pluriel(db.eleves.length,"élève")+", "+pluriel(db.rapports.length,"rapport")+".\n\n"
+      +"• Ajoutés : "+pluriel(st.elevesAjoutes,"élève")+", "+pluriel(st.rapportsAjoutes,"rapport")+".\n"
+      +"• Remplacés par la version plus récente de la sauvegarde : "+pluriel(st.elevesRemplaces,"élève")+", "+pluriel(st.rapportsRemplaces,"rapport")+".\n"
+      +"• Conservés tels quels (version de l'application identique ou plus récente) : "+pluriel(st.elevesConserves,"élève")+", "+pluriel(st.rapportsConserves,"rapport")+".\n\n"
+      +"Rien n'est supprimé. Après fusion : "+pluriel(essai.donnees.eleves.length,"élève")+", "+pluriel(essai.donnees.rapports.length,"rapport")+".";
+    confirmationForte(msg2, function(){
+      // recalculée au moment de confirmer, sur les données d'alors
+      adopterDonnees(fusionner(db, src).donnees); fermerRestauration();
+      toast("Fusion terminée : "+pluriel(db.eleves.length,"élève")+", "+pluriel(db.rapports.length,"rapport")+".");
+    }, "Fusionner");
+  }
 });
 
+/* reconstruction partielle depuis un fichier de transmission (suivi-aesh/1
+   ou /2) : recours quand il n'existe aucune sauvegarde. La transmission ne
+   porte que le prénom et l'initiale du nom, et jamais les notes : les fiches
+   créées sont marquées "reconstruite" (une vraie sauvegarde fusionnée plus
+   tard les remplace) et un élève déjà présent n'est jamais modifié. */
+function analyserTransmission(texte){
+  var d;
+  try{ d=JSON.parse(texte); }catch(e){ return {erreur:"Ce fichier est illisible : ce n'est pas un fichier JSON valide, ou il est endommagé. Rien n'a été modifié."}; }
+  var format = d && typeof d.format==="string" ? d.format : "";
+  if(/^suivi-aesh-backup\//.test(format)) return {erreur:"Ce fichier est une sauvegarde complète : utilisez plutôt « Restaurer une sauvegarde », qui récupère tout, noms de famille et notes compris."};
+  if((format!=="suivi-aesh/1" && format!=="suivi-aesh/2") || !Array.isArray(d.rapports)){
+    return {erreur:"Ce fichier n'est pas une transmission au PIAL reconnue (formats attendus : suivi-aesh/1 ou suivi-aesh/2). Rien n'a été modifié."};
+  }
+  var genere = /^\d{4}-\d{2}-\d{2}$/.test(txt(d.genere_le)) ? d.genere_le : "";
+  var note = "Fiche reconstruite le "+jour(isoJour(new Date()))+" depuis une transmission au PIAL"+(genere?" du "+jour(genere):"")
+    +" : nom de famille et notes personnelles à ressaisir.";
+  var parEleve={}, ordre=[];
+  // du plus ancien au plus récent : le dernier rapport donne classe, matières, etc.
+  d.rapports.filter(function(r){ return r && typeof r==="object" && typeof r.eleveId==="string" && r.eleveId; })
+    .sort(function(a,b){ return txt(a.creeJour).localeCompare(txt(b.creeJour)); })
+    .forEach(function(r){
+      var m = /^(.*?)\s+(\S)\.$/.exec(txt(r.eleveNom).trim());
+      if(!parEleve[r.eleveId]) ordre.push(r.eleveId);
+      parEleve[r.eleveId] = {
+        id:r.eleveId, prenom: m ? m[1] : txt(r.eleveNom).trim(), nom: m ? m[2] : "",
+        classe:txt(r.classe), heures:txt(r.heures),
+        etablissement: txt(format==="suivi-aesh/2" ? r.etablissement : d.etablissement),
+        modalite: MODALITES.indexOf(r.modalite)>-1 ? r.modalite : "Individuel",
+        copartage: parseInt(r.copartage,10)||1,
+        matieres: Array.isArray(r.matieres) ? r.matieres.slice() : [],
+        notes:note, reconstruite:true
+      };
+    });
+  var trouves = ordre.map(function(k){ return parEleve[k]; });
+  var nouveaux = trouves.filter(function(e){ return !eleveParId(e.id); });
+  return { trouves:trouves.length, nouveaux:nouveaux, genere:genere };
+}
+$("g-transmission").addEventListener("click",function(){ $("g-fichier-transmission").click(); });
+$("g-fichier-transmission").addEventListener("change",function(){
+  var f=this.files[0]; if(!f) return;
+  var lecteur=new FileReader();
+  lecteur.onload=function(){
+    fermerRestauration();
+    var a=analyserTransmission(lecteur.result);
+    if(a.erreur){ erreurRestauration(a.erreur); return; }
+    if(!a.trouves){ erreurRestauration("Ce fichier de transmission ne contient aucun élève."); return; }
+    if(!a.nouveaux.length){ erreurRestauration("Les "+pluriel(a.trouves,"élève")+" de ce fichier sont déjà dans l'application : rien à ajouter."); return; }
+    var dejaLa = a.trouves-a.nouveaux.length;
+    var msg = "Reconstruire depuis la transmission"+(a.genere?" du "+jour(a.genere):"")+" ?\n\n"
+      +pluriel(a.trouves,"élève")+" dans ce fichier : "+pluriel(a.nouveaux.length,"fiche")+" à ajouter"
+      +(dejaLa?", "+dejaLa+" déjà présent"+(dejaLa>1?"s":"")+" laissé"+(dejaLa>1?"s":"")+" tel"+(dejaLa>1?"s":"")+" quel"+(dejaLa>1?"s":""):"")+".\n\n"
+      +"Attention : les noms de famille (seule l'initiale figure dans la transmission) et les notes personnelles ne peuvent pas être récupérés. Les rapports ne sont pas importés.";
+    confirmationForte(msg, function(){
+      var d=copie(db);
+      a.nouveaux.forEach(function(e){
+        d.eleves.push(e);
+        if(e.etablissement && d.reglages.etablissements.indexOf(e.etablissement)<0) d.reglages.etablissements.push(e.etablissement);
+      });
+      migrerEtablissements(d);
+      adopterDonnees(d);
+      toast(pluriel(a.nouveaux.length,"élève")+" ajouté"+(a.nouveaux.length>1?"s":"")+". Complétez le nom de famille dans chaque fiche.");
+    }, "Ajouter les élèves");
+  };
+  lecteur.onerror=function(){ erreurRestauration("Impossible de lire ce fichier. Rien n'a été modifié."); };
+  lecteur.readAsText(f); this.value="";
+});
+
+$("g-effacer").addEventListener("click",function(){
+  if(!confirm("Effacer définitivement tous les élèves et tous les rapports ?")) return;
+  adopterDonnees(normaliser({})); toast("Données effacées.");
+});
+
+/* =============== stockage persistant ===============
+   Demande au navigateur de ne pas évincer nos données (localStorage) en cas
+   de manque de place ou de nettoyage automatique. Purement opportuniste :
+   jamais bloquant, sans effet si l'API est absente ; un refus affiche
+   seulement un bandeau discret dans Réglages. */
+var persistance = "inconnu"; // "accorde" | "refuse" | "inconnu"
+function majBandeauPersistance(){
+  $("bandeau-persistance").hidden = persistance!=="refuse" || !stockageOk;
+}
+function demanderPersistance(){
+  var s = navigator.storage;
+  if(!s || !s.persist) return;
+  try{
+    (s.persisted ? s.persisted() : Promise.resolve(false)).then(function(deja){
+      return deja || s.persist();
+    }).then(function(ok){
+      persistance = ok ? "accorde" : "refuse";
+      majBandeauPersistance();
+    }).catch(function(){});
+  }catch(e){}
+}
+// à l'ouverture de Réglages : la permission a pu être accordée entre-temps
+// (installation sur l'écran d'accueil, par exemple) ; on ne redemande pas.
+function verifierPersistance(){
+  majBandeauPersistance();
+  var s = navigator.storage;
+  if(persistance!=="refuse" || !s || !s.persisted) return;
+  try{
+    s.persisted().then(function(ok){ if(ok){ persistance="accorde"; majBandeauPersistance(); } }).catch(function(){});
+  }catch(e){}
+}
+
 /* =============== démarrage =============== */
+demanderPersistance();
 rendreAccueil();
 vue(db.reglages.aesh ? "vue-eleves" : "vue-reglages");
 

@@ -88,8 +88,9 @@ Depuis l'écran d'accueil, touchez **Ajouter un élève**.
 Vous renseignez son prénom, son nom, sa classe, éventuellement votre quotité
 horaire, puis :
 
-- **La modalité** : individuel ou mutualisé. Si c'est mutualisé, indiquez avec
-  combien d'autres élèves.
+- **La modalité** : individuel, mutualisé ou ULIS. Si c'est mutualisé, indiquez avec
+  combien d'autres élèves. Choisissez ULIS pour un élève que vous accompagnez au sein
+  du dispositif : il est compté à part dans les statistiques du PIAL.
 - **Les matières habituellement accompagnées** : touchez-les pour les sélectionner.
   Elles seront **pré-cochées dans chaque rapport**, vous n'aurez qu'à les ajuster.
   Si une matière manque, écrivez-la dans le champ du bas et touchez « Ajouter » :
@@ -156,12 +157,29 @@ Vos fiches et vos rapports vivent dans votre appareil. Un changement de téléph
 un nettoyage du navigateur, une réinstallation : tout est perdu, et personne ne peut
 le récupérer pour vous.
 
-**Réglages → Exporter mes données** télécharge un fichier unique contenant tout.
-Rangez-le dans votre espace personnel de l'établissement, sur une clé, ou dans un
-cloud professionnel. Une fois par période de vacances est un bon rythme.
+**Réglages → Sauvegarder mes données** télécharge un fichier unique contenant tout
+(`sauvegarde_suivi-aesh_AAAA-MM-JJ.json`) : fiches avec noms complets, notes
+personnelles, rapports et réglages. Rangez-le dans votre espace personnel de
+l'établissement, sur une clé, ou dans un cloud professionnel. Une fois par mois est
+un bon rythme : si votre dernière sauvegarde a plus de 30 jours, un rappel discret
+s'affiche sur l'écran « Mes élèves ».
 
-Pour restaurer, sur le nouvel appareil : **Réglages → Importer une sauvegarde**,
-puis choisissez le fichier. Attention, l'import **remplace** le contenu existant.
+Pour restaurer : **Réglages → Restaurer une sauvegarde**, puis choisissez le fichier.
+L'outil affiche ce que contient la sauvegarde et ce qui est actuellement dans
+l'appareil, puis vous choisissez :
+
+- **Remplacer** : tout le contenu actuel est effacé et remplacé par la sauvegarde.
+- **Fusionner** : les élèves et rapports absents sont ajoutés ; un élément présent des
+  deux côtés garde sa version la plus récente. Rien n'est supprimé.
+
+Un fichier de transmission au PIAL (`transmission_….json`) n'est **pas** une
+sauvegarde : il ne contient ni les noms de famille ni vos notes. Si c'est tout ce qui
+vous reste, **Réglages → Reconstruire depuis une transmission** recrée la liste de vos
+élèves (prénom et initiale seulement) ; il faudra compléter les fiches à la main.
+
+L'outil demande aussi au navigateur de conserver durablement ses données. S'il refuse,
+un message s'affiche dans Réglages : installer l'outil sur l'écran d'accueil (voir
+section 1) rend cette conservation plus sûre, mais ne remplace pas une sauvegarde.
 
 Ce fichier de sauvegarde contient des noms d'élèves. Traitez-le comme un document
 professionnel confidentiel : pas de cloud personnel, pas d'envoi par messagerie

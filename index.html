@@ -731,7 +731,9 @@ var RELATIONS = [
   {v:"Difficile", d:"à retravailler"}
 ];
 var PERIODES = ["Semaine","Quinzaine","Mois","Trimestre"];
-var MODALITES = ["Individuel","Mutualisé"];
+// "ULIS" : élève suivi au sein du dispositif ULIS (collectif). Distinct de
+// "Mutualisé" pour ne pas fausser les statistiques individuel/mutualisé.
+var MODALITES = ["Individuel","Mutualisé","ULIS"];
 
 var RAPPELS = ["Jour","Semaine","Quinzaine","Mois","Période libre"];
 var RAPPEL_JOURS = {"Jour":1,"Semaine":7,"Quinzaine":14,"Mois":30};
@@ -864,7 +866,7 @@ function rendreAccueil(){
     db.eleves.forEach(function(el){
       var b=document.createElement("button");
       b.type="button"; b.className="eleve";
-      var mod = el.modalite==="Mutualisé" ? "mutualisé" : "individuel";
+      var mod = el.modalite==="Mutualisé" ? "mutualisé" : el.modalite==="ULIS" ? "ULIS" : "individuel";
       var meta = (el.classe?el.classe+" · ":"")+mod+(etabsMultiples&&el.etablissement?" · "+el.etablissement:"");
       b.innerHTML = '<span class="initiales">'+initiales(el)+'</span>'+
         '<span><span class="nom">'+nomAffiche(el)+'</span><br>'+
@@ -1081,7 +1083,7 @@ function ouvrirRapport(eid){
                  .sort(function(a,b){return b.cree.localeCompare(a.cree);})[0];
 
   $("titre-rapport").textContent = "Rapport — "+nomAffiche(rapportEleve);
-  var mod = rapportEleve.modalite==="Mutualisé" ? "accompagnement mutualisé" : "accompagnement individuel";
+  var mod = rapportEleve.modalite==="Mutualisé" ? "accompagnement mutualisé" : rapportEleve.modalite==="ULIS" ? "accompagnement en ULIS" : "accompagnement individuel";
   $("chapeau-rapport").innerHTML = (rapportEleve.classe?rapportEleve.classe+" · ":"")+mod+
     ' &nbsp;<button type="button" class="btn-lien" id="lien-fiche">modifier la fiche</button>';
   $("lien-fiche").addEventListener("click",function(){ ouvrirFiche(rapportEleve.id); });
@@ -1139,6 +1141,7 @@ $("a-accueil").addEventListener("click",function(){ rendreAccueil(); vue("vue-el
 var rapportCourant=null;
 
 function texteModalite(r){
+  if(r.modalite==="ULIS") return "ULIS";
   return r.modalite==="Mutualisé"
     ? "Mutualisé (partagé avec "+r.copartage+" autre"+(r.copartage>1?"s":"")+" élève"+(r.copartage>1?"s":"")+")"
     : "Individuel";
@@ -1740,7 +1743,7 @@ function analyserTransmission(texte){
         id:r.eleveId, prenom: m ? m[1] : txt(r.eleveNom).trim(), nom: m ? m[2] : "",
         classe:txt(r.classe), heures:txt(r.heures),
         etablissement: txt(format==="suivi-aesh/2" ? r.etablissement : d.etablissement),
-        modalite: r.modalite==="Mutualisé" ? "Mutualisé" : "Individuel",
+        modalite: MODALITES.indexOf(r.modalite)>-1 ? r.modalite : "Individuel",
         copartage: parseInt(r.copartage,10)||1,
         matieres: Array.isArray(r.matieres) ? r.matieres.slice() : [],
         notes:note, reconstruite:true

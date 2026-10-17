@@ -105,6 +105,7 @@ var INVEST_GROUPES = [
 ];
 function texteModalite(r) {
   var n = r.copartage || 1;
+  if (r.modalite === "ULIS") return "ULIS";
   return r.modalite === "Mutualisé"
     ? "Mutualisé (partagé avec " + n + " autre" + (n > 1 ? "s" : "") + " élève" + (n > 1 ? "s" : "") + ")"
     : "Individuel";
@@ -286,7 +287,7 @@ function initialiserFiltres() {
   remplirSelect("f-etablissement", valeursDistinctes("etablissement"), "Tous les établissements");
   remplirSelect("f-classe", valeursDistinctes("classe"), "Toutes les classes");
   remplirSelectEleves();
-  remplirSelect("f-modalite", ["Individuel", "Mutualisé"], "Toutes les modalités");
+  remplirSelect("f-modalite", ["Individuel", "Mutualisé", "ULIS"], "Toutes les modalités");
   remplirSelect("f-relation", ["Fluide", "En construction", "Difficile"], "Toutes les relations");
 }
 ["f-aesh", "f-eleve", "f-etablissement", "f-classe", "f-modalite", "f-relation", "f-debut", "f-fin"].forEach(function (id) {
@@ -544,20 +545,21 @@ function rendreListeAttention() {
   });
 }
 function rendreIndicateurs() {
-  var nInd = 0, nMut = 0;
-  cache.forEach(function (r) { if (r.modalite === "Mutualisé") nMut++; else nInd++; });
-  var total = nInd + nMut;
+  var nInd = 0, nMut = 0, nUlis = 0;
+  cache.forEach(function (r) { if (r.modalite === "Mutualisé") nMut++; else if (r.modalite === "ULIS") nUlis++; else nInd++; });
+  var total = nInd + nMut + nUlis;
   var hoteRep = $("ind-repartition");
   if (!total) {
     hoteRep.innerHTML = '<p class="vide">Aucune donnée.</p>';
   } else {
-    var pInd = Math.round(nInd / total * 100), pMut = 100 - pInd;
+    var pInd = Math.round(nInd / total * 100), pMut = Math.round(nMut / total * 100), pUlis = 100 - pInd - pMut;
     hoteRep.innerHTML =
       '<div class="barre-repartition">' +
       (pInd ? '<span class="individuel" style="width:' + pInd + '%">' + pInd + '%</span>' : '') +
       (pMut ? '<span class="mutualise" style="width:' + pMut + '%">' + pMut + '%</span>' : '') +
+      (pUlis ? '<span class="ulis" style="width:' + pUlis + '%">' + pUlis + '%</span>' : '') +
       '</div>' +
-      '<p class="chapeau" style="margin:0">Individuel : ' + nInd + ' · Mutualisé : ' + nMut + '</p>';
+      '<p class="chapeau" style="margin:0">Individuel : ' + nInd + ' · Mutualisé : ' + nMut + (nUlis ? ' · ULIS : ' + nUlis : '') + '</p>';
   }
 
   var comptes = {};
@@ -681,10 +683,10 @@ function rendreChiffresCles(liste) {
     + '<div class="carte-chiffre"><div class="cc-valeur">' + Object.keys(aeshSet).length + '</div><div class="cc-label">AESH ayant transmis</div></div>';
 }
 function rendreModalite(liste, texteVide) {
-  var nInd = 0, nMut = 0;
-  liste.forEach(function (r) { if (r.modalite === "Mutualisé") nMut++; else nInd++; });
+  var nInd = 0, nMut = 0, nUlis = 0;
+  liste.forEach(function (r) { if (r.modalite === "Mutualisé") nMut++; else if (r.modalite === "ULIS") nUlis++; else nInd++; });
   $("s-modalite").innerHTML = PialGraphiques.camembert(
-    [{ libelle: "Individuel", valeur: nInd }, { libelle: "Mutualisé", valeur: nMut }],
+    [{ libelle: "Individuel", valeur: nInd }, { libelle: "Mutualisé", valeur: nMut }, { libelle: "ULIS", valeur: nUlis }],
     { texteVide: texteVide }
   );
 }
@@ -783,7 +785,7 @@ function etablissementPourImpression(liste) {
 function imprimerStats() {
   var blocs = [
     { chk: "chk-cles", titre: "Chiffres clés", html: $("s-cles").innerHTML },
-    { chk: "chk-modalite", titre: "Individuel / mutualisé", html: $("s-modalite").innerHTML },
+    { chk: "chk-modalite", titre: "Modalités d'accompagnement", html: $("s-modalite").innerHTML },
     { chk: "chk-niveaux", titre: "Répartition par niveau de classe", html: $("s-niveaux").innerHTML },
     { chk: "chk-volume", titre: "Volume d'activité par AESH", html: $("s-volume-aesh").innerHTML + '<p class="note-sous-graphique">Indicateur de volume, à ne pas interpréter comme une évaluation individuelle.</p>' },
     { chk: "chk-mois", titre: "Rapports transmis par mois", html: $("s-mois").innerHTML },

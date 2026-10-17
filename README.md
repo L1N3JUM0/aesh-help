@@ -88,8 +88,9 @@ Depuis l'écran d'accueil, touchez **Ajouter un élève**.
 Vous renseignez son prénom, son nom, sa classe, éventuellement votre quotité
 horaire, puis :
 
-- **La modalité** : individuel ou mutualisé. Si c'est mutualisé, indiquez avec
-  combien d'autres élèves.
+- **La modalité** : individuel, mutualisé ou ULIS. Si c'est mutualisé, indiquez avec
+  combien d'autres élèves. Choisissez ULIS pour un élève que vous accompagnez au sein
+  du dispositif : il est compté à part dans les statistiques du PIAL.
 - **Les matières habituellement accompagnées** : touchez-les pour les sélectionner.
   Elles seront **pré-cochées dans chaque rapport**, vous n'aurez qu'à les ajuster.
   Si une matière manque, écrivez-la dans le champ du bas et touchez « Ajouter » :

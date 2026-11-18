@@ -46,7 +46,7 @@ Aucun format SIECLE ni Pronote n'est imposé : **l'outil fournit ses propres gab
 | Etablissement | oui | Collège Paul Gauthier | |
 | Classe | oui | 5B | |
 | Prenom | oui | Lucas | |
-| Nom | oui | Martin | **seule l'initiale est conservée** (voir §3) |
+| Nom | oui | Martin | **seule l'initiale est conservée** (voir §3) ; une valeur terminée par un point (« Ma. ») est gardée telle quelle |
 | Heures_individuelles | non | 6 | heures/semaine, décimales acceptées (1,5) |
 | Heures_mutualisees | non | 4 | heures/semaine |
 | Recreation | non | oui/non | accompagnement pendant les récréations |
@@ -68,6 +68,8 @@ Au moins une des deux colonnes d'heures doit être supérieure à 0.
 | Etablissements | non | Collège Paul Gauthier \| École Jean Moulin | établissements possibles ; vide = tous |
 | Indisponibilites | non | mer; ven-am | jours (`lun`…`ven`) ou demi-journées (`-am`/`-pm`) |
 | Formations | non | TSA \| LSF | compétences déclarées (§7.3) |
+
+**Identifiant d'une AESH** : `nom|prenom` normalisé (casse, accents, espaces), par exemple `durand|sophie`. Le nom complet des AESH est conservé : la minimisation du §3 ne vise que les élèves.
 
 ### 2.4 Gabarit `edt_eleves.csv` — une ligne par cours
 
@@ -94,6 +96,7 @@ Ajouté automatiquement au premier import qui mentionne un nouvel établissement
 - alternance semaines A/B : oui/non (oui par défaut pour un collège) ;
 - horaires de la récréation du matin et de l'après-midi ;
 - horaires de la pause méridienne ;
+- plage de la pause repas des AESH (11 h 30 – 14 h par défaut, voir §4.4 contrainte 6) ;
 - jours ouvrés (ex. : une école n'a pas classe le mercredi).
 
 ---
@@ -102,9 +105,10 @@ Ajouté automatiquement au premier import qui mentionne un nouvel établissement
 
 - **Clé élève** : `prenom + " " + initiale_nom + "." | classe | etablissement`, normalisée (casse, accents, espaces). Exemple : `lucas m.|5b|college paul gauthier`. C'est le même format que `nomTransmission()` dans l'application AESH, ce qui permet de rapprocher les rapports.
 - **Minimisation** : à l'import, le nom de famille est réduit à son initiale. Le nom complet n'est jamais stocké. Ce choix est cohérent avec le principe déjà retenu pour les transmissions.
-- **Collision** (deux « Lucas M. » en 5B dans le même établissement) : l'import est bloqué pour ces lignes. Le coordonnateur doit les différencier, par exemple en écrivant « Lucas Ma. » et « Lucas Mo. ».
+- **Collision** (deux « Lucas M. » en 5B dans le même établissement) : l'import est bloqué pour ces lignes. Le coordonnateur doit les différencier, par exemple en écrivant « Ma. » et « Mo. » dans la colonne `Nom` : une valeur de `Nom` qui se termine par un point est considérée comme une abréviation déjà choisie et conservée telle quelle (« Lucas Ma. »).
 - **Changement d'année** : comme la classe change, la clé change aussi. Lors du premier import d'une nouvelle année scolaire, proposer de rattacher chaque nouvel élève à un élève de l'année précédente qui a le même prénom, la même initiale, le même établissement et le niveau N+1. Le coordonnateur confirme chaque rapprochement ; c'est lui qui permet de conserver l'historique.
 - **Année scolaire** : chaque élève, chaque affectation et chaque version porte une année scolaire (`2026-2027`). Cela permet de réutiliser la purge par année qui existe déjà.
+- **Identifiant de stockage** : la clé élève ne contient pas l'année (un redoublant peut retrouver une classe de même nom). L'enregistrement est donc identifié par `id = annee + "|" + cle` (ex. `2026-2027|lucas m.|5b|college paul gauthier`), la clé seule restant indexée.
 
 ---
 
@@ -115,17 +119,20 @@ Ajouté automatiquement au premier import qui mentionne un nouvel établissement
 ### 4.1 Unités
 
 - **Créneau** : (établissement, jour, début, fin, semaine ∈ {A, B, toutes}).
-- **Durée comptée** : par défaut, **un cours compte pour 1 h** quelle que soit sa durée réelle (55 min = 1 h). Réglage : « Compter la durée réelle ». Les récréations et la pause méridienne comptent toujours pour leur durée réelle.
+- **Durée comptée** : par défaut, la durée d'un cours est **arrondie à l'heure la plus proche, avec un minimum de 1 h** (55 min = 1 h, 1 h 50 = 2 h). Réglage : « Compter la durée réelle ». Les récréations et la pause méridienne comptent toujours pour leur durée réelle.
 - **Semaines A/B** : on calcule séparément la semaine A et la semaine B. Une ligne marquée « toutes » compte dans les deux.
   - Pour un élève, la couverture affichée est la **moyenne (A+B)/2**. La valeur A ou B s'affiche au survol si elles diffèrent.
   - Pour une AESH, la **quotité doit être respectée dans chacune des deux semaines** (contrainte dure). La moyenne est affichée en plus.
   - Établissement sans alternance : A = B.
+  - Un cours « toutes semaines » peut recevoir une AESH différente en A et en B : l'affectation est alors scindée en deux (semaine A, semaine B).
 
 ### 4.2 Couverture d'un élève
 
 - Heures individuelles couvertes : somme des créneaux où une AESH lui est affectée **en individuel**.
 - Heures mutualisées couvertes : somme des créneaux où une AESH lui est affectée **en mutualisé**, qu'elle accompagne d'autres élèves ou non.
-- Comparaison avec la notification, séparément pour l'individuel et le mutualisé.
+- Comparaison avec la notification, séparément pour l'individuel et le mutualisé, sur la moyenne (A+B)/2.
+- **Temps périscolaire** (récréations, pause méridienne) : compté à part. Il n'est pas imputé sur les heures notifiées individuelles ou mutualisées, mais il entre dans la charge de l'AESH.
+- L'état global d'un élève est le plus défavorable des deux (individuel, mutualisé).
 - États :
   - **sous-couvert** (rouge) : écart ≥ 1 h ;
   - **partiellement couvert** (orange) : écart < 1 h ;
@@ -136,7 +143,8 @@ Ajouté automatiquement au premier import qui mentionne un nouvel établissement
 
 - Une heure de présence compte pour **1 h, qu'elle accompagne 1 ou 4 élèves**.
 - États :
-  - **dépassement** (rouge) : charge > quotité ;
+  - **dépassement** (rouge) : charge > quotité en semaine A **ou** en semaine B ;
+  - sinon, l'état se calcule sur la charge moyenne (A+B)/2 :
   - **charge complète** (vert) : charge entre 90 % et 100 % de la quotité ;
   - **sous-utilisée** (orange) : charge < 90 % de la quotité.
 
@@ -146,10 +154,10 @@ Le moteur ne les enfreint jamais. Une saisie manuelle peut les enfreindre, mais 
 
 1. **Pas de chevauchement** : une AESH n'est jamais à deux endroits en même temps.
 2. **Individuel exclusif** : sur un créneau individuel, l'AESH n'accompagne que cet élève.
-3. **Mutualisation** : elle n'est possible qu'entre élèves notifiés en mutualisé, qui ont la même classe, le même cours et le même groupe (§2.4). Pas de mutualisation entre classes différentes.
+3. **Mutualisation** : elle n'est possible qu'entre élèves notifiés en mutualisé, qui ont la même classe, le même cours et le même groupe (§2.4). Pas de mutualisation entre classes différentes. Exception : sur les temps périscolaires (récréation, pause méridienne), une AESH peut accompagner ensemble tous les élèves concernés d'un même établissement, quelle que soit leur classe.
 4. **Changement d'établissement** : il faut au moins **1 h** entre la fin d'un créneau dans l'établissement X et le début d'un créneau dans l'établissement Y. Le temps de trajet n'est pas compté dans la charge.
 5. **Quotité** : elle n'est jamais dépassée, ni en semaine A ni en semaine B.
-6. **Pause repas de l'AESH** : sur une journée de plus de 6 h, l'AESH garde une pause d'au moins 45 min entre 11 h 30 et 14 h. La durée est réglable.
+6. **Pause repas de l'AESH** : sur une journée de plus de 6 h de **présence** (somme des créneaux, trajets exclus), l'AESH garde une plage libre continue d'au moins 45 min dans la plage de pause repas. La durée est réglable. La plage (11 h 30 – 14 h par défaut) est réglable **par établissement** (§2.5) ; pour une journée sur plusieurs établissements, on retient la plage de l'établissement du premier créneau de la journée. Si l'AESH est affectée à la pause méridienne d'un élève ce jour-là, sa pause peut se situer en dehors de la plage : on vérifie alors seulement qu'il existe 45 min libres continues dans la journée, et le cas est **signalé** (information) sans être bloqué.
 7. **Indisponibilités et établissements possibles** : respectés si le réglage « Respecter les indisponibilités » est activé (activé par défaut). Ce réglage se désactive globalement, et aussi AESH par AESH.
 
 ### 4.5 Ce qui n'est pas une contrainte
@@ -385,12 +393,14 @@ pial/moteur.js            proposition d'affectations (glouton), raisons, rapport
 pial/affectations.js      onglet Affectations (vues, menus, annulation, alertes)
 pial/aesh.js              onglet AESH (fiches, rapprochement rapports)
 pial/exports.js           ZIP par AESH, .eml, EDT HTML, pial-affectation/1, impressions
-pial/tests.html           tests sans dépendance des fonctions de modele.js et moteur.js
+pial/tests.js             assertions communes (navigateur et Node)
+pial/tests.html           lanceur navigateur des tests de modele.js, zip.js, import-fichiers.js (puis moteur.js)
 exemples/                 jeux de données fictifs (§10), hors cache du service worker
 outils/generer-exemples.js  script de génération des exemples (outil de dev, non publié dans l'app)
+outils/tests-node.js      lanceur des mêmes tests en ligne de commande (Node sans npm)
 ```
 
-Ajouter les nouveaux fichiers JS de l'application à `FICHIERS` dans `service-worker.js`, et incrémenter `CACHE_VERSION`.
+Ajouter **tous** les fichiers de `/pial/` nécessaires à l'application (existants compris : ils n'y figuraient pas) à `FICHIERS` dans `service-worker.js`, et incrémenter `CACHE_VERSION`. Le gestionnaire `fetch` ne met jamais en cache `exemples/` ni `outils/`, et le repli hors ligne d'une navigation sous `/pial/` renvoie `pial/index.html` (et non le `index.html` racine).
 
 ### 9.2 IndexedDB : base `pial-suivi`, schéma v3
 
@@ -399,14 +409,16 @@ Migration additive : ne jamais toucher aux magasins `rapports` et `imports`.
 | Magasin | keyPath | Index | Contenu |
 |---|---|---|---|
 | `etablissements` | `id` | | paramètres §2.5 |
-| `eleves` | `cle` | annee, etablissement, classe | élève + notification + options récré/méridienne + besoins |
-| `aesh` | `id` | annee | AESH + paramètres + formations + alias de rapprochement |
+| `eleves` | `id` (= `annee\|cle`, §3) | cle, annee, etablissement, classe | élève + notification + options récré/méridienne + besoins |
+| `aesh` | `id` (= `nom\|prenom` normalisé, §2.3) | annee | AESH + paramètres + formations + alias de rapprochement |
 | `cours` | `id` | eleveCle, etablissement | lignes d'EDT élève + état prioritaire/normal/exclu |
 | `affectations` | `id` | version, aeshId, creneauCle | brouillon (version = 0) et versions validées |
-| `versions` | `numero` | annee | date d'effet, commentaire, compteurs |
+| `versions` | `numero` | annee | date d'effet, commentaire, compteurs ; numérotation globale, jamais remise à zéro d'une année à l'autre |
 | `correspondances` | `type` | | correspondances de colonnes mémorisées |
 
-Une affectation contient : `{id, version, aeshId, creneau{etab,jour,debut,fin,semaine}, modalite, eleves:[cle…], epinglee, origine:"moteur"|"manuel", raisons:[…], alertes:[…]}`.
+Une affectation contient : `{id, version, aeshId, creneau{etab,jour,debut,fin,semaine}, creneauCle, modalite, eleves:[cle…], epinglee, origine:"moteur"|"manuel", raisons:[…], alertes:[…]}`. `creneauCle` est un champ calculé (`etab|jour|debut|fin|semaine`) qui alimente l'index du même nom ; `eleves` contient les identifiants de stockage (`annee|cle`).
+
+La migration v2 → v3 gère le blocage par un autre onglet ouvert : `onblocked` affiche un message demandant de fermer les autres onglets, `onversionchange` ferme la connexion.
 
 ### 9.3 Contraintes rappelées
 
@@ -419,7 +431,7 @@ Une affectation contient : `{id, version, aeshId, creneau{etab,jour,debut,fin,se
 
 ## 10. Données de test fictives
 
-Générées par `outils/generer-exemples.js` (Node, exécuté une fois en développement) et versionnées dans `exemples/`. **Tous les noms sont manifestement fictifs**, et chaque fichier commence par une ligne de commentaire ou se nomme `FICTIF_…`.
+Générées par `outils/generer-exemples.js` (Node sans npm, déterministe, exécuté en développement) et versionnées dans `exemples/`. **Tous les noms sont manifestement fictifs**, et chaque fichier de données se nomme `FICTIF_…` (pas de ligne de commentaire : elle empêcherait l'import des CSV et n'existe pas en JSON). Les adresses e-mail utilisent le domaine réservé `exemple.invalid`, pour qu'aucun brouillon ne puisse partir vers une vraie adresse. Les dates de notification sont calculées depuis une date de référence (par défaut, le jour de génération) : relancer le script avant une démonstration.
 
 **Contenu** : 1 PIAL avec 2 collèges et 1 école élémentaire, environ 45 élèves, 14 AESH, des rapports AESH au format `suivi-aesh/2` pour 8 de ces AESH.
 
@@ -434,13 +446,13 @@ Générées par `outils/generer-exemples.js` (Node, exécuté une fois en dével
 7. **capacité insuffisante** : total des heures notifiées supérieur au total des quotités, pour faire apparaître des sous-couvertures ;
 8. un élève avec récréation et pause méridienne accompagnées ;
 9. des cours prioritaires et des cours exclus pré-remplis ;
-10. une collision de clé (« Lucas M. » ×2 en 5B), pour tester le blocage à l'import ;
-11. un fichier `aesh_windows1252.csv` encodé en Windows-1252 avec des accents ;
-12. un fichier `eleves.xlsx`, pour tester la lecture XLSX ;
+10. une collision de clé (« Lucas M. » ×2 en 5B), pour tester le blocage à l'import — isolée dans `FICTIF_eleves_collision.csv` pour que le jeu principal s'importe sans erreur ;
+11. un fichier `FICTIF_aesh_windows1252.csv` encodé en Windows-1252 avec des accents ;
+12. un fichier `FICTIF_eleves.xlsx`, pour tester la lecture XLSX ;
 13. une notification qui se termine dans moins de 30 jours ;
 14. des rapports dont le champ `aesh` est mal orthographié (« sophie durand », « S. Durand »), pour tester le rapprochement manuel.
 
-**`pial/tests.html`** : petit lanceur d'assertions sans dépendance qui vérifie au moins :
+**`pial/tests.html`** et **`outils/tests-node.js`** : les mêmes assertions (fichier commun `pial/tests.js`), exécutables dans le navigateur ou en ligne de commande (`node outils/tests-node.js`, Node sans npm). Elles vérifient au moins :
 - clés et collisions ;
 - durées et semaines A/B ;
 - couverture et charge ;
@@ -460,10 +472,10 @@ Générées par `outils/generer-exemples.js` (Node, exécuté une fois en dével
 **Phase 1 — Imports et couverture**
 - Gabarits téléchargeables, import CSV/XLSX, correspondance des colonnes, aperçu.
 - Paramètres des établissements.
-- Schéma IndexedDB v3.
+- Schéma IndexedDB v3, et sauvegarde `pial-suivi/2` **non chiffrée** incluant les nouveaux magasins (pour ne rien perdre d'ici la phase 3).
 - Vue d'ensemble avec jauges (sans moteur).
-- Affectation manuelle depuis la grille élève.
-- Données d'exemple et `tests.html`.
+- Affectation manuelle depuis la grille élève (AESH proposées par ordre alphabétique, indisponibles grisées avec le motif ; le tri par score arrive avec le moteur).
+- Données d'exemple, `tests.html` et `outils/tests-node.js`.
 - ✔ *Acceptation* : les fichiers `exemples/` s'importent sans erreur (sauf le cas 10, bloqué comme prévu) ; une affectation manuelle met à jour les deux jauges ; un conflit manuel apparaît dans les alertes.
 
 **Phase 2 — Moteur et versions**
@@ -476,13 +488,15 @@ Générées par `outils/generer-exemples.js` (Node, exécuté une fois en dével
 - Grille AESH, impressions PDF.
 - ZIP par AESH (txt, eml, html, json).
 - Statistiques filtrables.
-- Sauvegarde étendue et chiffrée.
+- Sauvegarde chiffrée.
+- Extension de la purge par année aux nouveaux magasins.
 - ✔ *Acceptation* : un `.eml` s'ouvre en brouillon dans Thunderbird ; l'EDT HTML s'imprime sur une page A4 paysage ; la restauration d'une sauvegarde chiffrée retrouve exactement les données.
 
 **Phase 4 — Onglet AESH et pont avec l'application AESH**
 - Fiches AESH, expérience tirée des rapports, rapprochement manuel.
 - Score d'expérience intégré au moteur.
 - « Importer mon affectation » dans l'application AESH.
+- Rapprochement d'une année à l'autre (§3, changement d'année).
 - ✔ *Acceptation* : le cas 14 se rattache manuellement puis automatiquement aux imports suivants ; l'import d'une affectation dans l'application AESH ne modifie aucune note ni aucun rapport existant.
 
 ---
@@ -497,3 +511,19 @@ Ils sont appliqués tels quels sauf contre-ordre.
 4. Seuils : sous-utilisation < 90 % de la quotité ; pause repas AESH de 45 min sur les journées de plus de 6 h.
 5. Nom de famille réduit à l'initiale dès l'import.
 6. Pas de diagnostic d'élève dans l'outil : compétences des AESH = besoins fonctionnels + formations déclarées.
+
+## 13. Décisions du 19/11/2026 (revue du plan de la phase 1)
+
+Reportées dans les sections concernées ; résumé :
+
+1. Stockage élève identifié par `annee|cle` ; numérotation des versions globale (§3, §9.2).
+2. `Nom` terminé par un point = abréviation conservée telle quelle, pour résoudre les collisions (§2.2, §3).
+3. Durée d'un cours arrondie à l'heure la plus proche, minimum 1 h (§4.1).
+4. Temps périscolaire compté à part, inclus dans la charge AESH ; mutualisation périscolaire permise entre tous les élèves d'un même établissement (§4.2, §4.4).
+5. Pause repas : seuil de 6 h sur le temps de présence ; plage réglable par établissement ; si l'AESH accompagne une pause méridienne, sa pause peut être hors plage (signalé, non bloqué) (§2.5, §4.4).
+6. États avec semaines A/B : dépassement si A ou B dépasse, sinon moyenne ; état élève = le plus défavorable entre individuel et mutualisé (§4.2, §4.3).
+7. Un cours « toutes semaines » peut avoir une AESH différente en A et en B (affectation scindée) (§4.1).
+8. Identifiant AESH = `nom|prenom` normalisé (§2.3).
+9. Données d'exemple : préfixe `FICTIF_`, domaine `exemple.invalid`, collision isolée dans un fichier à part, dates relatives à la génération (§10).
+10. Purge par année étendue → phase 3 ; rapprochement d'une année à l'autre → phase 4 (§11).
+11. Tests exécutables aussi en ligne de commande (`outils/tests-node.js`) (§10).

@@ -87,7 +87,7 @@ function vue(nom) {
 Array.prototype.forEach.call(document.querySelectorAll("#nav button"), function (b) {
   b.addEventListener("click", function () {
     vue(this.dataset.vue);
-    if (this.dataset.vue === "vue-reglages") rendreStockage();
+    if (this.dataset.vue === "vue-reglages") { rendreStockage(); PialAffectations.rendreReglages(); }
     if (this.dataset.vue === "vue-indicateurs") rendreIndicateurs();
     if (this.dataset.vue === "vue-stats") { initialiserFiltresStats(); rendreStats(); }
   });
@@ -901,6 +901,8 @@ $("entree-restauration").addEventListener("change", function () {
         }).then(function () {
           initialiserFiltres(); initialiserPurge(); rendreRapports(); rendreImports(); rendreIndicateurs();
           initialiserFiltresStats(); rendreStats();
+          PialAffectations.rendreReglages();
+          if (typeof PialAffectations.surChangement === "function") PialAffectations.surChangement();
           toast("Sauvegarde restaurée.");
         });
       }
@@ -951,6 +953,7 @@ PialDB.surVersionPerimee = function () {
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function () {});
 rendreStockage();
 Promise.all([rafraichirCache(), rafraichirImports(), PialAffectations.recharger()]).then(function () {
+  PialAffectations.initialiser({ toast: toast, confirmationForte: confirmationForte, telecharger: telecharger, vue: vue, exporterSauvegarde: exporterSauvegarde });
   initialiserFiltres();
   initialiserPurge();
   rendreRapports();

@@ -158,6 +158,23 @@ table.tableau td.numerique{text-align:right}
 .carte-chiffre .cc-label{font-size:12.5px;color:var(--gris);margin-top:2px}
 .note-sous-graphique{font-size:12px;color:var(--gris);margin:8px 0 0}
 
+/* ---------- import élèves / AESH / EDT ---------- */
+.sous-titre-carte{font-size:14px;font-weight:700;color:var(--encre);margin:18px 0 6px}
+.tableau select{padding:5px 8px;font-size:13.5px}
+.liste-motifs{margin:6px 0 12px;padding-left:20px;font-size:13px;max-height:260px;overflow:auto}
+.liste-motifs li{margin:0 0 3px}
+label.case{display:flex;gap:8px;align-items:center;font-weight:600;font-size:14px;color:var(--texte)}
+label.case input{width:auto}
+.compteurs-import{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 12px}
+.compteurs-import span{background:#F4F6F9;border-radius:6px;padding:6px 10px;font-size:13px}
+.compteurs-import strong{font-size:15px;color:var(--encre)}
+.etab-param{border:1px solid var(--seyes);border-radius:8px;padding:12px 14px;margin:0 0 12px}
+.etab-param h3{margin:0 0 10px;font-size:15px;color:var(--encre)}
+.etab-param .grille{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px 14px}
+.etab-param .duo{display:flex;gap:6px;align-items:center}
+.etab-param .duo input{width:90px}
+.jours-ouvres{display:flex;flex-wrap:wrap;gap:10px;margin:8px 0}
+
 /* ---------- divers ---------- */
 .note{
   font-size:13px;color:var(--gris);background:#F4F6F9;
@@ -362,6 +379,53 @@ table.tableau td.numerique{text-align:right}
         <input type="file" id="entree-fichier" accept="application/json,.json" multiple hidden>
       </div>
       <div id="bilan-import"></div>
+    </div>
+
+    <div class="carte" id="carte-import-affectations">
+      <h2>Importer élèves, AESH et emplois du temps</h2>
+      <p class="chapeau">Remplissez les gabarits (au besoin par copier-coller depuis vos exports), puis importez-les ici au format CSV ou XLSX. Importez d'abord les élèves, puis les emplois du temps. Rien n'est enregistré avant votre confirmation. Les noms de famille des élèves sont réduits à leur initiale dès la lecture du fichier.</p>
+      <div class="actions" style="margin:0 0 14px">
+        <button type="button" class="btn btn-vide" data-gabarit="eleves">Gabarit élèves (.csv)</button>
+        <button type="button" class="btn btn-vide" data-gabarit="aesh">Gabarit AESH (.csv)</button>
+        <button type="button" class="btn btn-vide" data-gabarit="edt">Gabarit emplois du temps (.csv)</button>
+      </div>
+      <div class="ligne-filtres">
+        <div class="champ etroit" style="width:220px"><label for="imp-type">Fichier à importer</label>
+          <select id="imp-type">
+            <option value="eleves">Élèves</option>
+            <option value="aesh">AESH</option>
+            <option value="edt">Emplois du temps des élèves</option>
+          </select>
+        </div>
+        <div class="champ" style="flex:none;align-self:flex-end">
+          <button type="button" class="btn btn-plein" id="imp-choisir">Choisir un fichier (.csv, .xlsx)</button>
+          <input type="file" id="imp-fichier" accept=".csv,.xlsx,text/csv" hidden>
+        </div>
+      </div>
+      <div id="imp-etat"></div>
+
+      <div id="imp-correspondance" hidden>
+        <h3 class="sous-titre-carte">Correspondance des colonnes</h3>
+        <p class="aide">Les colonnes ont été reconnues automatiquement. Corrigez si besoin : votre choix sera retenu pour les prochains imports. * = obligatoire.</p>
+        <div class="tableau-conteneur">
+          <table class="tableau"><thead><tr><th>Information attendue</th><th>Colonne du fichier</th><th>Exemple (1re ligne)</th></tr></thead>
+            <tbody id="imp-corps-correspondance"></tbody></table>
+        </div>
+        <div class="actions"><button type="button" class="btn btn-plein" id="imp-verifier">Vérifier le fichier</button>
+          <button type="button" class="btn btn-vide" id="imp-annuler">Annuler</button></div>
+      </div>
+
+      <div id="imp-apercu" hidden>
+        <h3 class="sous-titre-carte">Aperçu avant import</h3>
+        <div id="imp-resume"></div>
+        <div id="imp-details"></div>
+        <div class="actions">
+          <button type="button" class="btn btn-plein" id="imp-maj">Mettre à jour</button>
+          <button type="button" class="btn btn-danger" id="imp-remplacer">Remplacer</button>
+          <button type="button" class="btn btn-vide" id="imp-annuler2">Annuler</button>
+        </div>
+        <p class="aide" style="margin-top:8px">« Mettre à jour » ajoute les nouvelles lignes et met à jour celles déjà connues, sans rien supprimer. « Remplacer » supprime en plus ce qui ne figure pas dans le fichier.</p>
+      </div>
     </div>
 
     <div class="carte">
@@ -573,6 +637,21 @@ table.tableau td.numerique{text-align:right}
       <div id="reg-persistance"></div>
       <div id="reg-espace"></div>
       <div class="actions"><button type="button" class="btn btn-vide" id="btn-rafraichir-espace">Actualiser</button></div>
+    </div>
+
+    <div class="carte">
+      <h2>Établissements</h2>
+      <p class="chapeau">Créés automatiquement au premier import qui les mentionne. Vérifiez leurs horaires : ils servent aux temps périscolaires, à l'alternance des semaines A/B et à la pause repas des AESH.</p>
+      <div id="reg-etablissements"></div>
+    </div>
+
+    <div class="carte">
+      <h2>Règles de calcul des affectations</h2>
+      <div class="champ"><label class="case"><input type="checkbox" id="reg-duree-reelle"> Compter la durée réelle des cours</label>
+        <p class="aide">Décoché (par défaut) : la durée d'un cours est arrondie à l'heure la plus proche, avec un minimum de 1 h (55 min = 1 h).</p></div>
+      <div class="champ"><label class="case"><input type="checkbox" id="reg-indispos"> Respecter les indisponibilités et les établissements possibles des AESH</label></div>
+      <div class="champ" style="max-width:260px"><label for="reg-pause">Pause repas minimale des AESH (minutes)</label><input type="number" id="reg-pause" min="0" max="120" step="5"></div>
+      <div class="actions"><button type="button" class="btn btn-vide" id="reg-enregistrer-regles">Enregistrer</button></div>
     </div>
 
     <div class="carte">

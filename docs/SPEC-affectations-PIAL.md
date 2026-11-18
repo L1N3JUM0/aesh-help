@@ -531,3 +531,4 @@ Reportées dans les sections concernées ; résumé :
 12. XLSX analysé sans `DOMParser` (absent de Node), première feuille résolue via le classeur (§2.1).
 13. Colonne `Eleve` de l'EDT : un nom complet (« Lucas Martin ») est accepté et réduit à « Lucas M. » s'il correspond à un élève connu ; le nom complet n'est pas conservé (§2.4, §3).
 14. Magasin `parametres` ajouté au schéma v3 pour les réglages du module ; la sauvegarde `pial-suivi/2` (non chiffrée) est livrée dès la phase 1 ; restaurer un fichier `pial-suivi/1` ne remplace que les rapports et l'historique des imports (§8.4, §9.2).
+15. `pial/index.html` enregistre aussi le service worker commun (`../service-worker.js`, garde `file:`), pour que l'espace PIAL fonctionne hors ligne même si la page AESH n'a jamais été ouverte (§9.1).

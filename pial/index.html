@@ -906,5 +906,16 @@ table.grille-edt td.heure{font-variant-numeric:tabular-nums;color:var(--gris);bo
 <script src="import-fichiers.js"></script>
 <script src="affectations.js"></script>
 <script src="app.js"></script>
+<script>
+/* Service worker commun à toute l'application (portée : dossier racine),
+   pour que l'espace PIAL reste utilisable hors ligne même si la page
+   d'accueil AESH n'a jamais été ouverte. Ignoré en file:// : la page
+   fonctionne alors comme avant, sans mise en cache. */
+if ("serviceWorker" in navigator && location.protocol !== "file:") {
+  window.addEventListener("load", function () {
+    navigator.serviceWorker.register("../service-worker.js").catch(function () {});
+  });
+}
+</script>
 </body>
 </html>

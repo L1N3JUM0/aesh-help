@@ -1,0 +1,112 @@
+{
+  "format": "suivi-aesh/2",
+  "genere_le": "2026-10-16",
+  "aesh": "Léa Exemplaire",
+  "etablissements": [
+    "Collège Fictif des Tilleuls"
+  ],
+  "rapports": [
+    {
+      "id": "fictif-r006",
+      "eleveId": "fictif-e-emma-e-6a-college-fictif-des-tilleuls",
+      "eleveNom": "Emma E.",
+      "classe": "6A",
+      "heures": "8 h",
+      "etablissement": "Collège Fictif des Tilleuls",
+      "periode": "Période 1",
+      "debut": "2026-09-01",
+      "fin": "2026-10-16",
+      "periodeTexte": "Période 1 — septembre-octobre 2026",
+      "modalite": "Individuel",
+      "copartage": 0,
+      "relation": "Fluide",
+      "invest": {
+        "tendance": "Stable",
+        "items": {
+          "engagement": [
+            "Se met au travail après relance"
+          ]
+        }
+      },
+      "accomp": [
+        "Reformulation des consignes",
+        "Aide à l'organisation",
+        "Prise de notes"
+      ],
+      "matieres": [
+        "SVT",
+        "Français"
+      ],
+      "commentaire": "Rapport fictif généré pour les tests.",
+      "creeJour": "2026-10-16"
+    },
+    {
+      "id": "fictif-r007",
+      "eleveId": "fictif-e-alice-p-6b-college-fictif-des-tilleuls",
+      "eleveNom": "Alice P.",
+      "classe": "6B",
+      "heures": "6 h",
+      "etablissement": "Collège Fictif des Tilleuls",
+      "periode": "Période 1",
+      "debut": "2026-09-01",
+      "fin": "2026-10-16",
+      "periodeTexte": "Période 1 — septembre-octobre 2026",
+      "modalite": "Individuel",
+      "copartage": 0,
+      "relation": "Difficile",
+      "invest": {
+        "tendance": "En recul",
+        "items": {
+          "engagement": [
+            "Se met au travail après relance"
+          ]
+        }
+      },
+      "accomp": [
+        "Secrétaire, scripteur",
+        "Gestion des émotions",
+        "Aide à l'organisation"
+      ],
+      "matieres": [
+        "EPS",
+        "SVT"
+      ],
+      "commentaire": "Rapport fictif généré pour les tests.",
+      "creeJour": "2026-10-16"
+    },
+    {
+      "id": "fictif-r008",
+      "eleveId": "fictif-e-chloe-b-5a-college-fictif-des-tilleuls",
+      "eleveNom": "Chloé B.",
+      "classe": "5A",
+      "heures": "9 h",
+      "etablissement": "Collège Fictif des Tilleuls",
+      "periode": "Période 1",
+      "debut": "2026-09-01",
+      "fin": "2026-10-16",
+      "periodeTexte": "Période 1 — septembre-octobre 2026",
+      "modalite": "Individuel",
+      "copartage": 0,
+      "relation": "En construction",
+      "invest": {
+        "tendance": "Stable",
+        "items": {
+          "engagement": [
+            "Se met au travail après relance"
+          ]
+        }
+      },
+      "accomp": [
+        "Secrétaire, scripteur",
+        "Prise de notes",
+        "Gestion des émotions"
+      ],
+      "matieres": [
+        "Français",
+        "Histoire-Géographie"
+      ],
+      "commentaire": "Rapport fictif généré pour les tests.",
+      "creeJour": "2026-10-16"
+    }
+  ]
+}

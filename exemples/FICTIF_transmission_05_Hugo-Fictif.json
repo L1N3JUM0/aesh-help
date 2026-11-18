@@ -1,0 +1,112 @@
+{
+  "format": "suivi-aesh/2",
+  "genere_le": "2026-10-16",
+  "aesh": "Hugo Fictif",
+  "etablissements": [
+    "Collège Fictif des Tilleuls"
+  ],
+  "rapports": [
+    {
+      "id": "fictif-r009",
+      "eleveId": "fictif-e-hugo-m-5a-college-fictif-des-tilleuls",
+      "eleveNom": "Hugo M.",
+      "classe": "5A",
+      "heures": "6 h",
+      "etablissement": "Collège Fictif des Tilleuls",
+      "periode": "Période 1",
+      "debut": "2026-09-01",
+      "fin": "2026-10-16",
+      "periodeTexte": "Période 1 — septembre-octobre 2026",
+      "modalite": "Mutualisé",
+      "copartage": 2,
+      "relation": "Fluide",
+      "invest": {
+        "tendance": "En progrès",
+        "items": {
+          "engagement": [
+            "Se met au travail après relance"
+          ]
+        }
+      },
+      "accomp": [
+        "Recentrage sur la tâche",
+        "Médiation avec l'enseignant",
+        "Aide à l'organisation"
+      ],
+      "matieres": [
+        "Français",
+        "Mathématiques"
+      ],
+      "commentaire": "Rapport fictif généré pour les tests.",
+      "creeJour": "2026-10-16"
+    },
+    {
+      "id": "fictif-r010",
+      "eleveId": "fictif-e-lena-m-5a-college-fictif-des-tilleuls",
+      "eleveNom": "Léna M.",
+      "classe": "5A",
+      "heures": "6 h",
+      "etablissement": "Collège Fictif des Tilleuls",
+      "periode": "Période 1",
+      "debut": "2026-09-01",
+      "fin": "2026-10-16",
+      "periodeTexte": "Période 1 — septembre-octobre 2026",
+      "modalite": "Mutualisé",
+      "copartage": 2,
+      "relation": "Fluide",
+      "invest": {
+        "tendance": "En progrès",
+        "items": {
+          "engagement": [
+            "Se met au travail après relance"
+          ]
+        }
+      },
+      "accomp": [
+        "Reformulation des consignes",
+        "Recentrage sur la tâche",
+        "Aide à l'organisation"
+      ],
+      "matieres": [
+        "Français",
+        "Histoire-Géographie"
+      ],
+      "commentaire": "Rapport fictif généré pour les tests.",
+      "creeJour": "2026-10-16"
+    },
+    {
+      "id": "fictif-r011",
+      "eleveId": "fictif-e-adam-e-5a-college-fictif-des-tilleuls",
+      "eleveNom": "Adam E.",
+      "classe": "5A",
+      "heures": "4.5 h",
+      "etablissement": "Collège Fictif des Tilleuls",
+      "periode": "Période 1",
+      "debut": "2026-09-01",
+      "fin": "2026-10-16",
+      "periodeTexte": "Période 1 — septembre-octobre 2026",
+      "modalite": "Mutualisé",
+      "copartage": 2,
+      "relation": "Fluide",
+      "invest": {
+        "tendance": "En progrès",
+        "items": {
+          "engagement": [
+            "Se met au travail après relance"
+          ]
+        }
+      },
+      "accomp": [
+        "Reformulation des consignes",
+        "Mise en confiance, encouragement",
+        "Lecture à voix haute"
+      ],
+      "matieres": [
+        "Français",
+        "Histoire-Géographie"
+      ],
+      "commentaire": "Rapport fictif généré pour les tests.",
+      "creeJour": "2026-10-16"
+    }
+  ]
+}

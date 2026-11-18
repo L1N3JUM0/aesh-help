@@ -1,0 +1,15 @@
+﻿Nom;Prenom;Quotite_hebdo;Email;Etablissements;Indisponibilites;Formations
+Durand;Sophie;24;sophie.durand@exemple.invalid;Collège Fictif des Tilleuls | Collège Fictif du Port;;TSA
+Exemplaire;Léa;24;lea.exemplaire@exemple.invalid;Collège Fictif des Tilleuls;;
+Fictif;Hugo;24;hugo.fictif@exemple.invalid;Collège Fictif des Tilleuls;mer;
+Démonstration;Nadia;20;nadia.demonstration@exemple.invalid;Collège Fictif des Tilleuls | Collège Fictif du Port;ven-pm;LSF
+Factice;Inès;20;ines.factice@exemple.invalid;Collège Fictif du Port;;
+Imaginaire;Paul;18;paul.imaginaire@exemple.invalid;Collège Fictif du Port;lun-am;
+Prototype;Chloé;18;chloe.prototype@exemple.invalid;École Fictive des Lilas;;
+Maquette;Yanis;24;yanis.maquette@exemple.invalid;École Fictive des Lilas;;
+Brouillon;Manon;20;manon.brouillon@exemple.invalid;École Fictive des Lilas | Collège Fictif des Tilleuls;;
+Essai;Omar;20;omar.essai@exemple.invalid;;;
+Simulée;Julie;12;julie.simulee@exemple.invalid;Collège Fictif des Tilleuls;;
+Modèle;Théo;20;theo.modele@exemple.invalid;Collège Fictif du Port;;
+Échantillon;Sarah;12;sarah.echantillon@exemple.invalid;École Fictive des Lilas;;
+Gabarit;Bruno;18;bruno.gabarit@exemple.invalid;Collège Fictif des Tilleuls;;TSA | Braille

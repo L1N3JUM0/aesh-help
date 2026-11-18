@@ -1,0 +1,79 @@
+{
+  "format": "suivi-aesh/2",
+  "genere_le": "2026-10-16",
+  "aesh": "Omar Essai",
+  "etablissements": [
+    "Collège Fictif des Tilleuls",
+    "Collège Fictif du Port"
+  ],
+  "rapports": [
+    {
+      "id": "fictif-r021",
+      "eleveId": "fictif-e-mila-d-4a-college-fictif-des-tilleuls",
+      "eleveNom": "Mila D.",
+      "classe": "4A",
+      "heures": "8 h",
+      "etablissement": "Collège Fictif des Tilleuls",
+      "periode": "Période 1",
+      "debut": "2026-09-01",
+      "fin": "2026-10-16",
+      "periodeTexte": "Période 1 — septembre-octobre 2026",
+      "modalite": "Individuel",
+      "copartage": 0,
+      "relation": "Fluide",
+      "invest": {
+        "tendance": "En progrès",
+        "items": {
+          "engagement": [
+            "Se met au travail après relance"
+          ]
+        }
+      },
+      "accomp": [
+        "Gestion des émotions",
+        "Gestes du quotidien",
+        "Aménagement des évaluations"
+      ],
+      "matieres": [
+        "Anglais",
+        "Français"
+      ],
+      "commentaire": "Rapport fictif généré pour les tests.",
+      "creeJour": "2026-10-16"
+    },
+    {
+      "id": "fictif-r022",
+      "eleveId": "fictif-e-anna-e-3b-college-fictif-du-port",
+      "eleveNom": "Anna É.",
+      "classe": "3B",
+      "heures": "6 h",
+      "etablissement": "Collège Fictif du Port",
+      "periode": "Période 1",
+      "debut": "2026-09-01",
+      "fin": "2026-10-16",
+      "periodeTexte": "Période 1 — septembre-octobre 2026",
+      "modalite": "Individuel",
+      "copartage": 0,
+      "relation": "En construction",
+      "invest": {
+        "tendance": "En progrès",
+        "items": {
+          "engagement": [
+            "Se met au travail après relance"
+          ]
+        }
+      },
+      "accomp": [
+        "Mise en mots, verbalisation",
+        "Secrétaire, scripteur",
+        "Aide à l'organisation"
+      ],
+      "matieres": [
+        "Anglais",
+        "EPS"
+      ],
+      "commentaire": "Rapport fictif généré pour les tests.",
+      "creeJour": "2026-10-16"
+    }
+  ]
+}

@@ -1,0 +1,79 @@
+{
+  "format": "suivi-aesh/2",
+  "genere_le": "2026-10-16",
+  "aesh": "Nadia Démonstration",
+  "etablissements": [
+    "Collège Fictif des Tilleuls",
+    "Collège Fictif du Port"
+  ],
+  "rapports": [
+    {
+      "id": "fictif-r012",
+      "eleveId": "fictif-e-jules-e-3a-college-fictif-des-tilleuls",
+      "eleveNom": "Jules É.",
+      "classe": "3A",
+      "heures": "12 h",
+      "etablissement": "Collège Fictif des Tilleuls",
+      "periode": "Période 1",
+      "debut": "2026-09-01",
+      "fin": "2026-10-16",
+      "periodeTexte": "Période 1 — septembre-octobre 2026",
+      "modalite": "Individuel",
+      "copartage": 0,
+      "relation": "Fluide",
+      "invest": {
+        "tendance": "En recul",
+        "items": {
+          "engagement": [
+            "Se met au travail après relance"
+          ]
+        }
+      },
+      "accomp": [
+        "Aménagement des évaluations",
+        "Lecture à voix haute",
+        "Aide à l'organisation"
+      ],
+      "matieres": [
+        "Mathématiques",
+        "SVT"
+      ],
+      "commentaire": "Rapport fictif généré pour les tests.",
+      "creeJour": "2026-10-16"
+    },
+    {
+      "id": "fictif-r013",
+      "eleveId": "fictif-e-liam-d-3b-college-fictif-du-port",
+      "eleveNom": "Liam D.",
+      "classe": "3B",
+      "heures": "9 h",
+      "etablissement": "Collège Fictif du Port",
+      "periode": "Période 1",
+      "debut": "2026-09-01",
+      "fin": "2026-10-16",
+      "periodeTexte": "Période 1 — septembre-octobre 2026",
+      "modalite": "Individuel",
+      "copartage": 0,
+      "relation": "Fluide",
+      "invest": {
+        "tendance": "En progrès",
+        "items": {
+          "engagement": [
+            "Se met au travail après relance"
+          ]
+        }
+      },
+      "accomp": [
+        "Médiation avec l'enseignant",
+        "Aide aux déplacements",
+        "Mise en confiance, encouragement"
+      ],
+      "matieres": [
+        "Mathématiques",
+        "Histoire-Géographie"
+      ],
+      "commentaire": "Rapport fictif généré pour les tests.",
+      "creeJour": "2026-10-16"
+    }
+  ]
+}

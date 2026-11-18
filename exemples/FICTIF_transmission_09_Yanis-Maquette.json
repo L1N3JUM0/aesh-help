@@ -1,0 +1,112 @@
+{
+  "format": "suivi-aesh/2",
+  "genere_le": "2026-10-16",
+  "aesh": "Yanis Maquette",
+  "etablissements": [
+    "École Fictive des Lilas"
+  ],
+  "rapports": [
+    {
+      "id": "fictif-r018",
+      "eleveId": "fictif-e-lola-t-cm2-ecole-fictive-des-lilas",
+      "eleveNom": "Lola T.",
+      "classe": "CM2",
+      "heures": "12 h",
+      "etablissement": "École Fictive des Lilas",
+      "periode": "Période 1",
+      "debut": "2026-09-01",
+      "fin": "2026-10-16",
+      "periodeTexte": "Période 1 — septembre-octobre 2026",
+      "modalite": "Individuel",
+      "copartage": 0,
+      "relation": "Fluide",
+      "invest": {
+        "tendance": "En progrès",
+        "items": {
+          "engagement": [
+            "Se met au travail après relance"
+          ]
+        }
+      },
+      "accomp": [
+        "Secrétaire, scripteur",
+        "Mise en mots, verbalisation",
+        "Aide à la mise en place du matériel"
+      ],
+      "matieres": [
+        "Sciences",
+        "Questionner le monde"
+      ],
+      "commentaire": "Rapport fictif généré pour les tests.",
+      "creeJour": "2026-10-16"
+    },
+    {
+      "id": "fictif-r019",
+      "eleveId": "fictif-e-iris-s-cm1-ecole-fictive-des-lilas",
+      "eleveNom": "Iris S.",
+      "classe": "CM1",
+      "heures": "9 h",
+      "etablissement": "École Fictive des Lilas",
+      "periode": "Période 1",
+      "debut": "2026-09-01",
+      "fin": "2026-10-16",
+      "periodeTexte": "Période 1 — septembre-octobre 2026",
+      "modalite": "Individuel",
+      "copartage": 0,
+      "relation": "Fluide",
+      "invest": {
+        "tendance": "Stable",
+        "items": {
+          "engagement": [
+            "Se met au travail après relance"
+          ]
+        }
+      },
+      "accomp": [
+        "Gestes du quotidien",
+        "Reformulation des consignes",
+        "Aménagement des évaluations"
+      ],
+      "matieres": [
+        "EPS",
+        "Français"
+      ],
+      "commentaire": "Rapport fictif généré pour les tests.",
+      "creeJour": "2026-10-16"
+    },
+    {
+      "id": "fictif-r020",
+      "eleveId": "fictif-e-lucas-i-ce1-ecole-fictive-des-lilas",
+      "eleveNom": "Lucas I.",
+      "classe": "CE1",
+      "heures": "10 h",
+      "etablissement": "École Fictive des Lilas",
+      "periode": "Période 1",
+      "debut": "2026-09-01",
+      "fin": "2026-10-16",
+      "periodeTexte": "Période 1 — septembre-octobre 2026",
+      "modalite": "Individuel",
+      "copartage": 0,
+      "relation": "En construction",
+      "invest": {
+        "tendance": "En recul",
+        "items": {
+          "engagement": [
+            "Se met au travail après relance"
+          ]
+        }
+      },
+      "accomp": [
+        "Lecture à voix haute",
+        "Médiation avec l'enseignant",
+        "Reformulation des consignes"
+      ],
+      "matieres": [
+        "Sciences",
+        "Questionner le monde"
+      ],
+      "commentaire": "Rapport fictif généré pour les tests.",
+      "creeJour": "2026-10-16"
+    }
+  ]
+}

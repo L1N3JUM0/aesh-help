@@ -1,0 +1,44 @@
+{
+  "format": "suivi-aesh/2",
+  "genere_le": "2026-10-16",
+  "aesh": "sophie durand",
+  "etablissements": [
+    "Collège Fictif du Port"
+  ],
+  "rapports": [
+    {
+      "id": "fictif-r003",
+      "eleveId": "fictif-e-sami-s-3b-college-fictif-du-port",
+      "eleveNom": "Sami S.",
+      "classe": "3B",
+      "heures": "10 h",
+      "etablissement": "Collège Fictif du Port",
+      "periode": "Période 1",
+      "debut": "2026-09-01",
+      "fin": "2026-10-16",
+      "periodeTexte": "Période 1 — septembre-octobre 2026",
+      "modalite": "Individuel",
+      "copartage": 0,
+      "relation": "En construction",
+      "invest": {
+        "tendance": "En recul",
+        "items": {
+          "engagement": [
+            "Se met au travail après relance"
+          ]
+        }
+      },
+      "accomp": [
+        "Aide aux déplacements",
+        "Reformulation des consignes",
+        "Aide à la manipulation"
+      ],
+      "matieres": [
+        "Français",
+        "Anglais"
+      ],
+      "commentaire": "Rapport fictif généré pour les tests.",
+      "creeJour": "2026-10-16"
+    }
+  ]
+}

@@ -1,0 +1,78 @@
+{
+  "format": "suivi-aesh/2",
+  "genere_le": "2026-10-16",
+  "aesh": "Inès Factice",
+  "etablissements": [
+    "Collège Fictif du Port"
+  ],
+  "rapports": [
+    {
+      "id": "fictif-r014",
+      "eleveId": "fictif-e-leo-e-6a-college-fictif-du-port",
+      "eleveNom": "Léo E.",
+      "classe": "6A",
+      "heures": "9 h",
+      "etablissement": "Collège Fictif du Port",
+      "periode": "Période 1",
+      "debut": "2026-09-01",
+      "fin": "2026-10-16",
+      "periodeTexte": "Période 1 — septembre-octobre 2026",
+      "modalite": "Individuel",
+      "copartage": 0,
+      "relation": "Difficile",
+      "invest": {
+        "tendance": "Stable",
+        "items": {
+          "engagement": [
+            "Se met au travail après relance"
+          ]
+        }
+      },
+      "accomp": [
+        "Mise en confiance, encouragement",
+        "Lecture à voix haute",
+        "Aide aux déplacements"
+      ],
+      "matieres": [
+        "Histoire-Géographie",
+        "SVT"
+      ],
+      "commentaire": "Rapport fictif généré pour les tests.",
+      "creeJour": "2026-10-16"
+    },
+    {
+      "id": "fictif-r015",
+      "eleveId": "fictif-e-ethan-b-5a-college-fictif-du-port",
+      "eleveNom": "Ethan B.",
+      "classe": "5A",
+      "heures": "8 h",
+      "etablissement": "Collège Fictif du Port",
+      "periode": "Période 1",
+      "debut": "2026-09-01",
+      "fin": "2026-10-16",
+      "periodeTexte": "Période 1 — septembre-octobre 2026",
+      "modalite": "Individuel",
+      "copartage": 0,
+      "relation": "En construction",
+      "invest": {
+        "tendance": "En progrès",
+        "items": {
+          "engagement": [
+            "Se met au travail après relance"
+          ]
+        }
+      },
+      "accomp": [
+        "Médiation avec l'enseignant",
+        "Aide à la manipulation",
+        "Recentrage sur la tâche"
+      ],
+      "matieres": [
+        "Mathématiques",
+        "SVT"
+      ],
+      "commentaire": "Rapport fictif généré pour les tests.",
+      "creeJour": "2026-10-16"
+    }
+  ]
+}

@@ -1,0 +1,78 @@
+{
+  "format": "suivi-aesh/2",
+  "genere_le": "2026-10-16",
+  "aesh": "Chloé Prototype",
+  "etablissements": [
+    "École Fictive des Lilas"
+  ],
+  "rapports": [
+    {
+      "id": "fictif-r016",
+      "eleveId": "fictif-e-paul-f-cp-ecole-fictive-des-lilas",
+      "eleveNom": "Paul F.",
+      "classe": "CP",
+      "heures": "12 h",
+      "etablissement": "École Fictive des Lilas",
+      "periode": "Période 1",
+      "debut": "2026-09-01",
+      "fin": "2026-10-16",
+      "periodeTexte": "Période 1 — septembre-octobre 2026",
+      "modalite": "Individuel",
+      "copartage": 0,
+      "relation": "En construction",
+      "invest": {
+        "tendance": "En progrès",
+        "items": {
+          "engagement": [
+            "Se met au travail après relance"
+          ]
+        }
+      },
+      "accomp": [
+        "Aide aux déplacements",
+        "Lecture à voix haute",
+        "Gestes du quotidien"
+      ],
+      "matieres": [
+        "EPS",
+        "Anglais"
+      ],
+      "commentaire": "Rapport fictif généré pour les tests.",
+      "creeJour": "2026-10-16"
+    },
+    {
+      "id": "fictif-r017",
+      "eleveId": "fictif-e-mia-e-cp-ecole-fictive-des-lilas",
+      "eleveNom": "Mia E.",
+      "classe": "CP",
+      "heures": "8 h",
+      "etablissement": "École Fictive des Lilas",
+      "periode": "Période 1",
+      "debut": "2026-09-01",
+      "fin": "2026-10-16",
+      "periodeTexte": "Période 1 — septembre-octobre 2026",
+      "modalite": "Individuel",
+      "copartage": 0,
+      "relation": "Difficile",
+      "invest": {
+        "tendance": "En recul",
+        "items": {
+          "engagement": [
+            "Se met au travail après relance"
+          ]
+        }
+      },
+      "accomp": [
+        "Aide à l'organisation",
+        "Lecture à voix haute",
+        "Mise en confiance, encouragement"
+      ],
+      "matieres": [
+        "Français",
+        "Questionner le monde"
+      ],
+      "commentaire": "Rapport fictif généré pour les tests.",
+      "creeJour": "2026-10-16"
+    }
+  ]
+}

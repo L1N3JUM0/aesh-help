@@ -1,0 +1,46 @@
+﻿Etablissement;Classe;Prenom;Nom;Heures_individuelles;Heures_mutualisees;Recreation;Pause_meridienne;Besoins;Debut_notification;Fin_notification
+Collège Fictif des Tilleuls;6A;Emma;Exemple;8;;non;non;Reformulation des consignes | Aide à l'organisation;2026-09-01;2027-07-04
+Collège Fictif des Tilleuls;6A;Noah;Fictif;;6;non;non;Recentrage sur la tâche;2026-09-01;2027-07-04
+Collège Fictif des Tilleuls;6A;Jade;Factice;;6;non;non;Lecture à voix haute;2026-09-01;2027-07-04
+Collège Fictif des Tilleuls;6A;Tom;Figurant;6;;non;non;;2026-09-01;2027-07-04
+Collège Fictif des Tilleuls;6B;Louis;Imaginaire;12;;oui;oui;Aide aux déplacements | Gestes du quotidien;2026-09-01;2027-07-04
+Collège Fictif des Tilleuls;6B;Alice;Prototype;6;;non;non;Secrétaire, scripteur;2026-09-01;2027-07-04
+Collège Fictif des Tilleuls;5A;Hugo;Maquette;;6;non;non;Recentrage sur la tâche;2026-09-01;2027-07-04
+Collège Fictif des Tilleuls;5A;Léna;Modèle;;6;non;non;Reformulation des consignes;2026-09-01;2027-07-04
+Collège Fictif des Tilleuls;5A;Adam;Essai;;4,5;non;non;;2026-09-01;2027-07-04
+Collège Fictif des Tilleuls;5A;Chloé;Brouillon;9;;non;non;Secrétaire, scripteur | Prise de notes;2026-09-01;2027-07-04
+Collège Fictif des Tilleuls;5B;Gabriel;Gabarit;6;3;non;non;;2026-09-01;2027-07-04
+Collège Fictif des Tilleuls;5B;Manon;Copie;;4;non;non;;2026-09-01;2027-07-04
+Collège Fictif des Tilleuls;4A;Rose;Échantillon;;6;non;non;;2026-09-01;2027-07-04
+Collège Fictif des Tilleuls;4A;Arthur;Simulacre;;6;non;non;;2026-09-01;2027-07-04
+Collège Fictif des Tilleuls;4A;Mila;Démo;8;;non;non;Gestion des émotions;2026-09-01;2027-07-04
+Collège Fictif des Tilleuls;4C;Raphaël;Témoin;10;;non;non;Aide à la manipulation;2026-09-01;2027-07-04
+Collège Fictif des Tilleuls;4C;Lina;Spécimen;6;;non;non;;2026-09-01;2027-07-04
+Collège Fictif des Tilleuls;3A;Jules;Ébauche;12;;non;non;Aménagement des évaluations;2026-09-01;2026-12-09
+Collège Fictif des Tilleuls;3A;Zoé;Esquisse;;5;non;non;;2026-09-01;2027-07-04
+Collège Fictif des Tilleuls;3A;Nathan;Copie;6;;non;non;;2026-09-01;2027-07-04
+Collège Fictif des Tilleuls;3A;Inès;Doublure;7;;non;non;;2026-09-01;2026-11-14
+Collège Fictif des Tilleuls;3A;Yasmine;Factice;8;;non;non;;2026-09-01;2027-07-04
+Collège Fictif du Port;6A;Léo;Exemple;9;;non;non;Mise en confiance, encouragement;2026-09-01;2027-07-04
+Collège Fictif du Port;6A;Ambre;Fictif;;5;non;non;;2026-09-01;2027-07-04
+Collège Fictif du Port;6A;Timéo;Modèle;;5;non;non;;2026-09-01;2027-07-04
+Collège Fictif du Port;5A;Lucie;Essai;6;;oui;non;;2026-09-01;2027-07-04
+Collège Fictif du Port;5A;Ethan;Brouillon;8;;non;non;;2026-09-01;2027-07-04
+Collège Fictif du Port;4A;Clara;Gabarit;12;;non;non;Secrétaire, scripteur | Aide aux déplacements;2026-09-01;2027-07-04
+Collège Fictif du Port;4A;Maël;Démo;;6;non;non;;2026-09-01;2027-07-04
+Collège Fictif du Port;4A;Lou;Témoin;;6;non;non;;2026-09-01;2027-07-04
+Collège Fictif du Port;3B;Sami;Spécimen;10;;non;non;;2026-09-01;2027-07-04
+Collège Fictif du Port;3B;Anna;Ébauche;6;;non;oui;;2026-09-01;2027-07-04
+Collège Fictif du Port;3B;Victor;Esquisse;;4;non;non;;2026-09-01;2027-07-04
+Collège Fictif du Port;3B;Elsa;Copie;;4;non;non;;2026-09-01;2027-07-04
+Collège Fictif du Port;3B;Liam;Doublure;9;;non;non;Médiation avec l'enseignant;2026-09-01;2027-07-04
+École Fictive des Lilas;CP;Paul;Figurant;12;;oui;non;Aide aux déplacements;2026-09-01;2027-07-04
+École Fictive des Lilas;CP;Mia;Exemple;8;;non;non;;2026-09-01;2027-07-04
+École Fictive des Lilas;CE1;Lucas;Imaginaire;10;;non;non;Lecture à voix haute;2026-09-01;2027-07-04
+École Fictive des Lilas;CE2;Nina;Prototype;;6;non;non;;2026-09-01;2027-07-04
+École Fictive des Lilas;CE2;Malo;Maquette;;6;non;non;;2026-09-01;2027-07-04
+École Fictive des Lilas;CM1;Iris;Simulacre;9;;non;oui;Gestes du quotidien;2026-09-01;2027-07-04
+École Fictive des Lilas;CM1;Axel;Échantillon;6;;non;non;;2026-09-01;2027-07-04
+École Fictive des Lilas;CM2;Lola;Témoin;12;;non;non;Secrétaire, scripteur;2026-09-01;2027-07-04
+École Fictive des Lilas;CM2;Enzo;Spécimen;;6;non;non;;2026-09-01;2027-07-04
+École Fictive des Lilas;CM2;Romy;Spécimen;;6;non;non;;2026-09-01;2027-07-04

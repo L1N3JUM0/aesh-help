@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tests — module Affectations PIAL</title>
+<style>
+body{margin:0;padding:24px 28px;background:#ECEEEC;color:#23262B;font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
+h1{font-family:Georgia,serif;font-size:21px;color:#1F3B63;margin:0 0 4px}
+.chapeau{color:#697079;font-size:13.5px;margin:0 0 18px}
+.bilan{padding:10px 12px;border-radius:0 6px 6px 0;margin:0 0 16px;border-left:3px solid #C6CFE3;background:#F4F6F9}
+.bilan.ok{background:#E9F1EC;border-left-color:#2F6B4F;color:#265C42}
+.bilan.ko{background:#FBF1EF;border-left-color:#B0473C;color:#7C3A32}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.4px;color:#697079;margin:18px 0 6px}
+ul{list-style:none;margin:0;padding:0;background:#fff;border-radius:10px}
+li{padding:6px 12px;border-bottom:1px solid #E4E8F0;font-size:14px}
+li:last-child{border-bottom:none}
+.etat{display:inline-block;width:58px;font-weight:700}
+.ok .etat{color:#2F6B4F}.echec .etat{color:#B0473C}.ignore .etat{color:#9AA1A9}
+.message{display:block;margin:2px 0 0 58px;font-family:Consolas,monospace;font-size:12.5px;color:#7C3A32;white-space:pre-wrap}
+.ignore .message{color:#697079}
+</style>
+</head>
+<body>
+<h1>Tests du module Affectations</h1>
+<p class="chapeau">Les mêmes assertions s'exécutent en ligne de commande : <code>node outils/tests-node.js</code>. Aucune donnée réelle n'est lue ni modifiée.</p>
+<div class="bilan" id="bilan">Exécution en cours…</div>
+<div id="resultats"></div>
+
+<script src="modele.js"></script>
+<script src="zip.js" onerror="void 0"></script>
+<script src="import-fichiers.js" onerror="void 0"></script>
+<script src="tests.js"></script>
+<script>
+(function () {
+  "use strict";
+  function ech(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+  var env = {
+    modele: window.PialModele,
+    zip: window.PialZip || null,
+    importFichiers: window.PialImport || null,
+    // les fichiers d'exemple ne sont lisibles que si la page est servie en
+    // http(s) ; ouverte par double-clic (file://), ces tests sont ignorés.
+    lireExemple: function (nom) {
+      if (location.protocol === "file:") return Promise.resolve(null);
+      return fetch("../exemples/" + encodeURIComponent(nom)).then(function (r) {
+        return r.ok ? r.arrayBuffer().then(function (b) { return new Uint8Array(b); }) : null;
+      }).catch(function () { return null; });
+    }
+  };
+  PialTests.executer(env).then(function (bilan) {
+    var hote = document.getElementById("bilan");
+    hote.className = "bilan " + (bilan.echecs.length ? "ko" : "ok");
+    hote.textContent = bilan.reussis + " réussi(s), " + bilan.echecs.length + " échec(s), " + bilan.ignores + " ignoré(s).";
+    var h = "", groupe = null;
+    bilan.lignes.forEach(function (l) {
+      if (l.groupe !== groupe) { if (groupe !== null) h += "</ul>"; groupe = l.groupe; h += "<h2>" + ech(groupe) + "</h2><ul>"; }
+      var lib = l.etat === "ok" ? "ok" : (l.etat === "ignore" ? "ignoré" : "ÉCHEC");
+      h += '<li class="' + l.etat + '"><span class="etat">' + lib + "</span>" + ech(l.nom)
+        + (l.message ? '<span class="message">' + ech(l.message) + "</span>" : "") + "</li>";
+    });
+    document.getElementById("resultats").innerHTML = h + "</ul>";
+  });
+})();
+</script>
+</body>
+</html>

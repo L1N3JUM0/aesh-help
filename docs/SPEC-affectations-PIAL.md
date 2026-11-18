@@ -33,7 +33,7 @@ Aucun format SIECLE ni Pronote n'est imposé : **l'outil fournit ses propres gab
 
 - Formats acceptés : **CSV** (séparateur `;` ou `,`, détecté automatiquement) et **XLSX** (première feuille).
 - Encodage CSV : essayer UTF-8 (avec ou sans BOM). Si le décodage échoue (`TextDecoder` avec `fatal:true`), basculer en **Windows-1252** : c'est le cas fréquent des CSV produits par Excel en français.
-- XLSX lu **sans bibliothèque** : un XLSX est une archive ZIP. Lire le répertoire central, décompresser les entrées utiles avec `DecompressionStream("deflate-raw")`, puis analyser `xl/sharedStrings.xml` et `xl/worksheets/sheet1.xml` avec `DOMParser`. Si `DecompressionStream` est absent (vieux navigateur), afficher le message « Enregistrez le fichier en CSV et réimportez-le ».
+- XLSX lu **sans bibliothèque** : un XLSX est une archive ZIP. Lire le répertoire central, décompresser les entrées utiles avec `DecompressionStream("deflate-raw")`, puis analyser `xl/sharedStrings.xml` et la première feuille (trouvée via `xl/workbook.xml` et ses relations, pas forcément `sheet1.xml`) avec un petit lecteur XML interne plutôt que `DOMParser`, pour que le même code soit testé dans le navigateur et sous Node. Les nombres sont lus bruts ; les dates (n° de série Excel) et heures (fraction de jour) sont converties champ par champ. Si `DecompressionStream` est absent (vieux navigateur), afficher le message « Enregistrez le fichier en CSV et réimportez-le ».
 - **Écran de correspondance des colonnes** : les colonnes sont reconnues automatiquement par synonymes (casse et accents ignorés : « Nom », « NOM ÉLÈVE », « nom_eleve »…). Le coordonnateur corrige si besoin, et la correspondance retenue est mémorisée pour les imports suivants.
 - **Aperçu avant validation** : nombre de lignes reconnues, lignes en erreur (avec le motif), doublons. Rien n'est écrit en base avant la confirmation.
 - **Réimport** : propose « Mettre à jour » (fusion par clé) ou « Remplacer ». Le remplacement passe par une confirmation renforcée qui affiche les nombres exacts, comme dans l'application actuelle.
@@ -527,3 +527,5 @@ Reportées dans les sections concernées ; résumé :
 9. Données d'exemple : préfixe `FICTIF_`, domaine `exemple.invalid`, collision isolée dans un fichier à part, dates relatives à la génération (§10).
 10. Purge par année étendue → phase 3 ; rapprochement d'une année à l'autre → phase 4 (§11).
 11. Tests exécutables aussi en ligne de commande (`outils/tests-node.js`) (§10).
+12. XLSX analysé sans `DOMParser` (absent de Node), première feuille résolue via le classeur (§2.1).
+13. Colonne `Eleve` de l'EDT : un nom complet (« Lucas Martin ») est accepté et réduit à « Lucas M. » s'il correspond à un élève connu ; le nom complet n'est pas conservé (§2.4, §3).

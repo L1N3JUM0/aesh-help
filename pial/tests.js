@@ -459,6 +459,199 @@ var PialTests = (function () {
     });
   }
 
+  /* =============== tests d'import (CSV / XLSX) =============== */
+  function octetsLatin1(s) {
+    var o = new Uint8Array(s.length);
+    for (var i = 0; i < s.length; i++) o[i] = s.charCodeAt(i);
+    return o;
+  }
+  function testsImport(t, I, M, Z, env) {
+    var AN = "2026-2027";
+    t("CSV : décodage UTF-8 (avec et sans BOM) et Windows-1252", function () {
+      var avecBom = new Uint8Array([0xEF, 0xBB, 0xBF].concat(Array.prototype.slice.call(new TextEncoder().encode("Prénom;Quotité"))));
+      egal(I.decoderTexte(avecBom), { texte: "Prénom;Quotité", encodage: "utf-8" });
+      egal(I.decoderTexte(new TextEncoder().encode("Élève")), { texte: "Élève", encodage: "utf-8" });
+      egal(I.decoderTexte(octetsLatin1("Hélène;Quotité;École")), { texte: "Hélène;Quotité;École", encodage: "windows-1252" });
+    });
+    t("CSV : séparateur détecté et guillemets", function () {
+      egal(I.detecterSeparateur('Nom;"Besoins, divers";Classe\r\nA;B;C'), ";");
+      egal(I.detecterSeparateur('Nom,"Besoins; divers",Classe\nA,B,C'), ",");
+      egal(I.detecterSeparateur("\r\n\r\nNom,Prenom\n"), ",");
+      egal(I.analyserCSV('a;"b ""c"" d";"e\r\nf"\r\n\r\n;;\r\ng;h;i', ";"), [["a", 'b "c" d', "e\r\nf"], ["g", "h", "i"]]);
+      egal(I.analyserCSV("x,y\nz,", ","), [["x", "y"], ["z", ""]]);
+    });
+    t("correspondance des colonnes par synonymes (casse et accents ignorés)", function () {
+      var entetes = ["Établissement", "CLASSE", "Prénom élève", "NOM ÉLÈVE", "Heures individuelles", "h_mutualisées", "Fin notif"];
+      var c = I.correspondanceAuto("eleves", entetes);
+      egal([c.etablissement, c.classe, c.prenom, c.nom, c.heuresInd, c.heuresMut, c.finNotif], [0, 1, 2, 3, 4, 5, 6]);
+      egal(I.champsManquants("eleves", c), []);
+      egal(I.champsManquants("eleves", I.correspondanceAuto("eleves", ["nom_eleve", "Classe"])), ["Etablissement", "Prenom"]);
+      egal(I.correspondanceAuto("eleves", ["nom_eleve"]).nom, 0, "nom_eleve");
+      var memo = I.correspondanceAMemoriser(["Bidule", "Machin"], { nom: 0, prenom: 1 });
+      egal(memo, { nom: "bidule", prenom: "machin" });
+      var c2 = I.correspondanceAuto("eleves", ["Machin", "Bidule"], memo);
+      egal([c2.nom, c2.prenom], [1, 0], "correspondance mémorisée");
+      var e = I.correspondanceAuto("edt", ["Etablissement", "Classe", "Eleve", "Jour", "Debut", "Fin", "Matiere", "Semaine", "Groupe", "Priorite"]);
+      egal(I.champsManquants("edt", e), []);
+    });
+    t("conversion des valeurs : nombres, oui/non, dates, heures", function () {
+      egal([I.nombre("1,5"), I.nombre("6 h"), I.nombre(""), I.nombre("4.5")], [1.5, 6, 0, 4.5]);
+      vrai(isNaN(I.nombre("six")));
+      egal([I.booleen("Oui"), I.booleen("x"), I.booleen(""), I.booleen("NON"), I.booleen("peut-être")], [true, true, false, false, null]);
+      egal([I.dateIso("2026-09-01"), I.dateIso("01/09/2026"), I.dateIso("4/7/27"), I.dateIso("46266"), I.dateIso(""), I.dateIso("bientôt")],
+        ["2026-09-01", "2026-09-01", "2027-07-04", "2026-09-01", "", null]);
+      egal([I.heure("08:00"), I.heure("8h05"), I.heure("08:00:00"), I.heure("0.3333333333"), I.heure("0.6041666667"), I.heure("midi")],
+        ["08:00", "08:05", "08:00", "08:00", "14:30", ""]);
+    });
+    t("gabarits : UTF-8 avec BOM, « ; », lignes d'exemple reconnues", function () {
+      ["eleves", "aesh", "edt"].forEach(function (type) {
+        var g = I.gabarit(type);
+        egal(g.charCodeAt(0), 0xFEFF, type + " : BOM");
+        var lignes = I.analyserCSV(g.slice(1));
+        egal(lignes.length, 3, type + " : en-tête + 2 exemples");
+        var corr = I.correspondanceAuto(type, lignes[0]);
+        egal(I.champsManquants(type, corr), [], type + " : en-têtes reconnues");
+        var ap = I.apercu(type, lignes.slice(1), corr, { annee: AN, elevesConnus: {} });
+        egal([ap.exemples, ap.valides.length], [[2, 3], 0], type + " : exemples écartés");
+      });
+    });
+    t("aperçu élèves : minimisation, erreurs, doublons, collisions", function () {
+      var entetes = ["Etablissement", "Classe", "Prenom", "Nom", "Heures_individuelles", "Heures_mutualisees", "Recreation", "Pause_meridienne", "Besoins", "Debut_notification", "Fin_notification"];
+      var lignes = [
+        ["Collège Alpha", "5B", "Lucas", "Martin", "6", "", "non", "non", "secretaire, scripteur | Inventé", "01/09/2026", "04/07/2027"],
+        ["Collège Alpha", "5B", "Lucas", "Moreau", "", "4", "non", "non", "", "", ""],
+        ["Collège Alpha", "5A", "Léa", "Dupont", "1,5", "", "oui", "", "", "", ""],
+        ["Collège Alpha", "5A", "Léa", "Dupont", "1,5", "", "oui", "", "", "", ""],
+        ["Collège Alpha", "5A", "Tom", "Petit", "", "", "non", "non", "", "", ""],
+        ["Collège Alpha", "5C", "Lucas", "Ma.", "3", "", "non", "non", "", "", ""],
+        ["École Bêta", "CP", "", "Roux", "3", "", "peut-être", "non", "", "", ""]
+      ];
+      var ap = I.apercu("eleves", lignes, I.correspondanceAuto("eleves", entetes), { annee: AN });
+      egal(ap.collisions, [{ cle: "lucas m.|5b|college alpha", lignes: [2, 3] }], "collision bloquée");
+      egal(ap.doublons, [{ ligne: 5, premiere: 4 }]);
+      egal(ap.erreurs.map(function (e) { return e.ligne; }), [6, 8]);
+      vrai(/aucune heure/.test(ap.erreurs[0].motifs.join()), "aucune heure notifiée");
+      egal(ap.valides.map(function (e) { return e.id; }), [AN + "|lea d.|5a|college alpha", AN + "|lucas ma.|5c|college alpha"]);
+      egal(ap.valides[0].heuresInd, 1.5);
+      egal(ap.valides[0].recreation, true);
+      egal(ap.etablissements, ["Collège Alpha"]);
+      vrai(JSON.stringify(ap).indexOf("Dupont") < 0 && JSON.stringify(ap).indexOf("Martin") < 0, "aucun nom de famille conservé");
+      var ap2 = I.apercu("eleves", [lignes[0]], I.correspondanceAuto("eleves", entetes), { annee: AN });
+      egal(ap2.valides[0].besoins, ["Secrétaire, scripteur"], "besoin reconnu sans casse ni accent");
+      egal(ap2.avertissements.length, 1, "besoin hors liste signalé");
+      egal([ap2.valides[0].debutNotif, ap2.valides[0].finNotif], ["2026-09-01", "2027-07-04"]);
+    });
+    t("aperçu AESH : quotité, indisponibilités, e-mail", function () {
+      var entetes = ["Nom", "Prenom", "Quotite_hebdo", "Email", "Etablissements", "Indisponibilites", "Formations"];
+      var ap = I.apercu("aesh", [
+        ["Durand", "Sophie", "24", "s.d@exemple.invalid", "Collège Alpha | École Bêta", "Mercredi; ven-PM", "TSA | LSF"],
+        ["Petit", "Paul", "vingt", "", "", "", ""],
+        ["Roux", "Ana", "20", "pas-un-mail", "", "lundi matin", ""]
+      ], I.correspondanceAuto("aesh", entetes), { annee: AN });
+      egal(ap.valides.length, 1);
+      var a = ap.valides[0];
+      egal([a.id, a.quotite, a.indisponibilites, a.etablissements, a.formations],
+        ["durand|sophie", 24, ["mer", "ven-pm"], ["college alpha", "ecole beta"], ["TSA", "LSF"]]);
+      egal(ap.erreurs.map(function (e) { return e.ligne; }), [3, 4]);
+      egal(ap.erreurs[1].motifs.length, 2, "e-mail et indisponibilité");
+      egal(ap.etablissements, ["Collège Alpha", "École Bêta"]);
+    });
+    t("aperçu emplois du temps : élève connu, nom complet réduit, semaines, priorités", function () {
+      var connus = {}; connus["lucas m.|5b|college alpha"] = true;
+      var entetes = ["Etablissement", "Classe", "Eleve", "Jour", "Debut", "Fin", "Matiere", "Semaine", "Groupe", "Priorite"];
+      var ap = I.apercu("edt", [
+        ["Collège Alpha", "5B", "Lucas M.", "Lundi", "08:00", "08:55", "Mathématiques", "", "", "prioritaire"],
+        ["Collège Alpha", "5B", "Lucas Martin", "mar", "0.375", "0.4131944444", "LV2", "B", "ESP2", ""],
+        ["Collège Alpha", "5B", "Lucas M.", "Lundi", "08:00", "08:55", "Mathématiques", "", "", "prioritaire"],
+        ["Collège Alpha", "5B", "Inès B.", "lundi", "08:00", "08:55", "Français", "", "", ""],
+        ["Collège Alpha", "5B", "Lucas M.", "jeudi", "10:00", "09:00", "EPS", "C", "", "facultatif"]
+      ], I.correspondanceAuto("edt", entetes), { annee: AN, elevesConnus: connus });
+      egal(ap.valides.length, 2);
+      egal([ap.valides[1].eleveCle, ap.valides[1].jour, ap.valides[1].debut, ap.valides[1].fin, ap.valides[1].semaine],
+        ["lucas m.|5b|college alpha", "mardi", "09:00", "09:55", "B"], "nom complet réduit, heures Excel");
+      egal(ap.valides[0].etat, "prioritaire");
+      egal(ap.doublons, [{ ligne: 4, premiere: 2 }]);
+      egal(ap.erreurs.map(function (e) { return [e.ligne, e.motifs.length]; }), [[5, 1], [6, 3]]);
+    });
+    t("plan de fusion : mettre à jour ou remplacer", function () {
+      var existants = [{ id: "a", q: 1, ignorerIndispos: true }, { id: "b", q: 2 }, { id: "c", q: 3 }];
+      var nouveaux = [{ id: "a", q: 1 }, { id: "b", q: 5 }, { id: "d", q: 4 }];
+      var p = I.planFusion(existants, nouveaux, "id", "maj");
+      egal([p.ajouts.length, p.modifies.length, p.inchanges.length, p.supprimes.length], [1, 1, 1, 0]);
+      var r = I.planFusion(existants, nouveaux, "id", "remplacer");
+      egal(r.supprimes.map(function (x) { return x.id; }), ["c"]);
+    });
+
+    /* ---------- fichiers du dossier exemples/ ---------- */
+    function lireExemple(nom) {
+      return env.lireExemple(nom).then(function (octets) {
+        if (!octets) throw new Ignore("fichiers d'exemple non accessibles (page ouverte en file://) — lancer node outils/tests-node.js");
+        return I.lireFichier(nom, octets, Z);
+      });
+    }
+    function apercuFichier(type, lu, options) {
+      var corr = I.correspondanceAuto(type, lu.lignes[0]);
+      egal(I.champsManquants(type, corr), [], type + " : colonnes reconnues");
+      return I.apercu(type, lu.lignes.slice(1), corr, options);
+    }
+    function sansErreur(ap, nom) {
+      egal([ap.erreurs, ap.collisions, ap.doublons, ap.exemples], [[], [], [], []], nom + " : ni erreur, ni collision, ni doublon");
+    }
+    var elevesCsv = null;
+    t("exemples : FICTIF_eleves.csv s'importe sans erreur", function () {
+      return lireExemple("FICTIF_eleves.csv").then(function (lu) {
+        egal([lu.encodage, lu.separateur], ["utf-8", ";"]);
+        var ap = apercuFichier("eleves", lu, { annee: AN });
+        sansErreur(ap, "élèves");
+        egal(ap.valides.length, 45);
+        egal(ap.etablissements.length, 3);
+        elevesCsv = ap.valides;
+      });
+    });
+    t("exemples : FICTIF_eleves.xlsx donne exactement les mêmes élèves que le CSV", function () {
+      if (typeof DecompressionStream === "undefined") throw new Ignore("DecompressionStream indisponible");
+      return lireExemple("FICTIF_eleves.xlsx").then(function (lu) {
+        egal(lu.format, "xlsx");
+        var ap = apercuFichier("eleves", lu, { annee: AN });
+        sansErreur(ap, "élèves XLSX");
+        if (!elevesCsv) throw new Ignore("CSV non lu");
+        egal(ap.valides, elevesCsv);
+      });
+    });
+    t("exemples : AESH en UTF-8 et en Windows-1252 identiques", function () {
+      return Promise.all([lireExemple("FICTIF_aesh.csv"), lireExemple("FICTIF_aesh_windows1252.csv")]).then(function (l) {
+        egal([l[0].encodage, l[1].encodage], ["utf-8", "windows-1252"]);
+        var a = apercuFichier("aesh", l[0], { annee: AN }), b = apercuFichier("aesh", l[1], { annee: AN });
+        sansErreur(a, "AESH"); sansErreur(b, "AESH 1252");
+        egal(a.valides.length, 14);
+        egal(b.valides, a.valides);
+        vrai(a.valides.some(function (x) { return x.nom === "Démonstration" && x.indisponibilites.join() === "ven-pm"; }), "accents et indisponibilités");
+      });
+    });
+    t("exemples : FICTIF_edt_eleves.csv (séparateur virgule) s'importe sans erreur", function () {
+      return lireExemple("FICTIF_edt_eleves.csv").then(function (lu) {
+        if (!elevesCsv) throw new Ignore("élèves non lus");
+        egal(lu.separateur, ",");
+        var connus = {};
+        elevesCsv.forEach(function (e) { connus[e.cle] = true; });
+        var ap = apercuFichier("edt", lu, { annee: AN, elevesConnus: connus });
+        sansErreur(ap, "EDT");
+        vrai(ap.valides.length > 1000, "plus de 1 000 cours");
+        vrai(ap.valides.some(function (c) { return c.etat === "prioritaire"; }) && ap.valides.some(function (c) { return c.etat === "exclu"; }), "cas 9");
+        var avecCours = {};
+        ap.valides.forEach(function (c) { avecCours[c.eleveId] = true; });
+        egal(Object.keys(avecCours).length, 45, "chaque élève a un emploi du temps");
+      });
+    });
+    t("exemples : FICTIF_eleves_collision.csv bloque les deux « Lucas M. » (cas 10)", function () {
+      return lireExemple("FICTIF_eleves_collision.csv").then(function (lu) {
+        var ap = apercuFichier("eleves", lu, { annee: AN });
+        egal(ap.collisions, [{ cle: "lucas m.|5b|college fictif des tilleuls", lignes: [2, 3] }]);
+        egal(ap.valides.length, 1);
+      });
+    });
+  }
+
   /* =============== exécution =============== */
   function executer(env) {
     var tests = [];
@@ -466,6 +659,7 @@ var PialTests = (function () {
     var groupeCourant = "modèle";
     testsModele(t, env.modele);
     if (env.zip) { groupeCourant = "zip"; testsZip(t, env.zip, env); }
+    if (env.importFichiers) { groupeCourant = "import"; testsImport(t, env.importFichiers, env.modele, env.zip, env); }
     var bilan = { reussis: 0, echecs: [], ignores: 0, lignes: [] };
     return tests.reduce(function (p, test) {
       return p.then(function () {

@@ -245,6 +245,17 @@ var PialImport = (function () {
     }
   };
 
+  // libellés affichés (les en-têtes des gabarits restent sans accents pour
+  // faciliter la saisie et les tableurs)
+  var LIBELLES = {
+    Etablissement: "Établissement", Prenom: "Prénom", Heures_individuelles: "Heures individuelles",
+    Heures_mutualisees: "Heures mutualisées", Recreation: "Récréation", Pause_meridienne: "Pause méridienne",
+    Debut_notification: "Début de notification", Fin_notification: "Fin de notification",
+    Quotite_hebdo: "Quotité hebdomadaire", Email: "E-mail", Etablissements: "Établissements possibles",
+    Indisponibilites: "Indisponibilités", Eleve: "Élève", Debut: "Début", Matiere: "Matière", Priorite: "Priorité"
+  };
+  function libelleChamp(c) { return LIBELLES[c.entete] || c.entete; }
+
   function celluleCSV(v) {
     v = txt(v);
     return /[";\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
@@ -295,7 +306,7 @@ var PialImport = (function () {
   }
   function champsManquants(type, correspondance) {
     return TYPES[type].champs.filter(function (c) { return c.obligatoire && (correspondance[c.cle] == null || correspondance[c.cle] < 0); })
-      .map(function (c) { return c.entete; });
+      .map(libelleChamp);
   }
 
   /* =============== conversion des valeurs =============== */
@@ -365,7 +376,7 @@ var PialImport = (function () {
 
   function validerEleve(v, options) {
     var erreurs = [], avert = [];
-    TYPES.eleves.champs.forEach(function (c) { if (c.obligatoire && !v[c.cle]) erreurs.push("« " + c.entete + " » manquant"); });
+    TYPES.eleves.champs.forEach(function (c) { if (c.obligatoire && !v[c.cle]) erreurs.push("« " + libelleChamp(c) + " » manquant"); });
     var ind = nombre(v.heuresInd), mut = nombre(v.heuresMut);
     if (isNaN(ind)) erreurs.push("heures individuelles illisibles (« " + v.heuresInd + " »)");
     if (isNaN(mut)) erreurs.push("heures mutualisées illisibles (« " + v.heuresMut + " »)");
@@ -396,7 +407,7 @@ var PialImport = (function () {
   }
   function validerAesh(v, options) {
     var erreurs = [], avert = [];
-    TYPES.aesh.champs.forEach(function (c) { if (c.obligatoire && !v[c.cle]) erreurs.push("« " + c.entete + " » manquant"); });
+    TYPES.aesh.champs.forEach(function (c) { if (c.obligatoire && !v[c.cle]) erreurs.push("« " + libelleChamp(c) + " » manquant"); });
     var q = nombre(v.quotite);
     if (v.quotite && (isNaN(q) || !(q > 0) || q > 45)) erreurs.push("quotité illisible (« " + v.quotite + " »)");
     if (v.email && !emailPlausible(v.email)) erreurs.push("adresse e-mail invalide");
@@ -417,7 +428,7 @@ var PialImport = (function () {
   }
   function validerCours(v, options) {
     var erreurs = [], avert = [];
-    TYPES.edt.champs.forEach(function (c) { if (c.obligatoire && !v[c.cle]) erreurs.push("« " + c.entete + " » manquant"); });
+    TYPES.edt.champs.forEach(function (c) { if (c.obligatoire && !v[c.cle]) erreurs.push("« " + libelleChamp(c) + " » manquant"); });
     var jour = M.jourNormalise(v.jour), debut = heure(v.debut), fin = heure(v.fin);
     if (v.jour && !jour) erreurs.push("jour illisible (« " + v.jour + " »)");
     if (v.debut && !debut) erreurs.push("heure de début illisible");
@@ -521,7 +532,7 @@ var PialImport = (function () {
   return {
     ACCOMP: ACCOMP, TYPES: TYPES,
     decoderTexte: decoderTexte, detecterSeparateur: detecterSeparateur, analyserCSV: analyserCSV,
-    lireXlsx: lireXlsx, lireFichier: lireFichier, gabarit: gabarit,
+    lireXlsx: lireXlsx, lireFichier: lireFichier, gabarit: gabarit, libelleChamp: libelleChamp,
     normaliserEntete: normaliserEntete, correspondanceAuto: correspondanceAuto,
     correspondanceAMemoriser: correspondanceAMemoriser, champsManquants: champsManquants,
     nombre: nombre, booleen: booleen, dateIso: dateIso, heure: heure,

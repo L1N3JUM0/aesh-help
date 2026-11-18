@@ -76,7 +76,7 @@ function rafraichirCache() { return PialDB.tousLesRapports().then(function (r) {
 function rafraichirImports() { return PialDB.tousLesImports().then(function (r) { importsCache = r; return importsCache; }); }
 
 /* =============== navigation =============== */
-var VUES = ["vue-import", "vue-rapports", "vue-detail-rapport", "vue-fiche-eleve", "vue-indicateurs", "vue-stats", "vue-reglages"];
+var VUES = ["vue-import", "vue-affectations", "vue-rapports", "vue-detail-rapport", "vue-fiche-eleve", "vue-indicateurs", "vue-stats", "vue-reglages"];
 function vue(nom) {
   VUES.forEach(function (v) { $(v).classList.toggle("masque", v !== nom); });
   Array.prototype.forEach.call(document.querySelectorAll("#nav button"), function (b) {
@@ -89,6 +89,7 @@ Array.prototype.forEach.call(document.querySelectorAll("#nav button"), function 
     vue(this.dataset.vue);
     if (this.dataset.vue === "vue-reglages") { rendreStockage(); PialAffectations.rendreReglages(); }
     if (this.dataset.vue === "vue-indicateurs") rendreIndicateurs();
+    if (this.dataset.vue === "vue-affectations") PialAffectations.ouvrirOnglet();
     if (this.dataset.vue === "vue-stats") { initialiserFiltresStats(); rendreStats(); }
   });
 });

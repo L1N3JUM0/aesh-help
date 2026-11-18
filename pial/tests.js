@@ -485,7 +485,7 @@ var PialTests = (function () {
       var c = I.correspondanceAuto("eleves", entetes);
       egal([c.etablissement, c.classe, c.prenom, c.nom, c.heuresInd, c.heuresMut, c.finNotif], [0, 1, 2, 3, 4, 5, 6]);
       egal(I.champsManquants("eleves", c), []);
-      egal(I.champsManquants("eleves", I.correspondanceAuto("eleves", ["nom_eleve", "Classe"])), ["Etablissement", "Prenom"]);
+      egal(I.champsManquants("eleves", I.correspondanceAuto("eleves", ["nom_eleve", "Classe"])), ["Établissement", "Prénom"]);
       egal(I.correspondanceAuto("eleves", ["nom_eleve"]).nom, 0, "nom_eleve");
       var memo = I.correspondanceAMemoriser(["Bidule", "Machin"], { nom: 0, prenom: 1 });
       egal(memo, { nom: "bidule", prenom: "machin" });

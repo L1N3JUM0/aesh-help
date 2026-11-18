@@ -389,12 +389,83 @@ var PialTests = (function () {
     });
   }
 
+  /* =============== tests ZIP =============== */
+  function base64(s) {
+    var b = atob(s), o = new Uint8Array(b.length);
+    for (var i = 0; i < b.length; i++) o[i] = b.charCodeAt(i);
+    return o;
+  }
+  function texte(octets) { return new TextDecoder("utf-8").decode(octets); }
+  // archive produite par un autre outil (Python zipfile) : une entrée
+  // compressée en deflate, au nom accentué, et une entrée vide stockée
+  var ZIP_DEFLATE = "UEsDBBQAAAgIAABQc13xdB+5HgAAAKQBAAATAAAAZG9zc2llci/DqWzDqHZlLnR4dDvcmXN4RVmqQmJycn5uQWJ63uGVOgqHRwUVBpEgAFBLAwQUAAAAAAAAUHNdAAAAAAAAAAAAAAAACAAAAHZpZGUudHh0UEsBAhQAFAAACAgAAFBzXfF0H7keAAAApAEAABMAAAAAAAAAAAAAAIABAAAAAGRvc3NpZXIvw6lsw6h2ZS50eHRQSwECFAAUAAAAAAAAUHNdAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAgAFPAAAAdmlkZS50eHRQSwUGAAAAAAIAAgB3AAAAdQAAAAAA";
+
+  function testsZip(t, Z, env) {
+    t("CRC32", function () {
+      egal(Z.crc32(new TextEncoder().encode("123456789")), 0xCBF43926);
+      egal(Z.crc32(new Uint8Array(0)), 0);
+    });
+    t("écriture « store » puis relecture (aller-retour)", function () {
+      var fichiers = [
+        { nom: "Sophie D./message.txt", donnees: "Objet : affectation\r\nBonjour Sophie,\r\n" },
+        { nom: "Sophie D./emploi-du-temps.html", donnees: "<p>Élève : Lucas M. — 5B</p>" },
+        { nom: "recapitulatif.csv", donnees: new Uint8Array([0xEF, 0xBB, 0xBF, 0x41, 0x3B, 0x42]) },
+        { nom: "vide.txt", donnees: "" }
+      ];
+      var octets = Z.ecrire(fichiers, new Date(2026, 10, 19, 10, 30, 0));
+      var liste = Z.entrees(octets);
+      egal(liste.map(function (e) { return [e.nom, e.methode]; }),
+        fichiers.map(function (f) { return [f.nom, 0]; }), "noms et méthode store");
+      egal(JSON.stringify(Array.prototype.slice.call(Z.ecrire(fichiers, new Date(2026, 10, 19, 10, 30, 0)))),
+        JSON.stringify(Array.prototype.slice.call(octets)), "écriture reproductible");
+      return Z.lire(octets).then(function (contenu) {
+        egal(Object.keys(contenu), fichiers.map(function (f) { return f.nom; }));
+        egal(texte(contenu["Sophie D./emploi-du-temps.html"]), "<p>Élève : Lucas M. — 5B</p>");
+        egal(Array.prototype.slice.call(contenu["recapitulatif.csv"]), [0xEF, 0xBB, 0xBF, 0x41, 0x3B, 0x42]);
+        egal(contenu["vide.txt"].length, 0);
+      });
+    });
+    t("lecture d'une archive compressée (deflate) produite par un autre outil", function () {
+      if (typeof DecompressionStream === "undefined") throw new Ignore("DecompressionStream indisponible");
+      return Z.lire(base64(ZIP_DEFLATE)).then(function (contenu) {
+        egal(Object.keys(contenu), ["dossier/élève.txt", "vide.txt"]);
+        egal(texte(contenu["dossier/élève.txt"]), new Array(21).join("Élève accompagné, "));
+      });
+    });
+    t("filtre des entrées et détection d'une archive corrompue", function () {
+      var octets = Z.ecrire([{ nom: "a.txt", donnees: "abc" }, { nom: "b.txt", donnees: "def" }]);
+      return Z.lire(octets, function (n) { return n === "b.txt"; }).then(function (c) {
+        egal(Object.keys(c), ["b.txt"]);
+        var abime = octets.slice();
+        abime[30 + 5] = 0x5A; // premier octet des données de a.txt
+        return Z.lire(abime).then(function () { throw new EchecAssertion("CRC non vérifié"); }, function (err) {
+          egal(err.message, "crc-invalide");
+        });
+      }).then(function () {
+        var refus = false;
+        try { Z.entrees(new TextEncoder().encode("pas une archive")); } catch (e) { refus = e.message === "zip-invalide"; }
+        vrai(refus, "fichier qui n'est pas un ZIP");
+      });
+    });
+    t("lecture de exemples/FICTIF_eleves.xlsx", function () {
+      return env.lireExemple("FICTIF_eleves.xlsx").then(function (octets) {
+        if (!octets) throw new Ignore("fichier d'exemple non accessible (page ouverte en file://)");
+        if (typeof DecompressionStream === "undefined") throw new Ignore("DecompressionStream indisponible");
+        return Z.lire(octets).then(function (c) {
+          vrai(c["xl/workbook.xml"] && c["xl/worksheets/sheet1.xml"] && c["xl/sharedStrings.xml"], "parties du classeur");
+          vrai(/Collège Fictif des Tilleuls/.test(texte(c["xl/sharedStrings.xml"])), "texte UTF-8");
+        });
+      });
+    });
+  }
+
   /* =============== exécution =============== */
   function executer(env) {
     var tests = [];
     function t(nom, fn) { tests.push({ groupe: groupeCourant, nom: nom, fn: fn }); }
     var groupeCourant = "modèle";
     testsModele(t, env.modele);
+    if (env.zip) { groupeCourant = "zip"; testsZip(t, env.zip, env); }
     var bilan = { reussis: 0, echecs: [], ignores: 0, lignes: [] };
     return tests.reduce(function (p, test) {
       return p.then(function () {

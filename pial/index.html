@@ -349,6 +349,7 @@ table.tableau td.numerique{text-align:right}
 </nav>
 
 <div class="contenu">
+  <p class="note alerte" id="bandeau-base" role="alert" hidden></p>
 
   <!-- ============ VUE : IMPORT ============ -->
   <section id="vue-import">
@@ -576,7 +577,7 @@ table.tableau td.numerique{text-align:right}
 
     <div class="carte">
       <h2>Sauvegarde</h2>
-      <p class="chapeau">Exportez une sauvegarde complète de temps en temps, notamment avant toute purge.</p>
+      <p class="chapeau">Exportez une sauvegarde complète de temps en temps, notamment avant toute purge. Elle contient les rapports, les élèves, les AESH, les emplois du temps et les affectations.</p>
       <div class="actions">
         <button type="button" class="btn btn-vide" id="btn-exporter-sauvegarde">Exporter une sauvegarde complète (.json)</button>
         <button type="button" class="btn btn-vide" id="btn-restaurer-sauvegarde">Restaurer une sauvegarde</button>
@@ -676,6 +677,10 @@ table.tableau td.numerique{text-align:right}
 <script src="auth.js"></script>
 <script src="db.js"></script>
 <script src="graphiques.js"></script>
+<script src="modele.js"></script>
+<script src="zip.js"></script>
+<script src="import-fichiers.js"></script>
+<script src="affectations.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

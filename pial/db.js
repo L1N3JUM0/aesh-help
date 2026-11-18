@@ -2,24 +2,46 @@
 
 /* =====================================================================
    PialDB — mini-module d'accès à IndexedDB, sans dépendance externe.
-   Base "pial-suivi", deux object stores :
+   Base "pial-suivi" :
      - rapports : keyPath "id" (id du rapport côté AESH, sert de clé de
        dédoublonnage). Index : eleveId, classe, aesh, modalite, relation,
        debut, creeJour, etablissement (v2 du schéma).
      - imports  : clé auto-incrémentée, un enregistrement par fichier de
        transmission importé (bilan + traçabilité).
+     - v3 (module Affectations, docs/SPEC-affectations-PIAL.md §9.2) :
+       etablissements, eleves, aesh, cours, affectations, versions,
+       correspondances, parametres. Migration additive : rapports et
+       imports ne sont jamais touchés.
    API façon promesses, exposée sur l'objet global PialDB.
    ===================================================================== */
 var PialDB = (function () {
 
   var NOM_BASE = "pial-suivi";
-  var VERSION = 2;
+  var VERSION = 3;
   var promesseBase = null;
+
+  // magasins du module Affectations : {nom: [keyPath, [index...]]}
+  var MAGASINS_V3 = {
+    etablissements: ["id", []],
+    eleves: ["id", ["cle", "annee", "etablissement", "classe"]],
+    aesh: ["id", ["annee"]],
+    cours: ["id", ["eleveId", "eleveCle", "etablissement"]],
+    affectations: ["id", ["version", "aeshId", "creneauCle"]],
+    versions: ["numero", ["annee"]],
+    correspondances: ["type", []],
+    parametres: ["cle", []]
+  };
+  var NOMS_V3 = Object.keys(MAGASINS_V3);
 
   function ouvrir() {
     if (promesseBase) return promesseBase;
     promesseBase = new Promise(function (resolve, reject) {
       var req = indexedDB.open(NOM_BASE, VERSION);
+      // un autre onglet garde la base ouverte dans l'ancienne version : la
+      // mise à niveau attend sa fermeture
+      req.onblocked = function () {
+        if (typeof PialDB.surBlocage === "function") PialDB.surBlocage();
+      };
       req.onupgradeneeded = function (evt) {
         var db = evt.target.result;
         var magasin;
@@ -45,8 +67,23 @@ var PialDB = (function () {
         if (!db.objectStoreNames.contains("imports")) {
           db.createObjectStore("imports", { keyPath: "id", autoIncrement: true });
         }
+        // migration v2 -> v3 : ajoute les magasins absents, rien d'autre
+        NOMS_V3.forEach(function (nom) {
+          if (db.objectStoreNames.contains(nom)) return;
+          var m = db.createObjectStore(nom, { keyPath: MAGASINS_V3[nom][0] });
+          MAGASINS_V3[nom][1].forEach(function (idx) { m.createIndex(idx, idx, { unique: false }); });
+        });
       };
-      req.onsuccess = function () { resolve(req.result); };
+      req.onsuccess = function () {
+        var db = req.result;
+        // un onglet plus récent demande une mise à niveau : on libère la base
+        db.onversionchange = function () {
+          db.close();
+          promesseBase = null;
+          if (typeof PialDB.surVersionPerimee === "function") PialDB.surVersionPerimee();
+        };
+        resolve(db);
+      };
       req.onerror = function () { reject(req.error); };
     });
     return promesseBase;
@@ -227,27 +264,70 @@ var PialDB = (function () {
     });
   }
 
-  /* ---------- sauvegarde / restauration ---------- */
+  /* ---------- module Affectations : accès génériques ---------- */
 
-  function exporterTout() {
-    return Promise.all([tousLesRapports(), tousLesImports()]).then(function (r) {
-      return { rapports: r[0], imports: r[1] };
+  function tous(magasin) {
+    return ouvrir().then(function (db) {
+      return promesseRequete(db.transaction(magasin, "readonly").objectStore(magasin).getAll());
+    });
+  }
+  function obtenir(magasin, cle) {
+    return ouvrir().then(function (db) {
+      return promesseRequete(db.transaction(magasin, "readonly").objectStore(magasin).get(cle));
     });
   }
 
-  // remplace intégralement le contenu de la base (pas de fusion).
+  /* applique plusieurs opérations en UNE transaction (tout ou rien) :
+     [{magasin, vider: bool, supprimer: [clés], enregistrer: [objets]}],
+     exécutées dans cet ordre pour chaque opération. */
+  function appliquer(operations) {
+    var noms = [];
+    operations.forEach(function (op) { if (noms.indexOf(op.magasin) < 0) noms.push(op.magasin); });
+    if (!noms.length) return Promise.resolve();
+    return ouvrir().then(function (db) {
+      var t = db.transaction(noms, "readwrite");
+      operations.forEach(function (op) {
+        var m = t.objectStore(op.magasin);
+        if (op.vider) m.clear();
+        (op.supprimer || []).forEach(function (cle) { m.delete(cle); });
+        (op.enregistrer || []).forEach(function (o) { m.put(o); });
+      });
+      return promesseTransaction(t);
+    });
+  }
+
+  /* ---------- sauvegarde / restauration ---------- */
+
+  // {rapports, imports, <magasins v3>...}
+  function exporterTout() {
+    return Promise.all([tousLesRapports(), tousLesImports()].concat(NOMS_V3.map(tous))).then(function (r) {
+      var out = { rapports: r[0], imports: r[1] };
+      NOMS_V3.forEach(function (nom, i) { out[nom] = r[i + 2]; });
+      return out;
+    });
+  }
+
+  // remplace intégralement le contenu de la base (pas de fusion). Un
+  // magasin absent de "donnees" (sauvegarde pial-suivi/1, antérieure au
+  // module Affectations) est laissé tel quel plutôt que vidé.
   function remplacerTout(donnees) {
     return ouvrir().then(function (db) {
-      var t = db.transaction(["rapports", "imports"], "readwrite");
-      t.objectStore("rapports").clear();
-      t.objectStore("imports").clear();
-      (donnees.rapports || []).forEach(function (r) { t.objectStore("rapports").put(r); });
-      (donnees.imports || []).forEach(function (imp) { t.objectStore("imports").put(imp); });
+      var noms = ["rapports", "imports"].concat(NOMS_V3.filter(function (n) { return Array.isArray(donnees[n]); }));
+      var t = db.transaction(noms, "readwrite");
+      noms.forEach(function (nom) {
+        var m = t.objectStore(nom);
+        m.clear();
+        (donnees[nom] || []).forEach(function (o) { m.put(o); });
+      });
       return promesseTransaction(t);
     });
   }
 
   return {
+    MAGASINS_AFFECTATIONS: NOMS_V3,
+    tous: tous,
+    obtenir: obtenir,
+    appliquer: appliquer,
     importerFichier: importerFichier,
     tousLesRapports: tousLesRapports,
     tousLesImports: tousLesImports,

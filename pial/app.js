@@ -859,9 +859,14 @@ $("form-changer-mdp").addEventListener("submit", function (evt) {
 });
 
 /* =============== réglages : sauvegarde / restauration =============== */
+/* pial-suivi/2 = pial-suivi/1 + magasins du module Affectations (élèves,
+   AESH, emplois du temps, affectations, versions...). Les fichiers
+   pial-suivi/1 restent restaurables : ils ne remplacent alors que les
+   rapports et l'historique des imports. */
 function exporterSauvegarde() {
   return PialDB.exporterTout().then(function (donnees) {
-    var contenu = { format: "pial-suivi/1", exporte_le: isoJour(new Date()), rapports: donnees.rapports, imports: donnees.imports };
+    var contenu = { format: "pial-suivi/2", exporte_le: isoJour(new Date()) };
+    Object.keys(donnees).forEach(function (k) { contenu[k] = donnees[k]; });
     telecharger("sauvegarde-pial-" + isoJour(new Date()) + ".json", JSON.stringify(contenu, null, 2), "application/json");
     toast("Sauvegarde téléchargée.");
   });
@@ -873,13 +878,26 @@ $("entree-restauration").addEventListener("change", function () {
   lireFichierTexte(fichier).then(function (texte) {
     var donnees;
     try { donnees = JSON.parse(texte); } catch (e) { toast("Ce fichier n'est pas une sauvegarde valide."); return; }
-    if (!donnees || !Array.isArray(donnees.rapports)) { toast("Ce fichier n'est pas une sauvegarde valide."); return; }
+    if (!donnees || !Array.isArray(donnees.rapports)
+      || (donnees.format && donnees.format !== "pial-suivi/1" && donnees.format !== "pial-suivi/2")) {
+      toast("Ce fichier n'est pas une sauvegarde valide.");
+      return;
+    }
+    var complete = Array.isArray(donnees.eleves);
+    var message = "Restaurer cette sauvegarde remplacera intégralement les données actuelles (" + cache.length + " rapport(s) enregistrés ici, qui seront perdus s'ils ne figurent pas dans la sauvegarde)";
+    if (complete) {
+      message += ", ainsi que les élèves, AESH, emplois du temps et affectations (" + PialAffectations.compteurs().eleves + " élève(s) et "
+        + PialAffectations.compteurs().affectations + " affectation(s) ici ; " + donnees.eleves.length + " élève(s) et "
+        + (donnees.affectations || []).length + " affectation(s) dans la sauvegarde)";
+    } else {
+      message += ". Cette sauvegarde est antérieure au module Affectations : les élèves, AESH, emplois du temps et affectations actuels sont conservés";
+    }
     confirmationForte(
-      "Restaurer cette sauvegarde remplacera intégralement les données actuelles (" + cache.length + " rapport(s) enregistrés ici, qui seront perdus s'ils ne figurent pas dans la sauvegarde). Cette action est irréversible.",
+      message + ". Cette action est irréversible.",
       "Remplacer",
       function () {
         PialDB.remplacerTout(donnees).then(function () {
-          return Promise.all([rafraichirCache(), rafraichirImports()]);
+          return Promise.all([rafraichirCache(), rafraichirImports(), PialAffectations.recharger()]);
         }).then(function () {
           initialiserFiltres(); initialiserPurge(); rendreRapports(); rendreImports(); rendreIndicateurs();
           initialiserFiltresStats(); rendreStats();
@@ -921,9 +939,18 @@ $("btn-purger").addEventListener("click", function () {
 });
 
 /* =============== démarrage =============== */
+// mise à niveau de la base bloquée par un autre onglet resté ouvert sur l'ancienne version
+PialDB.surBlocage = function () {
+  $("bandeau-base").textContent = "Mise à jour de la base de données en attente : fermez les autres onglets ouverts sur l'espace PIAL, puis rechargez cette page.";
+  $("bandeau-base").hidden = false;
+};
+PialDB.surVersionPerimee = function () {
+  $("bandeau-base").textContent = "Une version plus récente de l'espace PIAL est ouverte dans un autre onglet : rechargez cette page avant de continuer.";
+  $("bandeau-base").hidden = false;
+};
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function () {});
 rendreStockage();
-Promise.all([rafraichirCache(), rafraichirImports()]).then(function () {
+Promise.all([rafraichirCache(), rafraichirImports(), PialAffectations.recharger()]).then(function () {
   initialiserFiltres();
   initialiserPurge();
   rendreRapports();

@@ -415,8 +415,9 @@ Migration additive : ne jamais toucher aux magasins `rapports` et `imports`.
 | `affectations` | `id` | version, aeshId, creneauCle | brouillon (version = 0) et versions validées |
 | `versions` | `numero` | annee | date d'effet, commentaire, compteurs ; numérotation globale, jamais remise à zéro d'une année à l'autre |
 | `correspondances` | `type` | | correspondances de colonnes mémorisées |
+| `parametres` | `cle` | | réglages du module (`{cle:"reglages", valeur:{dureeReelle, respecterIndispos, pauseRepasMin…}}`) — ajouté au schéma (§13) |
 
-Une affectation contient : `{id, version, aeshId, creneau{etab,jour,debut,fin,semaine}, creneauCle, modalite, eleves:[cle…], epinglee, origine:"moteur"|"manuel", raisons:[…], alertes:[…]}`. `creneauCle` est un champ calculé (`etab|jour|debut|fin|semaine`) qui alimente l'index du même nom ; `eleves` contient les identifiants de stockage (`annee|cle`).
+Une affectation contient : `{id, annee, version, aeshId, creneau{etab,jour,debut,fin,semaine}, creneauCle, modalite, eleves:[cle…], epinglee, origine:"moteur"|"manuel", raisons:[…], alertes:[…]}`. `creneauCle` est un champ calculé (`etab|jour|debut|fin|semaine`) qui alimente l'index du même nom ; `eleves` contient les identifiants de stockage (`annee|cle`).
 
 La migration v2 → v3 gère le blocage par un autre onglet ouvert : `onblocked` affiche un message demandant de fermer les autres onglets, `onversionchange` ferme la connexion.
 
@@ -529,3 +530,4 @@ Reportées dans les sections concernées ; résumé :
 11. Tests exécutables aussi en ligne de commande (`outils/tests-node.js`) (§10).
 12. XLSX analysé sans `DOMParser` (absent de Node), première feuille résolue via le classeur (§2.1).
 13. Colonne `Eleve` de l'EDT : un nom complet (« Lucas Martin ») est accepté et réduit à « Lucas M. » s'il correspond à un élève connu ; le nom complet n'est pas conservé (§2.4, §3).
+14. Magasin `parametres` ajouté au schéma v3 pour les réglages du module ; la sauvegarde `pial-suivi/2` (non chiffrée) est livrée dès la phase 1 ; restaurer un fichier `pial-suivi/1` ne remplace que les rapports et l'historique des imports (§8.4, §9.2).

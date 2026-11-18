@@ -48,3 +48,7 @@ The script is a single IIFE at the bottom of `index.html`, organized into clearl
 - **Must keep working when `index.html` is opened alone** (double-clicked, `file://`, no server, no service worker) — this is the fallback for anyone who can't or doesn't want to install the PWA. Any new feature must degrade gracefully rather than break under `file://` (see the existing `stockageOk` localStorage fallback and the service worker's `file:` guard for the pattern to follow).
 - Vanilla ES5-style JS (`var`, `function`, no arrow functions/`let`/`const`, no modules) — match this style rather than introducing modern syntax.
 - User-facing text inserted into `innerHTML` should be escaped where it originates from free text fields (see the `.replace(/</g,"&lt;")` pattern used for the comment field) to avoid breaking the markup.
+
+## Module Affectations (espace PIAL)
+
+La spécification fait foi : `docs/SPEC-affectations-PIAL.md`. Lire la section concernée avant toute modification de `/pial/`. Les règles de calcul vivent dans `pial/modele.js` (fonctions pures) et doivent rester couvertes par `pial/tests.html`. Les noms des données d'exemple (`exemples/`) sont fictifs. Ne jamais y mettre de données réelles.

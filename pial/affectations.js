@@ -617,9 +617,11 @@ var PialAffectations = (function () {
       var titre = LIB_ETAT_AESH[ch.etat] + (ch.A !== ch.B ? " — semaine A : " + heures(ch.A) + ", semaine B : " + heures(ch.B) : "");
       return '<li data-aesh="' + ech(a.id) + '" tabindex="0"' + ($("af-aesh").value === a.id ? ' class="actif"' : '') + '><div class="lj-tete"><span class="lj-nom">'
         + '<span class="puce-aesh" style="background:' + couleurAesh(a.id) + '">' + ech(initialesAesh(a)) + '</span> ' + ech(nomAesh(a)) + '</span>'
+        + (a.ignorerIndispos ? '<span class="badge-ignore" title="Indisponibilités et établissements possibles ignorés">indispos ignorées</span>' : "")
         + '<span class="lj-meta">' + ((a.etablissements || []).length ? ech(a.etablissements.map(nomEtablissement).join(", ")) : "tous établissements") + '</span></div>'
         + jauge("Charge", ch.moy, ch.quotite, ch.etat, titre) + '</li>';
     }).join("") : '<li class="vide">' + (etat.aesh.length ? "Aucune AESH ne correspond à ces filtres." : "Aucune AESH : importez le fichier des AESH.") + '</li>';
+    rendreFicheAesh();
     Array.prototype.forEach.call($("aff-liste-eleves").querySelectorAll("[data-eleve]"), function (li) {
       li.addEventListener("click", function () { ouvrirGrilleEleve(this.dataset.eleve); });
       li.addEventListener("keydown", function (e) { if (e.key === "Enter") ouvrirGrilleEleve(this.dataset.eleve); });
@@ -628,6 +630,39 @@ var PialAffectations = (function () {
       function basculer() { $("af-aesh").value = $("af-aesh").value === li.dataset.aesh ? "" : li.dataset.aesh; rendreAffectations(); }
       li.addEventListener("click", basculer);
       li.addEventListener("keydown", function (e) { if (e.key === "Enter") basculer(); });
+    });
+  }
+
+  /* =============== fiche de l'AESH sélectionnée (§4.4, §7.2) =============== */
+  var LIB_INDISPO = { am: "matin", pm: "après-midi" };
+  function texteIndispo(code) {
+    var p = txt(code).split("-"), jour = { lun: "lundi", mar: "mardi", mer: "mercredi", jeu: "jeudi", ven: "vendredi", sam: "samedi" }[p[0]] || p[0];
+    return jour + (p[1] ? " " + (LIB_INDISPO[p[1]] || p[1]) : "");
+  }
+  function rendreFicheAesh() {
+    var hote = $("aff-fiche-aesh"), a = aeshParId($("af-aesh").value);
+    if (!a) { hote.hidden = true; hote.innerHTML = ""; return; }
+    var ch = M.chargeAesh(a, ctxCourant), global = ctxCourant.reglages.respecterIndispos;
+    var nbEleves = {};
+    etat.affectations.forEach(function (x) { if (x.aeshId === a.id) x.eleves.forEach(function (id) { nbEleves[id] = true; }); });
+    hote.innerHTML = '<div class="fiche-aesh"><h3>' + ech(nomAesh(a)) + '</h3><dl>'
+      + '<dt>Quotité</dt><dd>' + heures(ch.quotite) + ' · charge ' + (ch.A !== ch.B ? 'semaine A ' + heures(ch.A) + ', semaine B ' + heures(ch.B) : heures(ch.A)) + ' (' + LIB_ETAT_AESH[ch.etat] + ')</dd>'
+      + '<dt>Élèves</dt><dd>' + Object.keys(nbEleves).length + '</dd>'
+      + '<dt>Établissements</dt><dd>' + ((a.etablissements || []).length ? ech(a.etablissements.map(nomEtablissement).join(", ")) : "tous") + '</dd>'
+      + '<dt>Indisponibilités</dt><dd>' + ((a.indisponibilites || []).length ? ech(a.indisponibilites.map(texteIndispo).join(", ")) : "aucune") + '</dd>'
+      + ((a.formations || []).length ? '<dt>Formations</dt><dd>' + ech(a.formations.join(", ")) + '</dd>' : "")
+      + '</dl>'
+      + '<label class="case"><input type="checkbox" id="fa-ignorer"' + (a.ignorerIndispos ? " checked" : "") + (global ? "" : " disabled") + '> Ignorer ses indisponibilités et ses établissements possibles</label>'
+      + '<p class="aide">' + (global
+        ? "Pour cette AESH seulement : le moteur et le menu des créneaux pourront la placer sur ses demi-journées indisponibles et dans tous les établissements. À réserver à un arrangement ponctuel."
+        : "Sans effet : le réglage global « Respecter les indisponibilités » est décoché (Réglages).") + '</p></div>';
+    hote.hidden = false;
+    $("fa-ignorer").addEventListener("change", function () {
+      var b = JSON.parse(JSON.stringify(a));
+      b.ignorerIndispos = this.checked;
+      enregistrerPuisRendre([{ magasin: "aesh", enregistrer: [b] }],
+        nomAesh(a) + (b.ignorerIndispos ? " : indisponibilités ignorées." : " : indisponibilités de nouveau respectées."),
+        (b.ignorerIndispos ? "« ignorer les indisponibilités » de " : "« respecter les indisponibilités » de ") + nomAesh(a));
     });
   }
 

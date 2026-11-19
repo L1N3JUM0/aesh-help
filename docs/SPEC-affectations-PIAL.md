@@ -582,6 +582,7 @@ Interface du moteur (commit 4) :
 13. Le rapport de fin affiche le **motif principal** (« quotités épuisées » plutôt que « quotité épuisée partout », d'autres AESH ayant pu être écartées pour un autre motif) (§5.3.7).
 14. « Proposer » remplace toutes les affectations non épinglées du brouillon, sans confirmation (toute saisie manuelle est épinglée, §5.4) ; le rapport s'ouvre dans une fenêtre et reste consultable (bouton « Rapport ») jusqu'au rechargement de la page. « Tout désépingler » demande une confirmation.
 15. Menu d'un créneau : les AESH disponibles sont triées par le score du moteur, affiché avec ses raisons ; une affectation proposée affiche ses raisons. L'état d'un créneau périscolaire se change dans le même menu, pour ce créneau seulement (§5.2).
+16. Fiche de l'AESH sélectionnée (filtre AESH ou clic dans la vue d'ensemble) : quotité, charge A/B, élèves, établissements, indisponibilités, formations, et l'interrupteur « Ignorer ses indisponibilités et ses établissements possibles » (annulable ; sans effet si le réglage global est décoché). Une AESH concernée porte la mention « indispos ignorées » dans la liste.
 
 ## 15. Sujets ouverts
 

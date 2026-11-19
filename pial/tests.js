@@ -929,6 +929,19 @@ var PialTests = (function () {
       egal(mer.map(function (x) { return x.aeshId + " " + (x.motif || x.possible); }), ["aesh|x true", "aesh|y indisponibilite"]);
     });
 
+    t("moteur : interrupteur « ignorer les indisponibilités » d'une AESH", function () {
+      var m = mini(), e = m.eleve("Lucas", 1);
+      m.cours(e, "lundi", "08:00", "08:55");
+      var autre = M.etablissementParDefaut("Collège Ailleurs");
+      var a = aeshMini("a", 24, { indisponibilites: ["lun"], etablissements: [autre.id] });
+      egal(proposees(P.proposer(m.donnees([a]))).length, 0, "indisponible le lundi, autre établissement : rien");
+      a.ignorerIndispos = true;
+      egal(proposees(P.proposer(m.donnees([a]))).map(function (x) { return x.aeshId + " " + x.creneau.jour; }), ["a lundi"], "interrupteur : indisponibilité et établissement ignorés");
+      var d = m.donnees([a]);
+      d.reglages.respecterIndispos = false;
+      a.ignorerIndispos = false;
+      egal(proposees(P.proposer(d)).length, 1, "réglage global décoché : même effet pour toutes");
+    });
     t("moteur : entre groupes mutualisés, le moins couvert d'abord", function () {
       var m = mini(), a = m.eleve("Ana", 0, 2), b = m.eleve("Bea", 0, 2), c = m.eleve("Cyr", 0, 1);
       [a, b].forEach(function (e) { m.cours(e, "lundi", "08:00", "08:55"); m.cours(e, "lundi", "09:00", "09:55"); });

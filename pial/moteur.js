@@ -38,7 +38,7 @@ var PialMoteur = (function () {
     formation: 10,             // phase 4 (table formation → besoins à valider, §7.3)
     equilibrageMax: 15,        // proportionnel à la part de quotité restante
     isole: -10,
-    tropAesh: -15,
+    tropAesh: -25,             // par AESH au-delà du seuil, cumulable (4e : -25, 5e : -50…)
     ecartColleMin: 15,         // « collé » : au plus 15 min d'écart
     trouIsoleMin: 120,         // « isolé » : plus de 2 h jusqu'au créneau le plus proche
     maxAeshParEleve: 3
@@ -200,11 +200,15 @@ var PialMoteur = (function () {
       if (mini <= P.ecartColleMin) { score += P.colle; raisons.push("journée compacte"); }
       else if (mini > P.trouIsoleMin) { score += P.isole; raisons.push("créneau isolé (trou de plus de " + (P.trouIsoleMin / 60) + " h)"); }
     }
-    var trop = u.eleves.filter(function (id) {
+    // pénalité progressive : rang qu'aurait cette AESH pour chaque élève
+    u.eleves.forEach(function (id) {
       var s = et.aeshParEleve[id] || {};
-      return !s[aesh.id] && Object.keys(s).length >= P.maxAeshParEleve;
+      if (s[aesh.id]) return;
+      var rang = Object.keys(s).length + 1;
+      if (rang <= P.maxAeshParEleve) return;
+      score += P.tropAesh * (rang - P.maxAeshParEleve);
+      raisons.push(rang + "e AESH pour " + nomsEleves(ctx, [id]));
     });
-    if (trop.length) { score += P.tropAesh; raisons.push("plus de " + P.maxAeshParEleve + " AESH pour " + nomsEleves(ctx, trop)); }
     score += scoreExperience(aesh, u, ctx) + scoreFormation(aesh, u, ctx);
     // équilibrage : part de quotité restante, dans la semaine la plus chargée
     var q = aesh.quotite || 0, ch = chargeDe(et, aesh.id), part = 1;
@@ -384,8 +388,10 @@ var PialMoteur = (function () {
       var membres = vus.filter(function (v) { return choix.every(function (s) { return v.libres.indexOf(s) > -1; }); });
       if (!membres.length) return null;
       var libresGroupe = membres[0].libres;
-      return { cleTri: [membres.some(function (v) { return v.prio; }) ? 0 : 1, 1, -membres.length,
-        Math.min.apply(null, membres.map(function (v) { return proportion(v.e, "mutualise"); })), membres[0].e.cle,
+      // entre groupes mutualisés, le moins couvert d'abord ; la taille du
+      // groupe ne fait que départager (spec §14)
+      return { cleTri: [membres.some(function (v) { return v.prio; }) ? 0 : 1, 1,
+        Math.min.apply(null, membres.map(function (v) { return proportion(v.e, "mutualise"); })), -membres.length, membres[0].e.cle,
         Math.max.apply(null, membres.map(function (v) { return chargeJour(v.e, g.creneau.jour); })), 0,
         M.JOURS.indexOf(g.creneau.jour), mn(g.creneau.debut), g.cle],
         u: { cle: g.cle, modalite: "mutualise", creneau: g.creneau, libres: libresGroupe, morceau: choix,
@@ -472,7 +478,7 @@ var PialMoteur = (function () {
         mutualise: { demande: s.mutDemande, couvert: arrondi(s.mutCouvert) },
         periscolaire: { demande: 0, couvert: 0 }
       },
-      nbProposees: nouvelles.length, nbEpinglees: epinglees.length,
+      nbProposees: nouvelles.length, nbEpinglees: epinglees.length, periscolaireGere: !!ctx.reglages.gererPeriscolaire,
       sousCouverts: [], periscolaireNonCouvert: [], aesh: [], violations: []
     };
     var et = creerEtat(ctx);

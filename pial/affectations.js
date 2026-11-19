@@ -172,6 +172,8 @@ var PialAffectations = (function () {
     var o = {};
     Object.keys(nouveau).forEach(function (k) { o[k] = nouveau[k]; });
     if (type === "aesh") { o.ignorerIndispos = !!existant.ignorerIndispos; o.alias = existant.alias || []; }
+    // temps périscolaires non gérés à l'import : on garde ce qui est en base
+    if (type === "eleves") ["recreation", "meridienne"].forEach(function (k) { if (!(k in nouveau) && k in existant) o[k] = existant[k]; });
     if (type === "edt" && nouveau.etat === "normal" && existant.etat) o.etat = existant.etat;
     if (type === "eleves" && (existant.etatsPeriscolaires || nouveau.etatsPeriscolaires)) {
       o.etatsPeriscolaires = {};
@@ -187,7 +189,8 @@ var PialAffectations = (function () {
     if (!imp) return;
     var manquants = I.champsManquants(imp.type, imp.correspondance);
     if (manquants.length) { ui.toast("Colonne(s) obligatoire(s) non choisie(s) : " + manquants.join(", ") + "."); return; }
-    imp.apercu = I.apercu(imp.type, imp.lignes.slice(1), imp.correspondance, { annee: anneeCourante(), elevesConnus: elevesConnus() });
+    imp.apercu = I.apercu(imp.type, imp.lignes.slice(1), imp.correspondance, { annee: anneeCourante(), elevesConnus: elevesConnus(),
+      gererPeriscolaire: !!etat.reglages.gererPeriscolaire });
     var cleId = "id";
     imp.planMaj = I.planFusion(existantsDuType(imp.type), imp.apercu.valides, cleId, "maj");
     imp.planRemplacer = I.planFusion(existantsDuType(imp.type), imp.apercu.valides, cleId, "remplacer");
@@ -220,6 +223,11 @@ var PialAffectations = (function () {
       ap.collisions.map(function (c) { return "Lignes " + c.lignes.join(", ") + " : " + ech(c.cle); }));
     h += listeMotifs("Lignes en erreur (non importées)", ap.erreurs.map(function (e) { return "Ligne " + e.ligne + " : " + e.motifs.map(ech).join(" ; "); }));
     h += listeMotifs("Avertissements", ap.avertissements.map(function (a) { return "Ligne " + a.ligne + " : " + ech(a.motif); }));
+    if (ap.periscolaireIgnore.length) {
+      h += '<p class="note alerte">Colonnes Récréation et Pause méridienne ignorées : les temps périscolaires ne sont pas gérés ('
+        + ap.periscolaireIgnore.length + ' ligne(s) remplie(s) : ' + ap.periscolaireIgnore.slice(0, 20).join(", ") + (ap.periscolaireIgnore.length > 20 ? "…" : "")
+        + '). Pour les prendre en compte, cochez « Gérer les temps périscolaires » dans Réglages, puis importez à nouveau ce fichier.</p>';
+    }
     if (ap.exemples.length) h += '<p class="aide">Lignes d\'exemple du gabarit ignorées : ' + ap.exemples.join(", ") + '.</p>';
     if (ap.doublons.length) h += '<p class="aide">Doublons ignorés (lignes identiques à une ligne précédente) : ' + ap.doublons.map(function (d) { return d.ligne; }).join(", ") + '.</p>';
     $("imp-details").innerHTML = h;
@@ -343,6 +351,7 @@ var PialAffectations = (function () {
     var r = M.contexte({ reglages: etat.reglages }).reglages;
     $("reg-duree-reelle").checked = !!r.dureeReelle;
     $("reg-indispos").checked = !!r.respecterIndispos;
+    $("reg-periscolaire").checked = !!r.gererPeriscolaire;
     $("reg-pause").value = r.pauseRepasMin;
   }
   $("reg-enregistrer-regles").addEventListener("click", function () {
@@ -352,6 +361,7 @@ var PialAffectations = (function () {
     Object.keys(etat.reglages).forEach(function (k) { valeur[k] = etat.reglages[k]; });
     valeur.dureeReelle = $("reg-duree-reelle").checked;
     valeur.respecterIndispos = $("reg-indispos").checked;
+    valeur.gererPeriscolaire = $("reg-periscolaire").checked;
     valeur.pauseRepasMin = pause;
     PialDB.appliquer([{ magasin: "parametres", enregistrer: [{ cle: "reglages", valeur: valeur }] }]).then(recharger).then(function () {
       ui.toast("Règles de calcul enregistrées.");
@@ -455,7 +465,7 @@ var PialAffectations = (function () {
     var h = "";
     if (cv.ind.notifie > 0 || cv.ind.moy > 0) h += jauge("Individuel", cv.ind.moy, cv.ind.notifie, cv.ind.etat, titreAB(cv.ind, LIB_ETAT_ELEVE[cv.ind.etat]));
     if (cv.mut.notifie > 0 || cv.mut.moy > 0) h += jauge("Mutualisé", cv.mut.moy, cv.mut.notifie, cv.mut.etat, titreAB(cv.mut, LIB_ETAT_ELEVE[cv.mut.etat]));
-    if (cv.peri.moy > 0 || e.recreation || e.meridienne) h += '<div class="jauge"><span class="j-lib">Périscol.</span><span class="j-barre"></span><span class="j-val">' + heures(cv.peri.moy) + '</span></div>';
+    if (ctxCourant.reglages.gererPeriscolaire && (cv.peri.moy > 0 || e.recreation || e.meridienne)) h += '<div class="jauge"><span class="j-lib">Périscol.</span><span class="j-barre"></span><span class="j-val">' + heures(cv.peri.moy) + '</span></div>';
     return h;
   }
   function elevesFiltres() {
@@ -555,11 +565,11 @@ var PialAffectations = (function () {
     var e = eleveParId(eleveOuvert);
     if (!e) { $("aff-retour-ensemble").click(); return; }
     var etab = etablissementParId(e.etablissement) || M.etablissementParDefaut(e.etablissement);
-    var cv = M.couvertureEleve(e, ctxCourant);
+    var cv = M.couvertureEleve(e, ctxCourant), periGere = ctxCourant.reglages.gererPeriscolaire;
     $("ge-titre").textContent = e.nomCourt + " — " + e.classe;
     $("ge-sous-titre").textContent = nomEtablissement(e.etablissement) + " · notifié : "
       + [e.heuresInd ? heures(e.heuresInd) + " individuelles" : "", e.heuresMut ? heures(e.heuresMut) + " mutualisées" : "",
-        e.recreation ? "récréations" : "", e.meridienne ? "pause méridienne" : ""].filter(Boolean).join(", ")
+        periGere && e.recreation ? "récréations" : "", periGere && e.meridienne ? "pause méridienne" : ""].filter(Boolean).join(", ")
       + (e.finNotif ? " · fin de notification le " + e.finNotif.split("-").reverse().join("/") : "")
       + (etab.alternance ? " · semaine " + semaineAffichee + " affichée" : "");
     $("ge-jauges").innerHTML = '<span class="pastille-etat e-' + cv.etat + '">' + LIB_ETAT_ELEVE[cv.etat] + '</span>' + jaugesEleve(e, cv);

@@ -24,6 +24,12 @@ BOM, séparateur « ; »), avec deux lignes d'exemple.
 
 ## 2. Import des élèves (XLSX)
 
+Le jeu d'exemple accompagne quelques élèves sur les récréations et la pause
+méridienne (cas 8) : avant l'import, cochez **Réglages → Règles de calcul →
+« Gérer les temps périscolaires »** puis « Enregistrer ». Ce réglage est décoché
+par défaut ; sans lui, l'aperçu d'import signale que les colonnes Récréation et
+Pause méridienne sont ignorées.
+
 Choisissez `FICTIF_eleves.xlsx`. Les colonnes sont reconnues automatiquement ;
 « Vérifier le fichier » affiche 45 lignes reconnues, 0 erreur, et la création des
 3 établissements. Cliquez sur « Mettre à jour ». À montrer : seule l'initiale du

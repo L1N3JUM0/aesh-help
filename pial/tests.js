@@ -99,9 +99,12 @@ var PialTests = (function () {
     ];
     return {
       an: an, cA: cA, cB: cB, ec: ec, e: e, cours: cours, aesh: aesh,
+      // temps périscolaires gérés, sauf si le test dit le contraire
       ctx: function (affectations, reglages) {
+        var r = { gererPeriscolaire: true };
+        Object.keys(reglages || {}).forEach(function (k) { r[k] = reglages[k]; });
         return M.contexte({ etablissements: [cA, cB, ec], eleves: Object.keys(e).map(function (k) { return e[k]; }),
-          aesh: aesh, cours: cours, affectations: affectations || [], reglages: reglages || {} });
+          aesh: aesh, cours: cours, affectations: affectations || [], reglages: r });
       }
     };
   }
@@ -535,7 +538,7 @@ var PialTests = (function () {
         ["Collège Alpha", "5C", "Lucas", "Ma.", "3", "", "non", "non", "", "", ""],
         ["École Bêta", "CP", "", "Roux", "3", "", "peut-être", "non", "", "", ""]
       ];
-      var ap = I.apercu("eleves", lignes, I.correspondanceAuto("eleves", entetes), { annee: AN });
+      var ap = I.apercu("eleves", lignes, I.correspondanceAuto("eleves", entetes), { annee: AN, gererPeriscolaire: true });
       egal(ap.collisions, [{ cle: "lucas m.|5b|college alpha", lignes: [2, 3] }], "collision bloquée");
       egal(ap.doublons, [{ ligne: 5, premiere: 4 }]);
       egal(ap.erreurs.map(function (e) { return e.ligne; }), [6, 8]);
@@ -545,15 +548,22 @@ var PialTests = (function () {
       egal(ap.valides[0].recreation, true);
       egal(ap.etablissements, ["Collège Alpha"]);
       vrai(JSON.stringify(ap).indexOf("Dupont") < 0 && JSON.stringify(ap).indexOf("Martin") < 0, "aucun nom de famille conservé");
-      var ap2 = I.apercu("eleves", [lignes[0]], I.correspondanceAuto("eleves", entetes), { annee: AN });
+      var ap2 = I.apercu("eleves", [lignes[0]], I.correspondanceAuto("eleves", entetes), { annee: AN, gererPeriscolaire: true });
       egal(ap2.valides[0].besoins, ["Secrétaire, scripteur"], "besoin reconnu sans casse ni accent");
       egal(ap2.avertissements.length, 1, "besoin hors liste signalé");
       egal([ap2.valides[0].debutNotif, ap2.valides[0].finNotif], ["2026-09-01", "2027-07-04"]);
       var prio = ["Collège Alpha", "6A", "Tom", "Petit", "6", "", "oui", "Prioritaire", "", "", ""];
-      var ap3 = I.apercu("eleves", [prio, lignes[0]], I.correspondanceAuto("eleves", entetes), { annee: AN });
+      var ap3 = I.apercu("eleves", [prio, lignes[0]], I.correspondanceAuto("eleves", entetes), { annee: AN, gererPeriscolaire: true });
       egal([ap3.valides[0].recreation, ap3.valides[0].meridienne, ap3.valides[0].etatsPeriscolaires], [true, true, { meridienne: "prioritaire" }],
         "« prioritaire » = oui + état par défaut");
       vrai(!("etatsPeriscolaires" in ap3.valides[1]), "« oui » / « non » : aucun état transmis");
+      // temps périscolaires non gérés (réglage par défaut) : colonnes ignorées, signalées si remplies
+      var douteux = ["Collège Alpha", "5D", "Inès", "Vrai", "2", "", "peut-être", "non", "", "", ""];
+      var ap4 = I.apercu("eleves", [prio, lignes[2], lignes[4], lignes[5], douteux], I.correspondanceAuto("eleves", entetes), { annee: AN });
+      egal(ap4.erreurs.map(function (e) { return e.ligne; }), [4], "« peut-être » n'est plus une erreur ; l'absence d'heures en reste une");
+      egal(ap4.valides.map(function (e) { return [e.recreation, e.meridienne, e.etatsPeriscolaires]; }), [0, 1, 2, 3].map(function () { return [undefined, undefined, undefined]; }),
+        "récréation et pause méridienne absentes de l'objet importé");
+      egal(ap4.periscolaireIgnore, [2, 3, 6], "lignes dont les colonnes périscolaires sont remplies (« non » ne compte pas)");
     });
     t("aperçu AESH : quotité, indisponibilités, e-mail", function () {
       var entetes = ["Nom", "Prenom", "Quotite_hebdo", "Email", "Etablissements", "Indisponibilites", "Formations"];
@@ -675,7 +685,9 @@ var PialTests = (function () {
   };
   // importe élèves, AESH et EDT de exemples/ comme le ferait l'interface ;
   // renvoie les données d'entrée du moteur (brouillon vide)
-  function chargerExemples(env) {
+  // options.renfort : ajoute FICTIF_aesh_renfort.csv (scénario, relance)
+  function chargerExemples(env, options) {
+    options = options || {};
     var I = env.importFichiers, M = env.modele, AN = "2026-2027";
     function lire(nom) {
       return env.lireExemple(nom).then(function (octets) {
@@ -684,16 +696,18 @@ var PialTests = (function () {
       });
     }
     function valides(type, lu, options) { return I.apercu(type, lu.lignes.slice(1), I.correspondanceAuto(type, lu.lignes[0]), options).valides; }
-    return Promise.all([lire("FICTIF_eleves.csv"), lire("FICTIF_aesh.csv"), lire("FICTIF_edt_eleves.csv")]).then(function (l) {
-      var eleves = valides("eleves", l[0], { annee: AN }), connus = {}, noms = {};
+    var fichiers = ["FICTIF_eleves.csv", "FICTIF_aesh.csv", "FICTIF_edt_eleves.csv"].concat(options.renfort ? ["FICTIF_aesh_renfort.csv"] : []);
+    return Promise.all(fichiers.map(lire)).then(function (l) {
+      var eleves = valides("eleves", l[0], { annee: AN, gererPeriscolaire: true }), connus = {}, noms = {};
       eleves.forEach(function (e) { connus[e.cle] = true; noms[e.etablissement] = e.etablissementNom; });
       var etabs = Object.keys(noms).sort().map(function (id) {
         var e = M.etablissementParDefaut(noms[id]);
         if (e.type === "college") e = JSON.parse(JSON.stringify(Object.assign(e, HORAIRES_DEMO)));
         return e;
       });
-      return { annee: AN, etablissements: etabs, eleves: eleves, aesh: valides("aesh", l[1], { annee: AN }),
-        cours: valides("edt", l[2], { annee: AN, elevesConnus: connus }), affectations: [], reglages: {} };
+      var aesh = valides("aesh", l[1], { annee: AN }).concat(l[3] ? valides("aesh", l[3], { annee: AN }) : []);
+      return { annee: AN, etablissements: etabs, eleves: eleves, aesh: aesh,
+        cours: valides("edt", l[2], { annee: AN, elevesConnus: connus }), affectations: [], reglages: { gererPeriscolaire: true } };
     });
   }
   // jeu agrandi pour la mesure du temps de calcul : n copies des
@@ -767,7 +781,7 @@ var PialTests = (function () {
           return c;
         },
         donnees: function (aesh, affectations) {
-          return { annee: an, etablissements: [etab], eleves: eleves, aesh: aesh, cours: cours, affectations: affectations || [], reglages: {} };
+          return { annee: an, etablissements: [etab], eleves: eleves, aesh: aesh, cours: cours, affectations: affectations || [], reglages: { gererPeriscolaire: true } };
         }
       };
     }
@@ -828,7 +842,7 @@ var PialTests = (function () {
         aff("aesh|y", f.cA, "lundi", "08:00", "08:55", "individuel", [e.autreClasse]),
         aff("aesh|y", f.cA, "lundi", "10:05", "11:00", "individuel", [e.ind])];
       var d = { annee: f.an, etablissements: [f.cA, f.cB, f.ec], eleves: Object.keys(e).map(function (k) { return e[k]; }),
-        aesh: f.aesh, cours: f.cours, affectations: pins, reglages: {} };
+        aesh: f.aesh, cours: f.cours, affectations: pins, reglages: { gererPeriscolaire: true } };
       var avant = JSON.stringify(pins);
       var res = P.proposer(d);
       egal(JSON.stringify(res.affectations.filter(function (a) { return a.epinglee; })), avant, "épinglées inchangées");
@@ -854,6 +868,34 @@ var PialTests = (function () {
       vrai(l[0].raisons.indexOf("déjà avec Lucas M.") > -1 && l[0].raisons.indexOf("journée compacte") > -1, l[0].raisons.join(" ; "));
       var mer = P.classerAesh(d, { creneau: { etab: f.cA.id, jour: "mercredi", debut: "08:00", fin: "08:55", semaine: "toutes" }, modalite: "individuel", eleves: [e.ind.id] });
       egal(mer.map(function (x) { return x.aeshId + " " + (x.motif || x.possible); }), ["aesh|x true", "aesh|y indisponibilite"]);
+    });
+
+    t("moteur : entre groupes mutualisés, le moins couvert d'abord", function () {
+      var m = mini(), a = m.eleve("Ana", 0, 2), b = m.eleve("Bea", 0, 2), c = m.eleve("Cyr", 0, 1);
+      [a, b].forEach(function (e) { m.cours(e, "lundi", "08:00", "08:55"); m.cours(e, "lundi", "09:00", "09:55"); });
+      m.cours(c, "mardi", "08:00", "08:55");
+      // Ana et Bea ont déjà une heure sur deux ; Cyr n'a rien
+      var pin = aff("p", m.etab, "lundi", "08:00", "08:55", "mutualise", [a, b]);
+      var d = m.donnees([aeshMini("a", 1), aeshMini("p", 1)], [pin]);
+      var res = P.proposer(d);
+      egal(proposees(res).map(function (x) { return x.eleves.length + " " + x.creneau.jour; }), ["1 mardi"],
+        "Cyr (0 %) passe avant le groupe de deux (50 %) : la taille ne fait que départager");
+    });
+    t("moteur : pénalité progressive au-delà de 3 AESH par élève", function () {
+      var m = mini(), e = m.eleve("Lucas", 6);
+      ["08:00", "09:00", "10:00", "11:00"].forEach(function (h) { m.cours(e, "lundi", h, h.replace(":00", ":55")); });
+      m.cours(e, "mardi", "08:00", "08:55");
+      function avec(n) {
+        var pins = ["a", "b", "c", "d"].slice(0, n).map(function (id, i) {
+          return aff(id, m.etab, "lundi", ["08:00", "09:00", "10:00", "11:00"][i], ["08:55", "09:55", "10:55", "11:55"][i], "individuel", [e]);
+        });
+        var aesh = ["a", "b", "c", "d", "z"].map(function (id) { return aeshMini(id, 24); });
+        return P.classerAesh(m.donnees(aesh, pins), { creneau: { etab: m.etab.id, jour: "mardi", debut: "08:00", fin: "08:55", semaine: "toutes" },
+          modalite: "individuel", eleves: [e.id] }).filter(function (x) { return x.aeshId === "z"; })[0];
+      }
+      var z2 = avec(2), z3 = avec(3), z4 = avec(4);
+      egal([z2.score - z3.score, z3.score - z4.score], [25, 25], "4e AESH : -25, 5e : -50");
+      vrai(z3.raisons.indexOf("4e AESH pour Lucas T.") > -1 && z4.raisons.indexOf("5e AESH pour Lucas T.") > -1, z4.raisons.join(" ; "));
     });
 
     /* ---------- sur les données d'exemple ---------- */
@@ -933,6 +975,30 @@ var PialTests = (function () {
         var merid = affsDe(louis).filter(function (a) { return a.periscolaire === "meridienne"; });
         vrai(merid.length >= 4, "cas 8 : pause méridienne couverte chaque jour (" + merid.length + ")");
         egal(r.periscolaireNonCouvert.filter(function (p) { return p.eleveId === louis.id && p.type === "meridienne"; }), []);
+      });
+    });
+    t("moteur (exemples) : le renfort de deux AESH fait remonter la couverture (scénario)", function () {
+      return Promise.all([charger(), chargerExemples(env, { renfort: true })]).then(function (x) {
+        var avant = x[0].res, d = avecAffectations(x[1], avant.affectations), apres = P.proposer(d);
+        egal(x[1].aesh.length, x[0].d.aesh.length + 2);
+        function total(r) { return r.heures.individuel.couvert + r.heures.mutualise.couvert; }
+        vrai(total(apres.rapport) > total(avant.rapport), total(avant.rapport) + " h → " + total(apres.rapport) + " h");
+        vrai(apres.rapport.sousCouverts.length < avant.rapport.sousCouverts.length, "moins d'élèves sous-couverts");
+        egal(violationsMoteur(M, d, apres), []);
+      });
+    });
+    t("moteur (exemples) : temps périscolaires non gérés — absents du moteur et du rapport", function () {
+      return charger().then(function (x) {
+        var d = avecAffectations(x.d, x.res.affectations);
+        d.reglages = { gererPeriscolaire: false };
+        var ctx = M.contexte(d);
+        egal(ctx.affectations.filter(function (a) { return a.modalite === "periscolaire"; }), [], "affectations périscolaires ignorées");
+        egal(M.creneauxPeriscolaires(eleveNomme("Louis I."), ctx), [], "aucun créneau périscolaire");
+        var res = P.proposer(d);
+        var peri = res.affectations.filter(function (a) { return a.modalite === "periscolaire"; });
+        vrai(peri.every(function (a) { return a.epinglee; }), "aucune affectation périscolaire proposée");
+        egal([res.rapport.heures.periscolaire, res.rapport.periscolaireNonCouvert], [{ demande: 0, couvert: 0 }, []]);
+        egal(violationsMoteur(M, d, res), []);
       });
     });
     t("moteur (exemples) : cas 9 — prioritaires couverts d'abord, exclus jamais", function () {

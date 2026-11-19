@@ -786,6 +786,8 @@ table.grille-edt td.heure{font-variant-numeric:tabular-nums;color:var(--gris);bo
       <div class="champ"><label class="case"><input type="checkbox" id="reg-duree-reelle"> Compter la durée réelle des cours</label>
         <p class="aide">Décoché (par défaut) : la durée d'un cours est arrondie à l'heure la plus proche, avec un minimum de 1 h (55 min = 1 h).</p></div>
       <div class="champ"><label class="case"><input type="checkbox" id="reg-indispos"> Respecter les indisponibilités et les établissements possibles des AESH</label></div>
+      <div class="champ"><label class="case"><input type="checkbox" id="reg-periscolaire"> Gérer les temps périscolaires (récréations, pause méridienne)</label>
+        <p class="aide">Décoché (par défaut) : les colonnes Récréation et Pause méridienne sont ignorées à l'import, et ces temps n'apparaissent ni dans les grilles, ni dans la proposition. Coché : chaque élève est accompagné ou non sur ces temps, selon son fichier ; cochez avant d'importer les élèves.</p></div>
       <div class="champ" style="max-width:260px"><label for="reg-pause">Pause repas minimale des AESH (minutes)</label><input type="number" id="reg-pause" min="0" max="120" step="5"></div>
       <div class="actions"><button type="button" class="btn btn-vide" id="reg-enregistrer-regles">Enregistrer</button></div>
     </div>

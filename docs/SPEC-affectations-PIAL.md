@@ -57,6 +57,8 @@ Aucun format SIECLE ni Pronote n'est imposé : **l'outil fournit ses propres gab
 
 Au moins une des deux colonnes d'heures doit être supérieure à 0.
 
+Les colonnes `Recreation` et `Pause_meridienne` ne sont lues que si le réglage « Gérer les temps périscolaires » est coché (§5.2). Sinon elles sont ignorées, même si leur valeur est invalide, et l'aperçu d'import signale les lignes où elles sont remplies (`oui`, `prioritaire` ou autre valeur que `non`). L'élève importé n'a alors ni `recreation` ni `meridienne` : une mise à jour garde les valeurs déjà en base.
+
 ### 2.3 Gabarit `aesh.csv`
 
 | Colonne | Obligatoire | Exemple | Remarque |
@@ -181,7 +183,7 @@ Fichier `pial/moteur.js`. L'algorithme est **glouton, déterministe et explicabl
 - Pour chaque élève : ses cours (EDT) et l'état de chaque créneau parmi **prioritaire / normal / exclu**.
   - Prioritaire : à couvrir en premier.
   - Exclu : ne jamais affecter, par exemple un cours où l'élève n'a pas besoin d'aide.
-- Récréations et pause méridienne : ajoutées comme créneaux de besoin si l'élève est concerné (§2.2). Elles ont le **même état prioritaire / normal / exclu que les cours**, modifiable dans la grille élève (« normal » par défaut, « prioritaire » si l'import le dit). L'état est stocké dans l'élève (`etatsPeriscolaires`, §9.2) : clé `recreation` / `meridienne` pour l'état par défaut du type, clé `type|jour|debut` pour un créneau précis ; on cherche la clé précise, puis le type, puis « normal ». Un import « oui » ne remet pas à « normal » un état choisi dans l'application (même règle que la colonne `Priorite` de l'EDT). Si l'établissement change l'horaire d'une récréation, l'état posé sur l'ancien horaire n'est plus retrouvé et le créneau reprend l'état par défaut du type.
+- Récréations et pause méridienne : seulement si le réglage global **« Gérer les temps périscolaires »** est coché (Réglages → Règles de calcul ; **décoché par défaut**, car ce besoin concerne une petite minorité d'élèves). Décoché : colonnes ignorées à l'import (§2.2), aucun créneau périscolaire dans la grille, le moteur, le rapport de fin ni le bandeau ; les affectations périscolaires déjà en base y restent, mais sont ignorées partout (charge des AESH, alertes) jusqu'à ce que le réglage soit coché de nouveau. Coché : ajoutées comme créneaux de besoin si l'élève est concerné (§2.2), élève par élève (non concerné par défaut). Elles ont le **même état prioritaire / normal / exclu que les cours**, modifiable dans la grille élève (« normal » par défaut, « prioritaire » si l'import le dit). L'état est stocké dans l'élève (`etatsPeriscolaires`, §9.2) : clé `recreation` / `meridienne` pour l'état par défaut du type, clé `type|jour|debut` pour un créneau précis ; on cherche la clé précise, puis le type, puis « normal ». Un import « oui » ne remet pas à « normal » un état choisi dans l'application (même règle que la colonne `Priorite` de l'EDT). Si l'établissement change l'horaire d'une récréation, l'état posé sur l'ancien horaire n'est plus retrouvé et le créneau reprend l'état par défaut du type.
 - Les **affectations épinglées** (modifiées ou verrouillées à la main) sont reprises telles quelles.
 
 ### 5.3 Déroulement
@@ -203,7 +205,7 @@ Fichier `pial/moteur.js`. L'algorithme est **glouton, déterministe et explicabl
 4. Trier les unités :
    1. prioritaires d'abord (y compris les récréations et pauses méridiennes marquées prioritaires) ;
    2. puis individuelles ;
-   3. puis mutualisées, de la plus nombreuse à la moins nombreuse ;
+   3. puis mutualisées : l'unité dont l'élève le moins couvert (en proportion de ses heures mutualisées) l'est le moins passe d'abord ; la taille du groupe (la plus nombreuse d'abord) ne fait que départager ;
    4. puis récréations et pause méridienne ;
    5. à égalité, l'élève le moins couvert en proportion passe d'abord (proportion recalculée après chaque affectation, dans la modalité de l'unité) ; puis la clé de l'élève, puis l'ordre chronologique.
 5. Pour chaque unité, écarter les AESH qui violent une contrainte dure. Parmi les autres, choisir celle qui obtient le **meilleur score** :
@@ -217,7 +219,7 @@ Fichier `pial/moteur.js`. L'algorithme est **glouton, déterministe et explicabl
 | Formation déclarée correspondant aux besoins (§7.3) | +10 |
 | Équilibrage : part de quotité restante | +0 à +15, proportionnel |
 | Créneau isolé (laisse un trou de plus de 2 h dans sa journée) | −10 |
-| Nombre d'AESH différentes pour l'élève dépasse 3 | −15 |
+| Nombre d'AESH différentes pour l'élève dépasse 3 | −25 par AESH au-delà de 3, cumulable |
 
 Les poids sont regroupés dans **un seul objet de configuration** (`POIDS` dans `moteur.js`) pour pouvoir les ajuster. Lecture retenue :
 - continuité : l'AESH accompagne déjà au moins un élève de l'unité (affectations épinglées comprises) ;
@@ -225,7 +227,7 @@ Les poids sont regroupés dans **un seul objet de configuration** (`POIDS` dans 
 - créneau collé : écart d'au plus 15 min avec un autre créneau de l'AESH (intercours, récréation) ;
 - créneau isolé : l'AESH a d'autres créneaux ce jour-là et le plus proche est à plus de 2 h (un créneau seul dans la journée ne crée pas de trou) ;
 - équilibrage : 15 × quotité restante ÷ quotité, dans la semaine la plus chargée parmi celles du créneau ;
-- plus de 3 AESH : si au moins un élève de l'unité aurait plus de 3 AESH différentes ;
+- plus de 3 AESH : pour chaque élève de l'unité qui n'a pas encore cette AESH, rang qu'elle aurait parmi ses AESH différentes ; −25 pour la 4e, −50 pour la 5e, etc., cumulé sur les élèves de l'unité ;
 - expérience et formation : poids présents, mais **sans effet jusqu'à la phase 4** (l'expérience dépend du rapprochement des rapports ; une table formation → besoins est un choix de conformité à valider, §7.3) ;
 - égalité de score : identifiant de l'AESH, ordre alphabétique.
 
@@ -433,7 +435,7 @@ Migration additive : ne jamais toucher aux magasins `rapports` et `imports`.
 | `affectations` | `id` | version, aeshId, creneauCle | brouillon (version = 0) et versions validées |
 | `versions` | `numero` | annee | date d'effet, commentaire, compteurs, libellés des élèves et AESH (§6) ; numérotation globale, jamais remise à zéro d'une année à l'autre |
 | `correspondances` | `type` | | correspondances de colonnes mémorisées |
-| `parametres` | `cle` | | réglages du module (`{cle:"reglages", valeur:{dureeReelle, respecterIndispos, pauseRepasMin…}}`) — ajouté au schéma (§13) |
+| `parametres` | `cle` | | réglages du module (`{cle:"reglages", valeur:{dureeReelle, respecterIndispos, gererPeriscolaire, pauseRepasMin…}}`) — ajouté au schéma (§13) ; un réglage absent prend sa valeur par défaut, sans migration |
 
 Une affectation contient : `{id, annee, version, aeshId, creneau{etab,jour,debut,fin,semaine}, creneauCle, modalite, eleves:[cle…], epinglee, origine:"moteur"|"manuel", raisons:[…], alertes:[…]}`. `creneauCle` est un champ calculé (`etab|jour|debut|fin|semaine`) qui alimente l'index du même nom ; `eleves` contient les identifiants de stockage (`annee|cle`).
 
@@ -469,7 +471,8 @@ Générées par `outils/generer-exemples.js` (Node sans npm, déterministe, exé
 11. un fichier `FICTIF_aesh_windows1252.csv` encodé en Windows-1252 avec des accents ;
 12. un fichier `FICTIF_eleves.xlsx`, pour tester la lecture XLSX ;
 13. une notification qui se termine dans moins de 30 jours ;
-14. des rapports dont le champ `aesh` est mal orthographié (« sophie durand », « S. Durand »), pour tester le rapprochement manuel.
+14. des rapports dont le champ `aesh` est mal orthographié (« sophie durand », « S. Durand »), pour tester le rapprochement manuel ;
+15. un renfort `FICTIF_aesh_renfort.csv` (2 AESH, un établissement chacune, 36 h) : importé après une première proposition, il fait remonter la couverture à la relance.
 
 **`pial/tests.html`** et **`outils/tests-node.js`** : les mêmes assertions (fichier commun `pial/tests.js`), exécutables dans le navigateur ou en ligne de commande (`node outils/tests-node.js`, Node sans npm). Elles vérifient au moins :
 - clés et collisions ;
@@ -566,3 +569,25 @@ Reportées dans les sections concernées ; résumé :
 6. Validation d'une version possible malgré des conflits, avec confirmation ; libellés conservés dans la version ; comparatif par élève × créneau × semaine (§6).
 7. Pile d'annulation de 20 actions, en mémoire ; imports et validation non annulables (§6).
 8. Interrupteur « ignorer les indisponibilités » par AESH livré dès la phase 2 ; il couvre aussi les établissements possibles, comme le réglage global (§4.4, §11).
+
+Revue du rapport du moteur (même jour) :
+
+9. Entre unités mutualisées, la proportion déjà couverte passe avant la taille du groupe (§5.3.4).
+10. Pénalité « plus de 3 AESH » progressive : −25 par AESH au-delà de 3, cumulable (§5.3.5). Mesurée sans effet sur les exemples : quand l'élève reçoit une 4e AESH, aucune des précédentes n'est libre sur le créneau ; une passe d'amélioration par échanges est proposée (notes de travail), non codée.
+11. Réglage global « Gérer les temps périscolaires », décoché par défaut (§2.2, §5.2) ; les exemples et le scénario le cochent.
+12. `FICTIF_aesh_renfort.csv` (2 AESH, un établissement chacune) et étape du scénario : pénurie → import du renfort → relance → la couverture remonte (§10).
+
+## 15. Sujets ouverts
+
+À étudier après la phase 2.
+
+### 15.1 Source des emplois du temps réels
+
+Les emplois du temps réels sont des PDF Pronote « Emploi du temps annuel de l'élève » : une grille par élève, avec les semaines A/B, chiffrée, sans la classe. Le gabarit `edt_eleves.csv` (§2.4) suppose une saisie ou une conversion préalable. Pistes, de la plus simple à la dernière à tenter :
+
+1. export « liste des cours » de Pronote (côté établissement), à rapprocher du gabarit ;
+2. export EDT au format CSV ou XML (Pronote, ou logiciel d'emploi du temps de l'établissement) ;
+3. export iCal (calendrier) de l'élève ou de la classe ;
+4. lecture des PDF en dernier recours (mise en page variable, chiffrement, absence de la classe).
+
+Pour chaque piste : qui peut produire le fichier (coordonnateur, secrétariat, famille), ce qu'il contient (classe, groupes, semaines A/B), et les données personnelles qu'il transporte en plus de celles dont le module a besoin (§3).

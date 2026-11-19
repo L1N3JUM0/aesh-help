@@ -248,6 +248,12 @@ var AESH = [
   { n: "Échantillon", p: "Sarah", q: 12, etabs: [LILAS] },
   { n: "Gabarit", p: "Bruno", q: 18, etabs: [TILLEULS], form: ["TSA", "Braille"] }
 ];
+// renfort (scénario, étape « relance ») : importé après une première
+// proposition, il fait remonter la couverture
+var AESH_RENFORT = [
+  { n: "Renfort", p: "Camille", q: 24, etabs: [TILLEULS] },
+  { n: "Appoint", p: "Alix", q: 12, etabs: [LILAS] }
+];
 function emailAesh(a) { return sansAccent(a.p + "." + a.n).toLowerCase().replace(/[^a-z.]/g, "") + "@exemple.invalid"; }
 
 /* =============== écriture CSV =============== */
@@ -486,6 +492,7 @@ var BOM = "﻿";
 ecrire("FICTIF_eleves.csv", BOM + csv([ENTETE_ELEVES].concat(ELEVES.map(ligneEleve)), ";"));
 ecrire("FICTIF_eleves_collision.csv", BOM + csv([ENTETE_ELEVES].concat(ELEVES_COLLISION.map(ligneEleve)), ";"));
 ecrire("FICTIF_aesh.csv", BOM + csv([ENTETE_AESH].concat(AESH.map(ligneAesh)), ";"));
+ecrire("FICTIF_aesh_renfort.csv", BOM + csv([ENTETE_AESH].concat(AESH_RENFORT.map(ligneAesh)), ";"));
 // export « CSV (séparateur : point-virgule) » d'Excel en français : Windows-1252, sans BOM
 ecrire("FICTIF_aesh_windows1252.csv", enWindows1252(csv([ENTETE_AESH].concat(AESH.map(ligneAesh)), ";")));
 // séparateur virgule, UTF-8 sans BOM : teste la détection automatique
@@ -517,4 +524,5 @@ ELEVES.forEach(function (el) { totInd += el.ind || 0; totMut += el.mut || 0; });
 AESH.forEach(function (a) { totQ += a.q; });
 console.log(ELEVES.length + " élèves, " + AESH.length + " AESH, " + TRANSMISSIONS.length + " transmissions.");
 console.log("Heures notifiées : " + totInd + " h individuelles + " + totMut + " h mutualisées = " + (totInd + totMut)
-  + " h ; quotités cumulées : " + totQ + " h (cas 7 : capacité insuffisante).");
+  + " h ; quotités cumulées : " + totQ + " h (cas 7 : capacité insuffisante), "
+  + AESH_RENFORT.reduce(function (t, a) { return t + a.q; }, 0) + " h de plus avec le renfort.");

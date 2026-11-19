@@ -381,11 +381,13 @@ var PialImport = (function () {
     if (isNaN(ind)) erreurs.push("heures individuelles illisibles (« " + v.heuresInd + " »)");
     if (isNaN(mut)) erreurs.push("heures mutualisées illisibles (« " + v.heuresMut + " »)");
     if (!isNaN(ind) && !isNaN(mut) && !(ind > 0) && !(mut > 0)) erreurs.push("aucune heure notifiée");
-    // oui / non, ou « prioritaire » (= oui, créneaux prioritaires par défaut, spec §5.2)
-    var prioRecre = M.normaliser(v.recreation) === "prioritaire", prioMerid = M.normaliser(v.meridienne) === "prioritaire";
+    // oui / non, ou « prioritaire » (= oui, créneaux prioritaires par défaut,
+    // spec §5.2). Temps périscolaires non gérés : colonnes ignorées.
+    var peri = !!options.gererPeriscolaire;
+    var prioRecre = peri && M.normaliser(v.recreation) === "prioritaire", prioMerid = peri && M.normaliser(v.meridienne) === "prioritaire";
     var recre = prioRecre || booleen(v.recreation), merid = prioMerid || booleen(v.meridienne);
-    if (recre === null) erreurs.push("récréation : oui, non ou prioritaire attendu");
-    if (merid === null) erreurs.push("pause méridienne : oui, non ou prioritaire attendu");
+    if (peri && recre === null) erreurs.push("récréation : oui, non ou prioritaire attendu");
+    if (peri && merid === null) erreurs.push("pause méridienne : oui, non ou prioritaire attendu");
     var debut = dateIso(v.debutNotif), fin = dateIso(v.finNotif);
     if (debut === null) erreurs.push("date de début illisible");
     if (fin === null) erreurs.push("date de fin illisible");
@@ -399,10 +401,13 @@ var PialImport = (function () {
     var objet = {
       id: M.idEleve(options.annee, cle), cle: cle, annee: options.annee, nomCourt: court,
       classe: v.classe.replace(/\s+/g, " "), etablissement: M.idEtablissement(v.etablissement), etablissementNom: v.etablissement.replace(/\s+/g, " "),
-      heuresInd: ind || 0, heuresMut: mut || 0, recreation: !!recre, meridienne: !!merid,
+      heuresInd: ind || 0, heuresMut: mut || 0,
       besoins: besoins, debutNotif: debut || "", finNotif: fin || ""
       // le nom de famille n'est jamais conservé (spec §3) : seul nomCourt l'est
     };
+    // non gérés : les champs sont absents, la fusion garde ceux déjà en base
+    if (peri) { objet.recreation = !!recre; objet.meridienne = !!merid; }
+    else if ((v.recreation && recre !== false) || (v.meridienne && merid !== false)) objet._periscolaireIgnore = true;
     // comme la colonne Priorite de l'EDT : seul « prioritaire » est transmis,
     // un « oui » ne remet pas à « normal » un état choisi dans l'application
     if (prioRecre || prioMerid) {
@@ -473,15 +478,18 @@ var PialImport = (function () {
   var CLE_IDENTITE = { eleves: "cle", aesh: "id", edt: "id" };
 
   /* lignes : tableau de lignes SANS l'en-tête. options : {annee,
-     elevesConnus:{cle:true} (EDT seulement), premiereLigne (numéro de la
-     première ligne de données dans le fichier, 2 par défaut)}.
+     elevesConnus:{cle:true} (EDT seulement), gererPeriscolaire (élèves
+     seulement), premiereLigne (numéro de la première ligne de données dans
+     le fichier, 2 par défaut)}.
      Renvoie {valides:[objet], erreurs:[{ligne, motifs}], doublons:[{ligne,
      identique}], collisions:[{cle, lignes}], avertissements:[{ligne, motif}],
-     exemples:[ligne], etablissements:[nom]}. */
+     exemples:[ligne], etablissements:[nom], periscolaireIgnore:[ligne]
+     (récréation ou pause méridienne demandée alors que les temps
+     périscolaires ne sont pas gérés)}. */
   function apercu(type, lignes, correspondance, options) {
     options = options || {};
     var premiere = options.premiereLigne || 2;
-    var res = { valides: [], erreurs: [], doublons: [], collisions: [], avertissements: [], exemples: [], etablissements: [] };
+    var res = { valides: [], erreurs: [], doublons: [], collisions: [], avertissements: [], exemples: [], etablissements: [], periscolaireIgnore: [] };
     var parCle = {}, etabsVus = {};
     lignes.forEach(function (brut, i) {
       var num = premiere + i;
@@ -490,6 +498,7 @@ var PialImport = (function () {
       var r = VALIDATEURS[type](v, options);
       if (r.erreurs) { res.erreurs.push({ ligne: num, motifs: r.erreurs }); return; }
       (r.avertissements || []).forEach(function (a) { res.avertissements.push({ ligne: num, motif: a }); });
+      if (r.objet._periscolaireIgnore) { res.periscolaireIgnore.push(num); delete r.objet._periscolaireIgnore; }
       var cle = r.objet[CLE_IDENTITE[type]];
       (parCle[cle] = parCle[cle] || []).push({ ligne: num, objet: r.objet, empreinte: JSON.stringify(r.objet) });
       [v.etablissement].concat(type === "aesh" ? liste(v.etablissements) : []).forEach(function (e) {

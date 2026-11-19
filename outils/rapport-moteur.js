@@ -10,7 +10,9 @@
    Les fichiers de exemples/ sont importés comme dans l'interface ; les
    horaires des collèges sont ceux de l'étape 6 de SCENARIO-DEMO.md. Le
    moteur est lancé deux fois (contrôle du déterminisme), puis sur un jeu
-   agrandi ×4 pour mesurer le temps de calcul.
+   agrandi ×4 pour mesurer le temps de calcul. Une dernière section compare
+   trois capacités : les exemples (pénurie), les exemples + le renfort
+   (FICTIF_aesh_renfort.csv), et les AESH doublées (capacité suffisante).
    ===================================================================== */
 
 var fs = require("fs");
@@ -29,8 +31,22 @@ function h(x) { return (Math.round(x * 100) / 100).toString().replace(".", ",") 
 function pct(a, b) { return b ? Math.round(100 * a / b) + " %" : "—"; }
 function chrono(fn) { var t0 = process.hrtime.bigint(); var r = fn(); return { r: r, ms: Number(process.hrtime.bigint() - t0) / 1e6 }; }
 function ms(x) { return Math.round(x) + " ms"; }
+// nombre d'AESH différentes par élève : {0: n, 1: n, …} et élèves à 4 ou plus
+function aeshParEleve(d, affs) {
+  var par = {}, dist = {}, plus = [];
+  d.eleves.forEach(function (e) { par[e.id] = {}; });
+  affs.forEach(function (a) { a.eleves.forEach(function (id) { if (par[id]) par[id][a.aeshId] = true; }); });
+  d.eleves.forEach(function (e) {
+    var n = Object.keys(par[e.id]).length;
+    dist[n] = (dist[n] || 0) + 1;
+    if (n >= 4) plus.push(e.nomCourt + " (" + n + ")");
+  });
+  return { dist: dist, plus: plus };
+}
+function copie(d, champs) { var o = {}; Object.keys(d).forEach(function (k) { o[k] = d[k]; }); Object.keys(champs).forEach(function (k) { o[k] = champs[k]; }); return o; }
 
-T.chargerExemples(env).then(function (d) {
+Promise.all([T.chargerExemples(env), T.chargerExemples(env, { renfort: true })]).then(function (jeux) {
+  var d = jeux[0];
   var e1 = chrono(function () { return P.proposer(d); });
   var e2 = chrono(function () { return P.proposer(d); });
   var deterministe = JSON.stringify(e1.r) === JSON.stringify(e2.r);
@@ -104,5 +120,21 @@ T.chargerExemples(env).then(function (d) {
   l.push("");
   l.push("Déterminisme : " + (deterministe ? "les deux exécutions donnent un résultat identique." : "**DIFFÉRENCE entre les deux exécutions.**")
     + " Jeu agrandi : " + eg.r.rapport.violations.length + " violation(s).");
+  l.push("");
+  l.push("### Capacité et AESH différentes par élève");
+  l.push("");
+  l.push("| Jeu | Quotités | Couvert / notifié | Sous-couverts | Périscolaire | AESH par élève (0/1/2/3/4/5+) | Élèves à 4 AESH ou plus |");
+  l.push("|---|---|---|---|---|---|---|");
+  var doublees = copie(d, { aesh: d.aesh.concat(d.aesh.map(function (a) { var c = JSON.parse(JSON.stringify(a)); c.id = a.id + "-bis"; c.nom = a.nom + " bis"; return c; })) });
+  [["Exemples (pénurie)", d], ["Exemples + renfort", jeux[1]], ["AESH doublées (capacité suffisante)", doublees]].forEach(function (x) {
+    var res = P.proposer(x[1]), rr = res.rapport, q = 0, ap = aeshParEleve(x[1], res.affectations), cinq = 0;
+    x[1].aesh.forEach(function (a) { q += a.quotite; });
+    Object.keys(ap.dist).forEach(function (k) { if (+k >= 5) cinq += ap.dist[k]; });
+    var de = rr.heures.individuel.demande + rr.heures.mutualise.demande, co = rr.heures.individuel.couvert + rr.heures.mutualise.couvert;
+    l.push("| " + x[0] + " | " + h(q) + " | " + h(co) + " / " + h(de) + " (" + pct(co, de) + ") | " + rr.sousCouverts.length + " | "
+      + h(rr.heures.periscolaire.couvert) + " / " + h(rr.heures.periscolaire.demande) + " | "
+      + [0, 1, 2, 3, 4].map(function (k) { return ap.dist[k] || 0; }).concat([cinq]).join(" / ") + " | "
+      + (ap.plus.length ? ap.plus.length + " : " + ap.plus.join(", ") : "0") + " |");
+  });
   console.log(l.join("\n"));
 }).catch(function (err) { console.error(err); process.exitCode = 1; });

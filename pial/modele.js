@@ -35,6 +35,7 @@ var PialModele = (function () {
   var REGLAGES_DEFAUT = {
     dureeReelle: false,          // §4.1 « Compter la durée réelle »
     respecterIndispos: true,     // §4.4 contrainte 7
+    gererPeriscolaire: false,    // §5.2 « Gérer les temps périscolaires »
     pauseRepasMin: 45,           // §4.4 contrainte 6, en minutes
     seuilJourneePause: 360,      // journée de plus de 6 h de présence
     deplacementMin: 60,          // §4.4 contrainte 4
@@ -179,9 +180,13 @@ var PialModele = (function () {
     Object.keys(donnees.reglages || {}).forEach(function (k) { reglages[k] = donnees.reglages[k]; });
     var etabs = {};
     (donnees.etablissements || []).forEach(function (e) { etabs[e.id] = e; });
+    // temps périscolaires non gérés : leurs affectations restent en base
+    // mais sont ignorées partout (grille, charge, alertes, moteur)
+    var affectations = donnees.affectations || [];
+    if (!reglages.gererPeriscolaire) affectations = affectations.filter(function (a) { return a.modalite !== "periscolaire"; });
     var ctx = {
       etablissements: etabs, eleves: donnees.eleves || [], aesh: donnees.aesh || [],
-      cours: donnees.cours || [], affectations: donnees.affectations || [], reglages: reglages,
+      cours: donnees.cours || [], affectations: affectations, reglages: reglages,
       _eleves: {}, _aesh: {}, _coursParEleve: {}, _affParAesh: {}, _affParEleve: {}
     };
     ctx.eleves.forEach(function (e) { ctx._eleves[e.id] = e; });
@@ -458,6 +463,7 @@ var PialModele = (function () {
   // (le matin et l'après-midi pour la pause méridienne). Chaque créneau
   // porte son état (prioritaire / normal / exclu).
   function creneauxPeriscolaires(eleve, ctx) {
+    if (!ctx.reglages.gererPeriscolaire) return [];
     var etab = etabDe(ctx, eleve.etablissement);
     var cours = ctx._coursParEleve[eleve.id] || [];
     var out = [];

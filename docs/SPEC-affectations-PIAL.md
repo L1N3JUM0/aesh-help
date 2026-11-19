@@ -49,8 +49,8 @@ Aucun format SIECLE ni Pronote n'est imposé : **l'outil fournit ses propres gab
 | Nom | oui | Martin | **seule l'initiale est conservée** (voir §3) ; une valeur terminée par un point (« Ma. ») est gardée telle quelle |
 | Heures_individuelles | non | 6 | heures/semaine, décimales acceptées (1,5) |
 | Heures_mutualisees | non | 4 | heures/semaine |
-| Recreation | non | oui/non | accompagnement pendant les récréations |
-| Pause_meridienne | non | oui/non | accompagnement pendant la pause méridienne |
+| Recreation | non | oui/non/prioritaire | accompagnement pendant les récréations ; `prioritaire` = oui, avec des créneaux prioritaires par défaut (§5.2) |
+| Pause_meridienne | non | oui/non/prioritaire | accompagnement pendant la pause méridienne ; `prioritaire` : idem |
 | Besoins | non | Secrétaire, scripteur \| Aide aux déplacements | valeurs de la liste ACCOMP (§7.2), séparées par `\|` |
 | Debut_notification | non | 2026-09-01 | |
 | Fin_notification | non | 2027-07-04 | alerte quand la date approche |
@@ -181,7 +181,7 @@ Fichier `pial/moteur.js`. L'algorithme est **glouton, déterministe et explicabl
 - Pour chaque élève : ses cours (EDT) et l'état de chaque créneau parmi **prioritaire / normal / exclu**.
   - Prioritaire : à couvrir en premier.
   - Exclu : ne jamais affecter, par exemple un cours où l'élève n'a pas besoin d'aide.
-- Récréations et pause méridienne : ajoutées comme créneaux de besoin si l'élève est concerné (§2.2).
+- Récréations et pause méridienne : ajoutées comme créneaux de besoin si l'élève est concerné (§2.2). Elles ont le **même état prioritaire / normal / exclu que les cours**, modifiable dans la grille élève (« normal » par défaut, « prioritaire » si l'import le dit). L'état est stocké dans l'élève (`etatsPeriscolaires`, §9.2) : clé `recreation` / `meridienne` pour l'état par défaut du type, clé `type|jour|debut` pour un créneau précis ; on cherche la clé précise, puis le type, puis « normal ». Un import « oui » ne remet pas à « normal » un état choisi dans l'application (même règle que la colonne `Priorite` de l'EDT). Si l'établissement change l'horaire d'une récréation, l'état posé sur l'ancien horaire n'est plus retrouvé et le créneau reprend l'état par défaut du type.
 - Les **affectations épinglées** (modifiées ou verrouillées à la main) sont reprises telles quelles.
 
 ### 5.3 Déroulement
@@ -189,18 +189,23 @@ Fichier `pial/moteur.js`. L'algorithme est **glouton, déterministe et explicabl
 1. Retirer de la demande ce que couvrent déjà les affectations épinglées.
 2. Pour chaque élève, **choisir les créneaux à couvrir**. Un élève a en général plus de cours que d'heures notifiées. Ordre de choix :
    1. les cours prioritaires ;
-   2. une répartition équilibrée sur les jours de la semaine ;
-   3. les matières mentionnées dans ses besoins, si un lien existe ;
+   2. une répartition équilibrée sur les jours de la semaine (le jour où l'élève a le moins d'heures déjà couvertes d'abord) ;
+   3. les matières mentionnées dans ses besoins, si un lien existe — **aucune table besoin → matière n'est définie : critère inactif** (point d'entrée prévu dans `moteur.js`) ;
    4. l'ordre chronologique.
+
+   C'est un **ordre de préférence**, pas une sélection figée : si aucune AESH ne peut prendre un créneau, le moteur passe au suivant, jusqu'à atteindre les heures notifiées ou épuiser les cours non exclus. Quand le reste à couvrir est inférieur à l'apport d'un cours : cours entier si le reste est au moins égal à l'apport ; sinon, si le reste vaut au moins la moitié de l'apport, le cours en **semaine A seulement** (B si A est impossible), soit 0,5 h en moyenne pour un cours d'1 h ; en dessous, l'élève reste « partiellement couvert ».
 3. Constituer les **unités de demande** :
    - une unité individuelle par élève et par créneau ;
-   - une unité mutualisée par groupe (classe + cours + groupe + créneau) qui rassemble tous les élèves mutualisés présents.
+   - une unité mutualisée par groupe (classe + cours + groupe + créneau) qui rassemble tous les élèves mutualisés présents qui ont encore des heures mutualisées à couvrir et pour qui ce cours n'est pas exclu ;
+   - une unité périscolaire par établissement et par créneau (récréation, pause méridienne), qui rassemble tous les élèves concernés (§4.4, contrainte 3).
+
+   Le moteur cherche d'abord une AESH pour toutes les semaines du créneau ; à défaut, il scinde l'unité en semaine A et semaine B (§4.1).
 4. Trier les unités :
-   1. prioritaires d'abord ;
+   1. prioritaires d'abord (y compris les récréations et pauses méridiennes marquées prioritaires) ;
    2. puis individuelles ;
    3. puis mutualisées, de la plus nombreuse à la moins nombreuse ;
    4. puis récréations et pause méridienne ;
-   5. à égalité, l'élève le moins couvert en proportion passe d'abord.
+   5. à égalité, l'élève le moins couvert en proportion passe d'abord (proportion recalculée après chaque affectation, dans la modalité de l'unité) ; puis la clé de l'élève, puis l'ordre chronologique.
 5. Pour chaque unité, écarter les AESH qui violent une contrainte dure. Parmi les autres, choisir celle qui obtient le **meilleur score** :
 
 | Critère | Effet |
@@ -214,10 +219,20 @@ Fichier `pial/moteur.js`. L'algorithme est **glouton, déterministe et explicabl
 | Créneau isolé (laisse un trou de plus de 2 h dans sa journée) | −10 |
 | Nombre d'AESH différentes pour l'élève dépasse 3 | −15 |
 
-Les poids sont regroupés dans **un seul objet de configuration** pour pouvoir les ajuster.
+Les poids sont regroupés dans **un seul objet de configuration** (`POIDS` dans `moteur.js`) pour pouvoir les ajuster. Lecture retenue :
+- continuité : l'AESH accompagne déjà au moins un élève de l'unité (affectations épinglées comprises) ;
+- même établissement : le créneau précédent ou suivant de l'AESH ce jour-là est dans le même établissement ;
+- créneau collé : écart d'au plus 15 min avec un autre créneau de l'AESH (intercours, récréation) ;
+- créneau isolé : l'AESH a d'autres créneaux ce jour-là et le plus proche est à plus de 2 h (un créneau seul dans la journée ne crée pas de trou) ;
+- équilibrage : 15 × quotité restante ÷ quotité, dans la semaine la plus chargée parmi celles du créneau ;
+- plus de 3 AESH : si au moins un élève de l'unité aurait plus de 3 AESH différentes ;
+- expérience et formation : poids présents, mais **sans effet jusqu'à la phase 4** (l'expérience dépend du rapprochement des rapports ; une table formation → besoins est un choix de conformité à valider, §7.3) ;
+- égalité de score : identifiant de l'AESH, ordre alphabétique.
+
+Les affectations proposées ont un identifiant déterministe (`mo|aeshId|creneauCle`) : deux exécutions sur les mêmes données donnent un résultat identique.
 
 6. Pour chaque affectation proposée, enregistrer les **raisons** : critères retenus et nombre d'AESH écartées par contrainte. Exemple : « Sophie D. : déjà avec Lucas, même établissement le lundi ».
-7. Produire un rapport de fin : heures couvertes / heures demandées, élèves sous-couverts, AESH sous-utilisées, et pour chaque heure non couverte la contrainte qui a bloqué (quotité épuisée partout, aucune AESH disponible, déplacement impossible…).
+7. Produire un rapport de fin : heures couvertes / heures demandées, élèves sous-couverts, AESH sous-utilisées, et pour chaque heure non couverte la contrainte qui a bloqué (quotité épuisée partout, aucune AESH disponible, déplacement impossible…). Le motif d'un élève sous-couvert est la contrainte qui a écarté le plus d'AESH sur ses créneaux tentés ; « pas assez de cours » si ses cours non exclus ne suffisent pas.
 
 ### 5.4 Saisie manuelle
 
@@ -231,13 +246,15 @@ Les poids sont regroupés dans **un seul objet de configuration** pour pouvoir l
 ## 6. Brouillon, versions, historique
 
 - L'affectation en cours d'édition est un **brouillon**.
-- « **Valider** » fige une **version** datée : date d'effet + commentaire libre (ex. « Arrivée de Inès B. en 4A »).
+- « **Valider** » fige une **version** datée : date d'effet (aujourd'hui par défaut) + commentaire libre facultatif (ex. « Arrivée de Inès B. en 4A »). La validation reste possible s'il reste des conflits, après une confirmation qui en donne le nombre. La version est une copie du brouillon, qui continue d'exister ; elle garde aussi les noms courts, classes et noms des AESH, pour rester lisible si un élève est supprimé ensuite. Une version validée ne se modifie pas et ne s'annule pas.
 - L'**historique** liste les versions et offre :
   - la consultation d'une version en lecture seule ;
   - un **comparatif** entre deux versions (créneaux ajoutés, retirés ou changés d'AESH) ;
   - la restauration d'une version comme nouveau brouillon.
 - Les exports (§8) portent toujours un numéro de version et une date d'effet.
+- Le comparatif se fait par élève × créneau × semaine (A, B) : un créneau scindé en A et B se compare donc correctement à un créneau « toutes semaines ».
 - Fin de notification proche (moins de 30 jours) ou dépassée : l'élève est signalé dans le panneau d'alertes.
+- **Annulation** (§7.1) : pile de 20 actions en mémoire, perdue au rechargement de la page. Sont annulables : affecter, retirer, épingler / désépingler, changer l'état d'un créneau, « Proposer » (une seule action), « Tout désépingler », restaurer une version, l'interrupteur « ignorer les indisponibilités ». Les imports et la validation d'une version ne s'annulent pas.
 
 ---
 
@@ -409,11 +426,11 @@ Migration additive : ne jamais toucher aux magasins `rapports` et `imports`.
 | Magasin | keyPath | Index | Contenu |
 |---|---|---|---|
 | `etablissements` | `id` | | paramètres §2.5 |
-| `eleves` | `id` (= `annee\|cle`, §3) | cle, annee, etablissement, classe | élève + notification + options récré/méridienne + besoins |
+| `eleves` | `id` (= `annee\|cle`, §3) | cle, annee, etablissement, classe | élève + notification + options récré/méridienne + `etatsPeriscolaires` (§5.2) + besoins |
 | `aesh` | `id` (= `nom\|prenom` normalisé, §2.3) | annee | AESH + paramètres + formations + alias de rapprochement |
 | `cours` | `id` | eleveCle, etablissement | lignes d'EDT élève + état prioritaire/normal/exclu |
 | `affectations` | `id` | version, aeshId, creneauCle | brouillon (version = 0) et versions validées |
-| `versions` | `numero` | annee | date d'effet, commentaire, compteurs ; numérotation globale, jamais remise à zéro d'une année à l'autre |
+| `versions` | `numero` | annee | date d'effet, commentaire, compteurs, libellés des élèves et AESH (§6) ; numérotation globale, jamais remise à zéro d'une année à l'autre |
 | `correspondances` | `type` | | correspondances de colonnes mémorisées |
 | `parametres` | `cle` | | réglages du module (`{cle:"reglages", valeur:{dureeReelle, respecterIndispos, pauseRepasMin…}}`) — ajouté au schéma (§13) |
 
@@ -481,7 +498,10 @@ Générées par `outils/generer-exemples.js` (Node sans npm, déterministe, exé
 
 **Phase 2 — Moteur et versions**
 - `moteur.js`, raisons, rapport de fin.
-- Épinglage, relance partielle, annulation.
+- Menu de créneau trié par score, avec les raisons.
+- Épinglage, relance partielle, « Tout désépingler », annulation.
+- État prioritaire / normal / exclu des récréations et pauses méridiennes.
+- Interrupteur « ignorer les indisponibilités » par AESH (panneau simple ; la fiche complète vient en phase 4).
 - Brouillon, versions, comparatif.
 - ✔ *Acceptation* : sur les exemples, aucune contrainte dure n'est violée par le moteur ; les cas 1 à 9 se comportent comme décrit ; deux exécutions donnent le même résultat ; une affectation épinglée n'est jamais modifiée.
 
@@ -532,3 +552,16 @@ Reportées dans les sections concernées ; résumé :
 13. Colonne `Eleve` de l'EDT : un nom complet (« Lucas Martin ») est accepté et réduit à « Lucas M. » s'il correspond à un élève connu ; le nom complet n'est pas conservé (§2.4, §3).
 14. Magasin `parametres` ajouté au schéma v3 pour les réglages du module ; la sauvegarde `pial-suivi/2` (non chiffrée) est livrée dès la phase 1 ; restaurer un fichier `pial-suivi/1` ne remplace que les rapports et l'historique des imports (§8.4, §9.2).
 15. `pial/index.html` enregistre aussi le service worker commun (`../service-worker.js`, garde `file:`), pour que l'espace PIAL fonctionne hors ligne même si la page AESH n'a jamais été ouverte (§9.1).
+
+## 14. Décisions du 19/11/2026 (revue du plan de la phase 2)
+
+Reportées dans les sections concernées ; résumé :
+
+1. Choix des créneaux d'un élève = ordre de préférence ; reste inférieur à l'apport d'un cours : cours en semaine A seulement si le reste vaut au moins la moitié (§5.3).
+2. Récréations et pauses méridiennes : même état prioritaire / normal / exclu que les cours, stocké dans l'élève (`etatsPeriscolaires`), sans migration ; colonnes `Recreation` / `Pause_meridienne` : valeur `prioritaire` acceptée ; pause méridienne de Louis I. (cas 8) prioritaire dans les exemples (§2.2, §5.2, §9.2).
+3. Lien matières ↔ besoins : critère inactif faute de table (§5.3).
+4. Scores d'expérience et de formation : présents dans `POIDS`, sans effet jusqu'à la phase 4 (§5.3).
+5. Lecture détaillée des critères du score ; identifiants d'affectation déterministes (§5.3).
+6. Validation d'une version possible malgré des conflits, avec confirmation ; libellés conservés dans la version ; comparatif par élève × créneau × semaine (§6).
+7. Pile d'annulation de 20 actions, en mémoire ; imports et validation non annulables (§6).
+8. Interrupteur « ignorer les indisponibilités » par AESH livré dès la phase 2 ; il couvre aussi les établissements possibles, comme le réglage global (§4.4, §11).

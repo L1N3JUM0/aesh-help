@@ -583,6 +583,7 @@ Interface du moteur (commit 4) :
 14. « Proposer » remplace toutes les affectations non épinglées du brouillon, sans confirmation (toute saisie manuelle est épinglée, §5.4) ; le rapport s'ouvre dans une fenêtre et reste consultable (bouton « Rapport ») jusqu'au rechargement de la page. « Tout désépingler » demande une confirmation.
 15. Menu d'un créneau : les AESH disponibles sont triées par le score du moteur, affiché avec ses raisons ; une affectation proposée affiche ses raisons. L'état d'un créneau périscolaire se change dans le même menu, pour ce créneau seulement (§5.2).
 16. Fiche de l'AESH sélectionnée (filtre AESH ou clic dans la vue d'ensemble) : quotité, charge A/B, élèves, établissements, indisponibilités, formations, et l'interrupteur « Ignorer ses indisponibilités et ses établissements possibles » (annulable ; sans effet si le réglage global est décoché). Une AESH concernée porte la mention « indispos ignorées » dans la liste.
+17. Versions : « Valider la version » (date d'effet, commentaire) copie le brouillon dans le magasin `affectations` avec `version` = numéro et l'identifiant `v<numéro>|<id>` ; l'enregistrement `versions` garde compteurs et libellés. « Historique » : liste, consultation en lecture seule, comparatif entre deux versions ou avec le brouillon, restauration comme brouillon (versions de l'année en cours ; annulable ; les affectations dont l'AESH ou tous les élèves ont été supprimés depuis sont écartées, avec le nombre dans la confirmation).
 
 ## 15. Sujets ouverts
 

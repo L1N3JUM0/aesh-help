@@ -70,7 +70,8 @@ input[type=text],input[type=email],input[type=date],input[type=number],input[typ
   width:100%;font-family:inherit;font-size:14.5px;color:var(--texte);
   background:#FBFCFD;border:1px solid var(--seyes);border-radius:7px;padding:9px 10px;
 }
-input:focus,select:focus{outline:2px solid var(--encre-clair);outline-offset:1px;border-color:var(--encre-clair)}
+textarea{width:100%;font-family:inherit;font-size:14.5px;color:var(--texte);background:#FBFCFD;border:1px solid var(--seyes);border-radius:7px;padding:9px 10px;resize:vertical}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--encre-clair);outline-offset:1px;border-color:var(--encre-clair)}
 .ligne-filtres{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin:0 0 14px}
 .ligne-filtres .champ{margin:0;min-width:150px;flex:1}
 .ligne-filtres .champ.etroit{min-width:120px;flex:none;width:130px}
@@ -251,6 +252,8 @@ table.grille-edt td.heure{font-variant-numeric:tabular-nums;color:var(--gris);bo
 .fiche-aesh dt{color:var(--gris)}
 .fiche-aesh dd{margin:0}
 .badge-ignore{display:inline-block;margin-left:6px;padding:0 6px;border-radius:10px;background:#FFF4E0;color:#8A5A12;font-size:11.5px}
+.cmp-ajout{color:var(--valide)}
+.cmp-retrait{color:var(--alerte)}
 .mc-score{display:inline-block;min-width:26px;padding:0 6px;border-radius:10px;background:#E8EEF7;color:var(--encre);font-size:12px;font-weight:600;text-align:center}
 .mc-actuelle{background:#F4F6F9;border-radius:8px;padding:8px 10px;margin:0 0 6px;font-size:13.5px}
 .mc-actuelle .mc-alerte{color:var(--sous);font-size:12.5px;margin:3px 0 0}
@@ -845,6 +848,27 @@ table.grille-edt td.heure{font-variant-numeric:tabular-nums;color:var(--gris);bo
 <div id="impression"></div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<div class="voile" id="voile-valider" hidden>
+  <div class="modale" role="dialog" aria-modal="true" aria-labelledby="vv-titre">
+    <h3 id="vv-titre">Valider la version</h3>
+    <div id="vv-resume"></div>
+    <div class="champ"><label for="vv-date">Date d'effet</label><input type="date" id="vv-date"></div>
+    <div class="champ"><label for="vv-commentaire">Commentaire (facultatif)</label><textarea id="vv-commentaire" rows="3" maxlength="500" placeholder="Ex. : arrivée d'un élève en 4A"></textarea></div>
+    <p class="aide">Une version validée ne se modifie plus ; le brouillon reste en place et vous pouvez continuer à le modifier.</p>
+    <div class="actions"><button type="button" class="btn btn-plein" id="vv-confirmer">Valider</button>
+      <button type="button" class="btn btn-vide" id="vv-annuler">Annuler</button></div>
+  </div>
+</div>
+
+<div class="voile" id="voile-versions" hidden>
+  <div class="modale modale-large modale-rapport" role="dialog" aria-modal="true" aria-labelledby="vh-titre">
+    <h3 id="vh-titre">Historique des versions</h3>
+    <div id="vh-corps"></div>
+    <div id="vh-detail"></div>
+    <div class="actions"><button type="button" class="btn btn-vide" id="vh-fermer">Fermer</button></div>
+  </div>
+</div>
 
 <div class="voile" id="voile-creneau" hidden>
   <div class="modale modale-large" role="dialog" aria-modal="true" aria-labelledby="mc-titre">

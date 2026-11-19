@@ -27,6 +27,7 @@ var PialAffectations = (function () {
   var etat = {
     etablissements: [], eleves: [], aesh: [], cours: [],
     affectations: [],          // brouillon (version 0) de l'année en cours
+    affectationsVersions: [],  // copies figées des versions validées (version = numéro)
     versions: [], correspondances: {}, reglages: {}
   };
 
@@ -46,6 +47,7 @@ var PialAffectations = (function () {
       etat.aesh = parNom.aesh;
       etat.cours = parNom.cours.filter(function (c) { return c.annee === annee; });
       etat.affectations = parNom.affectations.filter(function (a) { return a.version === 0 && a.annee === annee; });
+      etat.affectationsVersions = parNom.affectations.filter(function (a) { return a.version > 0; });
       etat.versions = parNom.versions;
       etat.correspondances = {};
       parNom.correspondances.forEach(function (c) { etat.correspondances[c.type] = c.colonnes; });
@@ -421,13 +423,16 @@ var PialAffectations = (function () {
       + ' title="Remplace les affectations non épinglées par une proposition ; les épinglées sont conservées">Proposer</button>'
       + (dernierRapport ? '<button type="button" class="btn btn-vide" id="aff-voir-rapport">Rapport</button>' : "")
       + '<button type="button" class="btn btn-vide" id="aff-desepingler"' + (nbEpinglees() ? "" : " disabled") + '>Tout désépingler</button>'
-      + '<button type="button" class="btn btn-vide" disabled title="Disponible avec les versions (phase 2)">Valider la version</button>'
+      + '<button type="button" class="btn btn-vide" id="aff-valider"' + (etat.affectations.length ? "" : " disabled") + '>Valider la version</button>'
+      + '<button type="button" class="btn btn-vide" id="aff-historique">Historique' + (etat.versions.length ? " (" + etat.versions.length + ")" : "") + '</button>'
       + '</span>';
     Array.prototype.forEach.call($("aff-synthese").querySelectorAll("[data-semaine]"), function (b) {
       b.addEventListener("click", function () { semaineAffichee = this.dataset.semaine; rendreAffectations(); });
     });
     $("aff-proposer").addEventListener("click", proposer);
     $("aff-annuler").addEventListener("click", annuler);
+    $("aff-valider").addEventListener("click", ouvrirValidation);
+    $("aff-historique").addEventListener("click", ouvrirHistorique);
     if (dernierRapport) $("aff-voir-rapport").addEventListener("click", afficherRapport);
     $("aff-desepingler").addEventListener("click", toutDesepingler);
   }
@@ -926,6 +931,173 @@ var PialAffectations = (function () {
     chaque("[data-affecter]", function () { affecter(this.dataset.affecter); });
     chaque("[data-retirer]", function () { retirer(this.dataset.retirer); });
     chaque("[data-epingler]", function () { basculerEpingle(this.dataset.epingler); });
+  }
+
+  /* =============== versions : validation (§6) =============== */
+  function dateFr(iso) { return iso ? iso.slice(0, 10).split("-").reverse().join("/") : ""; }
+  function nbConflits() {
+    return M.alertes(ctxCourant, aujourdhui()).filter(function (a) { return a.type === "conflit" && a.niveau === "erreur"; }).length;
+  }
+  function ouvrirValidation() {
+    if (!etat.affectations.length) { ui.toast("Le brouillon est vide : rien à valider."); return; }
+    var s = M.synthese(ctxCourant), n = nbConflits();
+    $("vv-resume").innerHTML = '<p class="aide">Version n° ' + (numeroSuivant()) + ' : ' + pluriel(etat.affectations.length, "affectation") + ' · individuel '
+      + heures(s.indCouvert) + ' / ' + heures(s.indDemande) + ' · mutualisé ' + heures(s.mutCouvert) + ' / ' + heures(s.mutDemande) + '.</p>'
+      + (n ? '<p class="note alerte">' + pluriel(n, "conflit reste", "conflits restent") + ' dans le brouillon (panneau d\'alertes). La validation reste possible.</p>' : "");
+    $("vv-date").value = aujourdhui();
+    $("vv-commentaire").value = "";
+    $("voile-valider").hidden = false;
+    $("vv-date").focus();
+  }
+  function numeroSuivant() { return etat.versions.reduce(function (m, v) { return Math.max(m, v.numero || 0); }, 0) + 1; }
+  $("vv-annuler").addEventListener("click", function () { $("voile-valider").hidden = true; });
+  $("vv-confirmer").addEventListener("click", function () {
+    var date = $("vv-date").value, commentaire = $("vv-commentaire").value.trim(), n = nbConflits();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { ui.toast("Indiquez la date d'effet."); return; }
+    $("voile-valider").hidden = true;
+    if (n) ui.confirmationForte(pluriel(n, "conflit reste", "conflits restent") + " dans le brouillon. Valider la version quand même ?", "Valider quand même", function () { valider(date, commentaire, n); });
+    else valider(date, commentaire, 0);
+  });
+  // la version garde les libellés (noms courts, classes, AESH) pour rester
+  // lisible si un élève ou une AESH est supprimé ensuite ; non annulable
+  function valider(date, commentaire, conflits) {
+    var numero = numeroSuivant(), s = M.synthese(ctxCourant);
+    var libelles = { eleves: {}, aesh: {} };
+    etat.eleves.forEach(function (e) { libelles.eleves[e.id] = { nomCourt: e.nomCourt, classe: e.classe, etablissement: nomEtablissement(e.etablissement) }; });
+    etat.aesh.forEach(function (a) { libelles.aesh[a.id] = nomAesh(a); });
+    var v = { numero: numero, annee: anneeCourante(), dateEffet: date, commentaire: commentaire, valideeLe: new Date().toISOString(),
+      compteurs: { affectations: etat.affectations.length, eleves: etat.eleves.length, aesh: etat.aesh.length, conflits: conflits,
+        indCouvert: s.indCouvert, indDemande: s.indDemande, mutCouvert: s.mutCouvert, mutDemande: s.mutDemande, elevesSous: s.elevesSous },
+      libelles: libelles };
+    var copies = etat.affectations.map(function (a) {
+      var c = JSON.parse(JSON.stringify(a));
+      c.id = "v" + numero + "|" + a.id; c.version = numero;
+      return c;
+    });
+    PialDB.appliquer([{ magasin: "versions", enregistrer: [v] }, { magasin: "affectations", enregistrer: copies }]).then(recharger).then(function () {
+      rendreAffectations();
+      ui.toast("Version n° " + numero + " validée, date d'effet le " + dateFr(date) + ".");
+    });
+  }
+
+  /* =============== versions : historique, comparatif, restauration (§6) =============== */
+  function versionParNumero(n) { return etat.versions.filter(function (v) { return v.numero === n; })[0]; }
+  function affsDeVersion(cle) {
+    if (cle === "brouillon") return etat.affectations;
+    var n = +cle;
+    return etat.affectationsVersions.filter(function (a) { return a.version === n; });
+  }
+  // libellés : ceux des versions comparées, puis les données actuelles
+  function libellesPour(cles) {
+    var l = { eleves: {}, aesh: {} };
+    etat.eleves.forEach(function (e) { l.eleves[e.id] = { nomCourt: e.nomCourt, classe: e.classe, etablissement: nomEtablissement(e.etablissement) }; });
+    etat.aesh.forEach(function (a) { l.aesh[a.id] = nomAesh(a); });
+    cles.forEach(function (c) {
+      var v = c !== "brouillon" && versionParNumero(+c);
+      if (!v || !v.libelles) return;
+      ["eleves", "aesh"].forEach(function (k) { Object.keys(v.libelles[k] || {}).forEach(function (id) { if (!l[k][id]) l[k][id] = v.libelles[k][id]; }); });
+    });
+    return l;
+  }
+  function ouvrirHistorique() { rendreHistorique(); $("vh-detail").innerHTML = ""; $("voile-versions").hidden = false; $("vh-fermer").focus(); }
+  function fermerHistorique() { $("voile-versions").hidden = true; }
+  $("vh-fermer").addEventListener("click", fermerHistorique);
+  $("voile-versions").addEventListener("click", function (ev) { if (ev.target === this) fermerHistorique(); });
+  $("voile-valider").addEventListener("click", function (ev) { if (ev.target === this) this.hidden = true; });
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key !== "Escape") return;
+    if (!$("voile-versions").hidden) fermerHistorique();
+    if (!$("voile-valider").hidden) $("voile-valider").hidden = true;
+  });
+  function rendreHistorique() {
+    var vs = etat.versions.slice().sort(function (a, b) { return b.numero - a.numero; });
+    if (!vs.length) { $("vh-corps").innerHTML = '<p class="aide">Aucune version validée. « Valider la version » fige le brouillon actuel, avec une date d\'effet.</p>'; return; }
+    var options = '<option value="brouillon">Brouillon actuel</option>' + vs.map(function (v) { return '<option value="' + v.numero + '">Version n° ' + v.numero + ' (' + dateFr(v.dateEffet) + ')</option>'; }).join("");
+    $("vh-corps").innerHTML = '<div class="tableau-conteneur"><table class="tableau"><thead><tr><th>N°</th><th>Date d\'effet</th><th>Commentaire</th><th>Affectations</th><th></th></tr></thead><tbody>'
+      + vs.map(function (v) {
+        var c = v.compteurs || {};
+        return '<tr><td>' + v.numero + '</td><td>' + dateFr(v.dateEffet) + '<br><span class="aide">validée le ' + dateFr(v.valideeLe) + ' · ' + ech(v.annee) + '</span></td>'
+          + '<td>' + ech(v.commentaire || "—") + '</td><td>' + (c.affectations || 0) + (c.conflits ? '<br><span class="aide">' + pluriel(c.conflits, "conflit") + '</span>' : "") + '</td>'
+          + '<td><div class="mc-boutons"><button type="button" class="btn btn-vide" data-vh-voir="' + v.numero + '">Consulter</button>'
+          + '<button type="button" class="btn btn-vide" data-vh-comparer="' + v.numero + '">Comparer au brouillon</button>'
+          + (v.annee === anneeCourante() ? '<button type="button" class="btn btn-vide" data-vh-restaurer="' + v.numero + '">Restaurer</button>' : "") + '</div></td></tr>';
+      }).join("") + '</tbody></table></div>'
+      + '<div class="ligne-filtres" style="margin-top:12px"><div class="champ"><label for="vh-a">Comparer</label><select id="vh-a">' + options + '</select></div>'
+      + '<div class="champ"><label for="vh-b">avec</label><select id="vh-b">' + options + '</select></div>'
+      + '<div class="champ" style="flex:none"><button type="button" class="btn btn-plein" id="vh-comparer">Comparer</button></div></div>';
+    $("vh-a").value = String(vs[0].numero);
+    $("vh-b").value = "brouillon";
+    function chaque(sel, fn) { Array.prototype.forEach.call($("vh-corps").querySelectorAll(sel), function (b) { b.addEventListener("click", fn); }); }
+    chaque("[data-vh-voir]", function () { consulterVersion(+this.dataset.vhVoir); });
+    chaque("[data-vh-comparer]", function () { comparer(this.dataset.vhComparer, "brouillon"); });
+    chaque("[data-vh-restaurer]", function () { restaurerVersion(+this.dataset.vhRestaurer); });
+    $("vh-comparer").addEventListener("click", function () { comparer($("vh-a").value, $("vh-b").value); });
+  }
+  function texteCreneau(l) {
+    return l.jour + " " + l.debut + "–" + l.fin + (l.periscolaire ? " (" + LIB_PERI[l.periscolaire].toLowerCase() + ")" : "")
+      + (l.semaines.length < 2 ? " · semaine " + l.semaines[0] : "");
+  }
+  function nomEleveLib(lib, id) { var e = lib.eleves[id]; return e ? e.nomCourt + " (" + e.classe + ")" : id; }
+  function consulterVersion(numero) {
+    var v = versionParNumero(numero), lib = libellesPour([String(numero)]), affs = affsDeVersion(String(numero));
+    var lignes = [];
+    affs.forEach(function (a) {
+      a.eleves.forEach(function (id) { lignes.push({ eleve: nomEleveLib(lib, id), a: a }); });
+    });
+    lignes.sort(function (p, q) {
+      return p.eleve.localeCompare(q.eleve, "fr") || (M.JOURS.indexOf(p.a.creneau.jour) - M.JOURS.indexOf(q.a.creneau.jour)) || p.a.creneau.debut.localeCompare(q.a.creneau.debut);
+    });
+    $("vh-detail").innerHTML = '<div class="mc-section"><h4>Version n° ' + numero + ' — date d\'effet ' + dateFr(v.dateEffet) + ' (lecture seule)</h4>'
+      + (v.commentaire ? '<p class="aide">' + ech(v.commentaire) + '</p>' : "")
+      + '<div class="tableau-conteneur"><table class="tableau"><thead><tr><th>Élève</th><th>Créneau</th><th>AESH</th><th>Modalité</th></tr></thead><tbody>'
+      + lignes.map(function (l) {
+        var c = l.a.creneau;
+        return '<tr><td>' + ech(l.eleve) + '</td><td>' + ech(c.jour + " " + c.debut + "–" + c.fin + (c.semaine !== "toutes" ? " · semaine " + c.semaine : "")) + '</td><td>'
+          + ech(lib.aesh[l.a.aeshId] || l.a.aeshId) + '</td><td>' + LIB_MODALITE[l.a.modalite] + (l.a.epinglee ? " 🔒" : "") + '</td></tr>';
+      }).join("") + '</tbody></table></div></div>';
+    $("vh-detail").scrollIntoView({ block: "start" });
+  }
+  function comparer(cleA, cleB) {
+    if (cleA === cleB) { ui.toast("Choisissez deux versions différentes."); return; }
+    var lib = libellesPour([cleA, cleB]);
+    var c = M.comparerAffectations(affsDeVersion(cleA), affsDeVersion(cleB), etat.etablissements);
+    function aesh(x) { return x ? x.aeshIds.map(function (id) { return lib.aesh[id] || id; }).join(", ") + " (" + LIB_MODALITE[x.modalite].toLowerCase() + ")" : ""; }
+    var TYPE = { ajout: "Ajout", retrait: "Retrait", changement: "Changement" };
+    $("vh-detail").innerHTML = '<div class="mc-section"><h4>' + (cleA === "brouillon" ? "Du brouillon" : "De la version n° " + cleA) + (cleB === "brouillon" ? " au brouillon" : " à la version n° " + cleB) + '</h4>'
+      + '<p class="aide">' + [pluriel(c.resume.ajout, "créneau ajouté", "créneaux ajoutés"), pluriel(c.resume.retrait, "créneau retiré", "créneaux retirés"),
+        pluriel(c.resume.changement, "créneau changé", "créneaux changés")].join(" · ") + ' (par élève, créneau et semaine).</p>'
+      + (c.lignes.length ? '<div class="tableau-conteneur"><table class="tableau"><thead><tr><th>Élève</th><th>Créneau</th><th>Changement</th></tr></thead><tbody>'
+        + c.lignes.map(function (l) {
+          var t = l.type === "ajout" ? '<span class="cmp-ajout">+ ' + ech(aesh(l.apres)) + '</span>'
+            : l.type === "retrait" ? '<span class="cmp-retrait">− ' + ech(aesh(l.avant)) + '</span>'
+            : ech(aesh(l.avant)) + ' → ' + ech(aesh(l.apres));
+          return '<tr><td>' + ech(nomEleveLib(lib, l.eleveId)) + '</td><td>' + ech(texteCreneau(l)) + '</td><td>' + TYPE[l.type] + ' : ' + t + '</td></tr>';
+        }).join("") + '</tbody></table></div>' : '<p class="aide">Aucune différence.</p>')
+      + '</div>';
+    $("vh-detail").scrollIntoView({ block: "start" });
+  }
+  // la version redevient le brouillon (annulable) ; les affectations dont
+  // l'AESH ou tous les élèves ont disparu depuis sont écartées
+  function restaurerVersion(numero) {
+    var affs = affsDeVersion(String(numero)), eleves = {}, aeshs = {}, ecartees = 0;
+    etat.eleves.forEach(function (e) { eleves[e.id] = true; });
+    etat.aesh.forEach(function (a) { aeshs[a.id] = true; });
+    var restaurees = [];
+    affs.forEach(function (a) {
+      var c = JSON.parse(JSON.stringify(a));
+      c.id = a.id.replace(/^v\d+\|/, ""); c.version = 0;
+      c.eleves = c.eleves.filter(function (id) { return eleves[id]; });
+      if (!aeshs[c.aeshId] || !c.eleves.length) { ecartees++; return; }
+      restaurees.push(c);
+    });
+    ui.confirmationForte("Restaurer la version n° " + numero + " comme brouillon ? Le brouillon actuel (" + pluriel(etat.affectations.length, "affectation")
+      + ") sera remplacé ; « Annuler » le rétablit." + (ecartees ? " " + pluriel(ecartees, "affectation sera écartée", "affectations seront écartées") + " : élève ou AESH supprimé depuis." : ""),
+      "Restaurer", function () {
+        fermerHistorique();
+        dernierRapport = null;
+        enregistrerPuisRendre([{ magasin: "affectations", supprimer: etat.affectations.map(function (a) { return a.id; }), enregistrer: restaurees }],
+          "Version n° " + numero + " restaurée comme brouillon.", "la restauration de la version n° " + numero);
+      });
   }
 
   /* =============== annulation (§6) =============== */

@@ -270,6 +270,8 @@ Onglets existants : Importer, Rapports, Indicateurs, Statistiques, Réglages. Aj
 
 **Bandeau de synthèse**, toujours visible :
 - heures couvertes / heures demandées (individuel et mutualisé séparés) ;
+- capacité : quotités totales, heures affectées, heures libres (somme par AESH de max(0, quotité − charge)), en moyenne A/B, détail A/B au survol ;
+- écart théorique besoins − capacité (heures notifiées individuelles + mutualisées − quotités totales), signalé comme théorique : une heure mutualisée peut couvrir plusieurs élèves ;
 - nombre d'élèves sous-couverts ;
 - nombre d'AESH en dépassement ou sous-utilisées ;
 - nombre d'alertes ;
@@ -420,7 +422,10 @@ exemples/                 jeux de données fictifs (§10), hors cache du service
 outils/generer-exemples.js  script de génération des exemples (outil de dev, non publié dans l'app)
 outils/tests-node.js      lanceur des mêmes tests en ligne de commande (Node sans npm)
 outils/rapport-moteur.js  rapport de fin du moteur sur exemples/ et temps de calcul (outil de dev)
+pial/manifest.webmanifest manifest de l'espace PIAL installable (portée pial/, icônes icons/icon-pial-*.png)
 ```
+
+L'espace PIAL s'installe comme une application distincte de l'application AESH : `pial/manifest.webmanifest` (`id` et `scope` = `pial/`, `start_url` = `index.html`), icône de même dessin sur fond vert (`icons/icon-pial.svg`, PNG 192 et 512). Le lien vers le manifest n'est inséré que hors `file://`. Installée, l'application obtient plus facilement la conservation des données (`navigator.storage.persist()`, bouton « Demander la conservation des données » dans Réglages → Stockage) ; ouverte par double-clic, elle ne peut pas l'obtenir.
 
 Ajouter **tous** les fichiers de `/pial/` nécessaires à l'application (existants compris : ils n'y figuraient pas) à `FICHIERS` dans `service-worker.js`, et incrémenter `CACHE_VERSION`. Le gestionnaire `fetch` ne met jamais en cache `exemples/` ni `outils/`, et le repli hors ligne d'une navigation sous `/pial/` renvoie `pial/index.html` (et non le `index.html` racine).
 

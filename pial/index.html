@@ -4,6 +4,17 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Suivi AESH — Espace PIAL</title>
+<meta name="theme-color" content="#2F6B4F">
+<link rel="icon" type="image/png" sizes="192x192" href="../icons/icon-pial-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="../icons/icon-pial-512.png">
+<link rel="apple-touch-icon" href="../icons/icon-pial-192.png">
+<script>
+// manifest (installation comme application) : seulement servi en http(s),
+// une page ouverte par double-clic (file://) ne peut pas être installée
+if (location.protocol !== "file:") {
+  document.write('<link rel="manifest" href="manifest.webmanifest">');
+}
+</script>
 <style>
 :root{
   --fond:#ECEEEC;
@@ -184,6 +195,10 @@ label.case input{width:auto}
   display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;font-size:13.5px
 }
 .bandeau-synthese .bs-chiffre strong{font-family:var(--serif);font-size:18px;color:var(--encre)}
+.sep-copie{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:pre}
+.bandeau-synthese .bs-sep{color:var(--seyes);margin:0 -10px}
+.bandeau-synthese .bs-manque{color:var(--sous)!important}
+.bandeau-synthese .bs-marge{color:var(--couvert)!important}
 .bandeau-synthese .bs-actions{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .selecteur-semaine{display:inline-flex;border:1px solid var(--seyes);border-radius:8px;overflow:hidden}
 .selecteur-semaine button{border:none;background:#fff;padding:7px 12px;font:inherit;font-weight:600;color:var(--gris);cursor:pointer}
@@ -786,7 +801,10 @@ table.grille-edt td.heure{font-variant-numeric:tabular-nums;color:var(--gris);bo
       <p class="chapeau">Les données sont stockées uniquement sur cet ordinateur (IndexedDB), rien n'est envoyé sur internet.</p>
       <div id="reg-persistance"></div>
       <div id="reg-espace"></div>
-      <div class="actions"><button type="button" class="btn btn-vide" id="btn-rafraichir-espace">Actualiser</button></div>
+      <div class="actions">
+        <button type="button" class="btn btn-plein" id="btn-persister" hidden>Demander la conservation des données</button>
+        <button type="button" class="btn btn-vide" id="btn-rafraichir-espace">Actualiser</button>
+      </div>
     </div>
 
     <div class="carte">

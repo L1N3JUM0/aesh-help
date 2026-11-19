@@ -457,6 +457,14 @@ var PialTests = (function () {
       var f = fixture(M), e = f.e;
       var s = M.synthese(f.ctx([aff("aesh|x", f.cA, "lundi", "08:00", "08:55", "mutualise", [e.mut1, e.mut2])]));
       egal([s.indDemande, s.indCouvert, s.mutDemande, s.mutCouvert], [22, 0, 27, 2]);
+      // capacité : 24 + 2 h de quotité, 1 h affectée à Ana (A et B)
+      egal([s.quotites, s.affecteesA, s.affecteesB, s.affectees, s.libres, s.ecartTheorique], [26, 1, 1, 1, 25, 23]);
+      // dépassement : les heures libres ne deviennent pas négatives
+      var l = ["08:00", "08:55", "10:05"].map(function (d, i) {
+        return aff("aesh|y", f.cA, "lundi", d, ["08:55", "09:50", "11:00"][i], "individuel", [e.ind]);
+      });
+      var s2 = M.synthese(f.ctx(l));
+      egal([s2.affecteesA, s2.libresA, s2.libresB], [3, 24, 24], "Bob dépasse de 1 h : 0 h libre pour lui, pas −1");
     });
   }
 

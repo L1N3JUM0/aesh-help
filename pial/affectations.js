@@ -21,6 +21,9 @@ var PialAffectations = (function () {
   function txt(s) { return String(s == null ? "" : s); }
   function ech(s) { return txt(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
   function pluriel(n, mot, motPluriel) { return n + " " + (n > 1 ? (motPluriel || mot + "s") : mot); }
+  // séparateur lu à la copie (et par les lecteurs d'écran) mais invisible :
+  // entre éléments flex, un simple espace disparaît (« 44 hMutualisé »)
+  function sep(t) { return '<span class="sep-copie">' + t + '</span>'; }
   function heures(x) { return (Math.round(x * 100) / 100).toString().replace(".", ",") + " h"; }
 
   /* =============== état en mémoire =============== */
@@ -408,13 +411,24 @@ var PialAffectations = (function () {
   /* =============== bandeau de synthèse =============== */
   function rendreSynthese(alertes) {
     var s = M.synthese(ctxCourant);
-    $("aff-synthese").innerHTML =
-      '<span class="bs-chiffre">Individuel : <strong>' + heures(s.indCouvert) + '</strong> / ' + heures(s.indDemande) + '</span>'
-      + '<span class="bs-chiffre">Mutualisé : <strong>' + heures(s.mutCouvert) + '</strong> / ' + heures(s.mutDemande) + '</span>'
-      + '<span class="bs-chiffre"><strong>' + s.elevesSous + '</strong> élève(s) sous-couvert(s)</span>'
-      + '<span class="bs-chiffre"><strong>' + s.aeshDepassement + '</strong> AESH en dépassement · <strong>' + s.aeshSous + '</strong> sous-utilisée(s)</span>'
-      + '<span class="bs-chiffre"><strong>' + alertes.length + '</strong> alerte(s)</span>'
-      + '<span class="bs-actions">'
+    function ab(a, b) { return a !== b ? ' title="Semaine A : ' + heures(a) + ' · semaine B : ' + heures(b) + '"' : ""; }
+    var ecart = s.ecartTheorique;
+    // blocs séparés par un vrai texte « · » : le bandeau se copie lisiblement
+    var blocs = [
+      '<span class="bs-chiffre">Individuel : <strong>' + heures(s.indCouvert) + '</strong> / ' + heures(s.indDemande) + '</span>',
+      '<span class="bs-chiffre">Mutualisé : <strong>' + heures(s.mutCouvert) + '</strong> / ' + heures(s.mutDemande) + '</span>',
+      '<span class="bs-chiffre">Capacité : <strong>' + heures(s.quotites) + '</strong> de quotités, '
+        + '<span' + ab(s.affecteesA, s.affecteesB) + '>' + heures(s.affectees) + ' affectées</span>, '
+        + '<span' + ab(s.libresA, s.libresB) + '>' + heures(s.libres) + ' libres</span></span>',
+      '<span class="bs-chiffre" title="Heures notifiées (individuel + mutualisé) moins quotités totales. Théorique : une heure mutualisée peut couvrir plusieurs élèves, l\'écart réel est donc souvent plus faible.">'
+        + 'Écart besoins − capacité : <strong class="' + (ecart > 0 ? "bs-manque" : "bs-marge") + '">' + (ecart > 0 ? "+" + heures(ecart) : (ecart < 0 ? "−" + heures(-ecart) : heures(0))) + '</strong>'
+        + (ecart > 0 ? " (manque théorique)" : " (marge théorique)") + '</span>',
+      '<span class="bs-chiffre"><strong>' + s.elevesSous + '</strong> élève(s) sous-couvert(s)</span>',
+      '<span class="bs-chiffre"><strong>' + s.aeshDepassement + '</strong> AESH en dépassement, <strong>' + s.aeshSous + '</strong> sous-utilisée(s)</span>',
+      '<span class="bs-chiffre"><strong>' + alertes.length + '</strong> alerte(s)</span>'
+    ];
+    $("aff-synthese").innerHTML = blocs.join('<span class="bs-sep" aria-hidden="true"> · </span>')
+      + sep(" · ") + '<span class="bs-actions">'
       + '<span class="selecteur-semaine" role="group" aria-label="Semaine affichée">'
       + '<button type="button" data-semaine="A" aria-pressed="' + (semaineAffichee === "A") + '">Semaine A</button>'
       + '<button type="button" data-semaine="B" aria-pressed="' + (semaineAffichee === "B") + '">Semaine B</button></span>'
@@ -573,9 +587,9 @@ var PialAffectations = (function () {
   /* =============== vue d'ensemble =============== */
   function jauge(libelle, couvert, cible, etatJauge, titre) {
     var pct = cible > 0 ? Math.min(100, Math.round(couvert / cible * 100)) : (couvert > 0 ? 100 : 0);
-    return '<div class="jauge" title="' + ech(titre || "") + '"><span class="j-lib">' + libelle + '</span>'
+    return '<div class="jauge" title="' + ech(titre || "") + '"><span class="j-lib">' + libelle + '</span>' + sep(" : ")
       + '<span class="j-barre"><span class="e-' + etatJauge + '" style="width:' + pct + '%"></span></span>'
-      + '<span class="j-val">' + heures(couvert) + ' / ' + heures(cible) + '</span></div>';
+      + '<span class="j-val">' + heures(couvert) + ' / ' + heures(cible) + '</span>' + sep(" ; ") + '</div>';
   }
   function titreAB(partie, nom) {
     return partie.A !== partie.B ? nom + " — semaine A : " + heures(partie.A) + ", semaine B : " + heures(partie.B) : nom;
@@ -584,7 +598,7 @@ var PialAffectations = (function () {
     var h = "";
     if (cv.ind.notifie > 0 || cv.ind.moy > 0) h += jauge("Individuel", cv.ind.moy, cv.ind.notifie, cv.ind.etat, titreAB(cv.ind, LIB_ETAT_ELEVE[cv.ind.etat]));
     if (cv.mut.notifie > 0 || cv.mut.moy > 0) h += jauge("Mutualisé", cv.mut.moy, cv.mut.notifie, cv.mut.etat, titreAB(cv.mut, LIB_ETAT_ELEVE[cv.mut.etat]));
-    if (ctxCourant.reglages.gererPeriscolaire && (cv.peri.moy > 0 || e.recreation || e.meridienne)) h += '<div class="jauge"><span class="j-lib">Périscol.</span><span class="j-barre"></span><span class="j-val">' + heures(cv.peri.moy) + '</span></div>';
+    if (ctxCourant.reglages.gererPeriscolaire && (cv.peri.moy > 0 || e.recreation || e.meridienne)) h += '<div class="jauge"><span class="j-lib">Périscol.</span>' + sep(" : ") + '<span class="j-barre"></span><span class="j-val">' + heures(cv.peri.moy) + '</span>' + sep(" ; ") + '</div>';
     return h;
   }
   function elevesFiltres() {
@@ -614,7 +628,7 @@ var PialAffectations = (function () {
     var eleves = elevesFiltres();
     $("aff-liste-eleves").innerHTML = eleves.length ? eleves.map(function (e) {
       var cv = M.couvertureEleve(e, ctxCourant);
-      return '<li data-eleve="' + ech(e.id) + '" tabindex="0"><div class="lj-tete"><span class="lj-nom">' + ech(e.nomCourt) + '</span>'
+      return '<li data-eleve="' + ech(e.id) + '" tabindex="0"><div class="lj-tete"><span class="lj-nom">' + ech(e.nomCourt) + '</span>' + sep(" — ")
         + '<span class="lj-meta">' + ech(e.classe) + ' · ' + ech(nomEtablissement(e.etablissement)) + '</span></div>' + jaugesEleve(e, cv) + '</li>';
     }).join("") : '<li class="vide">' + (etat.eleves.length ? "Aucun élève ne correspond à ces filtres." : "Aucun élève : importez le fichier des élèves (onglet Importer).") + '</li>';
     var aesh = aeshFiltrees();
@@ -623,8 +637,8 @@ var PialAffectations = (function () {
       var titre = LIB_ETAT_AESH[ch.etat] + (ch.A !== ch.B ? " — semaine A : " + heures(ch.A) + ", semaine B : " + heures(ch.B) : "");
       return '<li data-aesh="' + ech(a.id) + '" tabindex="0"' + ($("af-aesh").value === a.id ? ' class="actif"' : '') + '><div class="lj-tete"><span class="lj-nom">'
         + '<span class="puce-aesh" style="background:' + couleurAesh(a.id) + '">' + ech(initialesAesh(a)) + '</span> ' + ech(nomAesh(a)) + '</span>'
-        + (a.ignorerIndispos ? '<span class="badge-ignore" title="Indisponibilités et établissements possibles ignorés">indispos ignorées</span>' : "")
-        + '<span class="lj-meta">' + ((a.etablissements || []).length ? ech(a.etablissements.map(nomEtablissement).join(", ")) : "tous établissements") + '</span></div>'
+        + (a.ignorerIndispos ? sep(" ") + '<span class="badge-ignore" title="Indisponibilités et établissements possibles ignorés">indispos ignorées</span>' : "")
+        + sep(" — ") + '<span class="lj-meta">' + ((a.etablissements || []).length ? ech(a.etablissements.map(nomEtablissement).join(", ")) : "tous établissements") + '</span></div>'
         + jauge("Charge", ch.moy, ch.quotite, ch.etat, titre) + '</li>';
     }).join("") : '<li class="vide">' + (etat.aesh.length ? "Aucune AESH ne correspond à ces filtres." : "Aucune AESH : importez le fichier des AESH.") + '</li>';
     rendreFicheAesh();

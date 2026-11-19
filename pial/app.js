@@ -811,27 +811,47 @@ function imprimerStats() {
 $("btn-imprimer-stats").addEventListener("click", imprimerStats);
 
 /* =============== réglages : stockage =============== */
-function rendreStockage() {
-  var hote = $("reg-persistance");
+// nombre au format français : 10 250,5
+function nombreFr(x, decimales) {
+  return Number(x || 0).toLocaleString("fr-FR", { minimumFractionDigits: decimales, maximumFractionDigits: decimales });
+}
+var CONSEIL_INSTALLATION = '<p class="aide">Pour que le navigateur accepte : installez l\'espace PIAL comme application '
+  + '(bouton « Installer » de la barre d\'adresse dans Chrome ou Edge, ou menu ⋮ → « Installer l\'espace PIAL »), '
+  + 'puis ouvrez-le depuis son icône et cliquez de nouveau sur « Demander la conservation des données ». '
+  + 'Une page ouverte par double-clic sur le fichier (adresse en file://) ne peut pas obtenir cette conservation : '
+  + 'dans ce cas, seules des sauvegardes régulières protègent les données.</p>';
+function rendreStockage(apresDemande) {
+  var hote = $("reg-persistance"), bouton = $("btn-persister");
+  var fichier = location.protocol === "file:";
   if (!navigator.storage || !navigator.storage.persisted) {
-    hote.innerHTML = '<div class="note alerte">Ce navigateur ne permet pas de garantir la conservation des données. Exportez des sauvegardes régulières.</div>';
+    bouton.hidden = true;
+    hote.innerHTML = '<div class="note alerte">' + (fichier
+      ? "Page ouverte par double-clic sur le fichier : le navigateur ne peut pas garantir la conservation des données."
+      : "Ce navigateur ne permet pas de garantir la conservation des données.") + ' Exportez des sauvegardes régulières.</div>'
+      + (fichier ? CONSEIL_INSTALLATION : "");
   } else {
     navigator.storage.persisted().then(function (ok) {
+      bouton.hidden = ok || !navigator.storage.persist;
       hote.innerHTML = ok
         ? '<div class="note ok">Stockage persistant activé : le navigateur ne supprimera pas ces données automatiquement en cas de manque d\'espace.</div>'
-        : '<div class="note alerte">Stockage persistant refusé ou non confirmé par le navigateur : ces données pourraient être effacées automatiquement en cas de manque d\'espace. Exportez des sauvegardes régulières.</div>';
+        : '<div class="note alerte">' + (apresDemande ? "Le navigateur a refusé la conservation des données. " : "Stockage persistant refusé ou non confirmé par le navigateur. ")
+          + 'Ces données pourraient être effacées automatiquement en cas de manque d\'espace. Exportez des sauvegardes régulières.</div>'
+          + CONSEIL_INSTALLATION;
     });
   }
   var hoteEspace = $("reg-espace");
   if (navigator.storage && navigator.storage.estimate) {
     navigator.storage.estimate().then(function (info) {
-      var mo = function (o) { return ((o || 0) / 1048576).toFixed(1); };
+      var mo = function (o) { return nombreFr((o || 0) / 1048576, 1); };
       hoteEspace.innerHTML = '<p>Espace utilisé : <strong>' + mo(info.usage) + ' Mo</strong> sur ' + mo(info.quota) + ' Mo disponibles.</p>';
     });
   } else {
     hoteEspace.innerHTML = "";
   }
 }
+$("btn-persister").addEventListener("click", function () {
+  navigator.storage.persist().then(function () { rendreStockage(true); }, function () { rendreStockage(true); });
+});
 $("btn-rafraichir-espace").addEventListener("click", rendreStockage);
 
 /* =============== réglages : sécurité (mot de passe) =============== */

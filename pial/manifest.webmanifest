@@ -1,0 +1,16 @@
+{
+  "id": "./",
+  "name": "Espace PIAL — Suivi AESH",
+  "short_name": "Espace PIAL",
+  "description": "Espace coordonnateur PIAL : rapports d'accompagnement et affectations des AESH, sans connexion internet requise.",
+  "lang": "fr",
+  "start_url": "index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ECEEEC",
+  "theme_color": "#2F6B4F",
+  "icons": [
+    { "src": "../icons/icon-pial-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "../icons/icon-pial-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

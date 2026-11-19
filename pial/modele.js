@@ -531,7 +531,11 @@ var PialModele = (function () {
 
   /* =============== synthèse (bandeau §7.1) =============== */
   function synthese(ctx) {
-    var s = { indDemande: 0, indCouvert: 0, mutDemande: 0, mutCouvert: 0, elevesSous: 0, aeshDepassement: 0, aeshSous: 0 };
+    // capacité : quotités totales, heures affectées (charge) et heures
+    // libres (somme par AESH de max(0, quotité − charge)), en A et en B ;
+    // écart théorique = heures notifiées (individuel + mutualisé) − quotités
+    var s = { indDemande: 0, indCouvert: 0, mutDemande: 0, mutCouvert: 0, elevesSous: 0, aeshDepassement: 0, aeshSous: 0,
+      quotites: 0, affecteesA: 0, affecteesB: 0, libresA: 0, libresB: 0 };
     ctx.eleves.forEach(function (e) {
       var cv = couvertureEleve(e, ctx);
       s.indDemande += cv.ind.notifie; s.mutDemande += cv.mut.notifie;
@@ -542,7 +546,13 @@ var PialModele = (function () {
       var ch = chargeAesh(a, ctx);
       if (ch.etat === "depassement") s.aeshDepassement++;
       if (ch.etat === "sous") s.aeshSous++;
+      s.quotites += ch.quotite;
+      s.affecteesA += ch.A; s.affecteesB += ch.B;
+      s.libresA += Math.max(0, ch.quotite - ch.A); s.libresB += Math.max(0, ch.quotite - ch.B);
     });
+    s.affectees = (s.affecteesA + s.affecteesB) / 2;
+    s.libres = (s.libresA + s.libresB) / 2;
+    s.ecartTheorique = s.indDemande + s.mutDemande - s.quotites;
     return s;
   }
 

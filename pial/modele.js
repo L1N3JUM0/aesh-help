@@ -546,6 +546,53 @@ var PialModele = (function () {
     return s;
   }
 
+  /* =============== comparatif de deux versions (§6) =============== */
+  // avant, apres : listes d'affectations ; etablissements : liste (pour
+  // l'alternance A/B). Comparaison par élève × créneau × semaine : un
+  // créneau scindé en A et B se compare à un créneau « toutes semaines ».
+  // Renvoie {lignes:[{eleveId, jour, debut, fin, etab, periscolaire,
+  // semaines:["A","B"], type:"ajout"|"retrait"|"changement", avant, apres}],
+  // resume:{ajout, retrait, changement}} ; avant / apres = {aeshIds,
+  // modalite} ou null. Une ligne regroupe les semaines A et B quand la
+  // différence est la même ; lignes triées par élève, jour, heure.
+  function comparerAffectations(avant, apres, etablissements) {
+    var etabs = {};
+    (etablissements || []).forEach(function (e) { etabs[e.id] = e; });
+    function indexer(affs) {
+      var idx = {};
+      (affs || []).forEach(function (a) {
+        var c = a.creneau;
+        semainesDe(c.semaine, etabs[c.etab]).forEach(function (s) {
+          (a.eleves || []).forEach(function (id) {
+            var k = [id, JOURS.indexOf(c.jour), hhmm(minutes(c.debut)), hhmm(minutes(c.fin)), txt(a.periscolaire), s].join("|");
+            var x = idx[k] = idx[k] || { eleveId: id, jour: c.jour, debut: c.debut, fin: c.fin, etab: c.etab, periscolaire: a.periscolaire || "", semaine: s, aeshIds: [], modalite: a.modalite };
+            if (x.aeshIds.indexOf(a.aeshId) < 0) x.aeshIds.push(a.aeshId);
+          });
+        });
+      });
+      Object.keys(idx).forEach(function (k) { idx[k].aeshIds.sort(); });
+      return idx;
+    }
+    var ia = indexer(avant), ib = indexer(apres), cles = {}, parCreneau = {};
+    Object.keys(ia).concat(Object.keys(ib)).forEach(function (k) { cles[k] = true; });
+    Object.keys(cles).sort().forEach(function (k) {
+      var a = ia[k], b = ib[k], x = a || b;
+      var va = a ? { aeshIds: a.aeshIds, modalite: a.modalite } : null, vb = b ? { aeshIds: b.aeshIds, modalite: b.modalite } : null;
+      if (va && vb && JSON.stringify(va) === JSON.stringify(vb)) return;
+      var type = !va ? "ajout" : (!vb ? "retrait" : "changement");
+      // même différence en A et en B : une seule ligne
+      var kc = k.slice(0, k.lastIndexOf("|")) + "|" + type + "|" + JSON.stringify([va, vb]);
+      if (parCreneau[kc]) { parCreneau[kc].semaines.push(x.semaine); return; }
+      parCreneau[kc] = { eleveId: x.eleveId, jour: x.jour, debut: x.debut, fin: x.fin, etab: x.etab, periscolaire: x.periscolaire,
+        semaines: [x.semaine], type: type, avant: va, apres: vb, _cle: k };
+    });
+    var lignes = Object.keys(parCreneau).map(function (kc) { return parCreneau[kc]; })
+      .sort(function (p, q) { return p._cle < q._cle ? -1 : (p._cle > q._cle ? 1 : 0); });
+    var resume = { ajout: 0, retrait: 0, changement: 0 };
+    lignes.forEach(function (l) { delete l._cle; resume[l.type]++; });
+    return { lignes: lignes, resume: resume };
+  }
+
   return {
     REGLAGES_DEFAUT: REGLAGES_DEFAUT, JOURS: JOURS, NIVEAUX: NIVEAUX,
     normaliser: normaliser, abregerNom: abregerNom, nomCourt: nomCourt, cleEleve: cleEleve,
@@ -562,7 +609,7 @@ var PialModele = (function () {
     indisponibilite: indisponibilite, verifierPauseRepas: verifierPauseRepas, verifierAffectation: verifierAffectation,
     motifsIndisponibilite: motifsIndisponibilite, cleEtatPeriscolaire: cleEtatPeriscolaire,
     etatPeriscolaire: etatPeriscolaire, creneauxPeriscolaires: creneauxPeriscolaires,
-    joursEntre: joursEntre, alertes: alertes, synthese: synthese
+    joursEntre: joursEntre, alertes: alertes, synthese: synthese, comparerAffectations: comparerAffectations
   };
 })();
 

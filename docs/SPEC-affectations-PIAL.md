@@ -254,7 +254,7 @@ Les affectations proposées ont un identifiant déterministe (`mo|aeshId|creneau
   - un **comparatif** entre deux versions (créneaux ajoutés, retirés ou changés d'AESH) ;
   - la restauration d'une version comme nouveau brouillon.
 - Les exports (§8) portent toujours un numéro de version et une date d'effet.
-- Le comparatif se fait par élève × créneau × semaine (A, B) : un créneau scindé en A et B se compare donc correctement à un créneau « toutes semaines ».
+- Le comparatif se fait par élève × créneau × semaine (A, B) : un créneau scindé en A et B se compare donc correctement à un créneau « toutes semaines ». Une ligne par différence : ajout, retrait, ou changement (AESH ou modalité) ; les semaines A et B sont regroupées quand la différence est la même (`comparerAffectations` dans `modele.js`).
 - Fin de notification proche (moins de 30 jours) ou dépassée : l'élève est signalé dans le panneau d'alertes.
 - **Annulation** (§7.1) : pile de 20 actions en mémoire, perdue au rechargement de la page. Sont annulables : affecter, retirer, épingler / désépingler, changer l'état d'un créneau, « Proposer » (une seule action), « Tout désépingler », restaurer une version, l'interrupteur « ignorer les indisponibilités ». Les imports et la validation d'une version ne s'annulent pas.
 

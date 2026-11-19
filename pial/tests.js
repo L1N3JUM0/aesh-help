@@ -367,6 +367,40 @@ var PialTests = (function () {
         ["recreation lundi 10:00", "recreation lundi 15:00", "meridienne lundi 12:00"]);
       egal(M.creneauxPeriscolaires(e.peri2, f.ctx([])).map(function (x) { return x.type + " " + x.creneau.debut; }), ["recreation 10:00"], "matin seulement");
     });
+    t("comparatif de deux versions : élève × créneau × semaine", function () {
+      var f = fixture(M), e = f.e, etabs = [f.cA, f.cB, f.ec];
+      var avant = [
+        aff("aesh|x", f.cA, "lundi", "08:00", "08:55", "individuel", [e.ind]),
+        aff("aesh|x", f.cA, "lundi", "08:55", "09:50", "individuel", [e.ind]),
+        aff("aesh|y", f.cA, "mardi", "08:00", "08:55", "individuel", [e.ind]),
+        aff("aesh|y", f.cA, "lundi", "10:05", "11:00", "mutualise", [e.mut1, e.mut2]),
+        aff("aesh|x", f.ec, "lundi", "08:30", "09:30", "individuel", [e.ecole])
+      ];
+      var apres = [
+        aff("aesh|x", f.cA, "lundi", "08:00", "08:55", "individuel", [e.ind], "A"),   // scindé : rien ne change en A
+        aff("aesh|y", f.cA, "lundi", "08:00", "08:55", "individuel", [e.ind], "B"),   // changement en B seulement
+        aff("aesh|x", f.cA, "lundi", "08:55", "09:50", "individuel", [e.ind], "A"),
+        aff("aesh|x", f.cA, "lundi", "08:55", "09:50", "individuel", [e.ind], "B"),   // A + B = toutes : identique
+        aff("aesh|y", f.cA, "lundi", "10:05", "11:00", "mutualise", [e.mut1]),        // mut2 quitte le groupe
+        aff("aesh|y", f.cA, "mercredi", "08:00", "08:55", "individuel", [e.ind]),
+        aff("aesh|x", f.ec, "lundi", "08:30", "09:30", "individuel", [e.ecole], "A")  // école : pas d'alternance
+      ];
+      var c = M.comparerAffectations(avant, apres, etabs);
+      egal(c.lignes.map(function (l) {
+        return [l.eleveId === e.ind.id ? "ind" : (l.eleveId === e.mut2.id ? "mut2" : l.eleveId), l.type, l.jour, l.debut, l.semaines.join(""),
+          l.avant && l.avant.aeshIds.join(), l.apres && l.apres.aeshIds.join()];
+      }).sort(), [
+        ["ind", "ajout", "mercredi", "08:00", "AB", null, "aesh|y"],
+        ["ind", "changement", "lundi", "08:00", "B", "aesh|x", "aesh|y"],
+        ["ind", "retrait", "mardi", "08:00", "AB", "aesh|y", null],
+        ["mut2", "retrait", "lundi", "10:05", "AB", "aesh|y", null]
+      ]);
+      egal(c.resume, { ajout: 1, retrait: 2, changement: 1 });
+      egal(M.comparerAffectations(avant, avant, etabs).lignes, [], "version comparée à elle-même");
+      var modal = M.comparerAffectations([avant[3]], [aff("aesh|y", f.cA, "lundi", "10:05", "11:00", "individuel", [e.mut1])], etabs);
+      egal(modal.lignes.map(function (l) { return [l.type, l.avant.modalite, l.apres && l.apres.modalite]; }),
+        [["retrait", "mutualise", null], ["changement", "mutualise", "individuel"]], "changement de modalité ; mut2 retiré (lignes triées par élève)");
+    });
     t("état prioritaire / normal / exclu des créneaux périscolaires", function () {
       var f = fixture(M), e = f.e;
       e.peri.etatsPeriscolaires = { meridienne: "prioritaire", "recreation|lundi|15:00": "exclu" };

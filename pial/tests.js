@@ -11,7 +11,7 @@
    executer(env) renvoie une promesse de {reussis, echecs, ignores, lignes}.
    env = {
      modele: PialModele, zip: PialZip (facultatif), importFichiers:
-     PialImport (facultatif),
+     PialImport (facultatif), moteur: PialMoteur (facultatif),
      lireExemple: function (nom) -> Promise<Uint8Array|null> (null = fichier
        indisponible, par ex. navigateur en file:// : le test est ignoré)
    }
@@ -364,6 +364,15 @@ var PialTests = (function () {
         ["recreation lundi 10:00", "recreation lundi 15:00", "meridienne lundi 12:00"]);
       egal(M.creneauxPeriscolaires(e.peri2, f.ctx([])).map(function (x) { return x.type + " " + x.creneau.debut; }), ["recreation 10:00"], "matin seulement");
     });
+    t("état prioritaire / normal / exclu des créneaux périscolaires", function () {
+      var f = fixture(M), e = f.e;
+      e.peri.etatsPeriscolaires = { meridienne: "prioritaire", "recreation|lundi|15:00": "exclu" };
+      var ctx = f.ctx([]);
+      egal(M.creneauxPeriscolaires(e.peri, ctx).map(function (x) { return x.type + " " + x.creneau.debut + " " + x.etat; }),
+        ["recreation 10:00 normal", "recreation 15:00 exclu", "meridienne 12:00 prioritaire"]);
+      var a = aff("aesh|x", f.cA, "lundi", "15:00", "15:15", "periscolaire", [e.peri], "toutes", { periscolaire: "recreation" });
+      egal(codes(M.verifierAffectation(a, f.ctx([a]))), ["exclu"], "temps périscolaire exclu");
+    });
     t("alertes : conflits, notifications, dépassements ; déterministes", function () {
       var f = fixture(M), e = f.e;
       e.ind.finNotif = "2026-12-09";
@@ -540,6 +549,11 @@ var PialTests = (function () {
       egal(ap2.valides[0].besoins, ["Secrétaire, scripteur"], "besoin reconnu sans casse ni accent");
       egal(ap2.avertissements.length, 1, "besoin hors liste signalé");
       egal([ap2.valides[0].debutNotif, ap2.valides[0].finNotif], ["2026-09-01", "2027-07-04"]);
+      var prio = ["Collège Alpha", "6A", "Tom", "Petit", "6", "", "oui", "Prioritaire", "", "", ""];
+      var ap3 = I.apercu("eleves", [prio, lignes[0]], I.correspondanceAuto("eleves", entetes), { annee: AN });
+      egal([ap3.valides[0].recreation, ap3.valides[0].meridienne, ap3.valides[0].etatsPeriscolaires], [true, true, { meridienne: "prioritaire" }],
+        "« prioritaire » = oui + état par défaut");
+      vrai(!("etatsPeriscolaires" in ap3.valides[1]), "« oui » / « non » : aucun état transmis");
     });
     t("aperçu AESH : quotité, indisponibilités, e-mail", function () {
       var entetes = ["Nom", "Prenom", "Quotite_hebdo", "Email", "Etablissements", "Indisponibilites", "Formations"];
@@ -652,6 +666,289 @@ var PialTests = (function () {
     });
   }
 
+  /* =============== données d'exemple pour le moteur =============== */
+  // horaires des collèges du jeu d'exemple, saisis à l'étape 6 de
+  // exemples/SCENARIO-DEMO.md (les paramètres d'établissement ne s'importent pas)
+  var HORAIRES_DEMO = {
+    recreations: [{ debut: "09:50", fin: "10:05" }, { debut: "15:20", fin: "15:35" }],
+    meridienne: { debut: "11:55", fin: "13:30" }
+  };
+  // importe élèves, AESH et EDT de exemples/ comme le ferait l'interface ;
+  // renvoie les données d'entrée du moteur (brouillon vide)
+  function chargerExemples(env) {
+    var I = env.importFichiers, M = env.modele, AN = "2026-2027";
+    function lire(nom) {
+      return env.lireExemple(nom).then(function (octets) {
+        if (!octets) throw new Ignore("fichiers d'exemple non accessibles (page ouverte en file://) — lancer node outils/tests-node.js");
+        return I.lireFichier(nom, octets, env.zip);
+      });
+    }
+    function valides(type, lu, options) { return I.apercu(type, lu.lignes.slice(1), I.correspondanceAuto(type, lu.lignes[0]), options).valides; }
+    return Promise.all([lire("FICTIF_eleves.csv"), lire("FICTIF_aesh.csv"), lire("FICTIF_edt_eleves.csv")]).then(function (l) {
+      var eleves = valides("eleves", l[0], { annee: AN }), connus = {}, noms = {};
+      eleves.forEach(function (e) { connus[e.cle] = true; noms[e.etablissement] = e.etablissementNom; });
+      var etabs = Object.keys(noms).sort().map(function (id) {
+        var e = M.etablissementParDefaut(noms[id]);
+        if (e.type === "college") e = JSON.parse(JSON.stringify(Object.assign(e, HORAIRES_DEMO)));
+        return e;
+      });
+      return { annee: AN, etablissements: etabs, eleves: eleves, aesh: valides("aesh", l[1], { annee: AN }),
+        cours: valides("edt", l[2], { annee: AN, elevesConnus: connus }), affectations: [], reglages: {} };
+    });
+  }
+  // jeu agrandi pour la mesure du temps de calcul : n copies des
+  // établissements, élèves, cours et AESH
+  function agrandir(M, d, n) {
+    var o = { annee: d.annee, etablissements: [], eleves: [], aesh: [], cours: [], affectations: [], reglages: d.reglages };
+    for (var k = 0; k < n; k++) {
+      var suffixe = k ? " (copie " + k + ")" : "", ids = {}, eleves = {};
+      d.etablissements.forEach(function (e) {
+        var c = JSON.parse(JSON.stringify(e));
+        c.nom = e.nom + suffixe; c.id = M.idEtablissement(c.nom); ids[e.id] = c.id;
+        o.etablissements.push(c);
+      });
+      d.eleves.forEach(function (e) {
+        var c = JSON.parse(JSON.stringify(e));
+        c.etablissement = ids[e.etablissement]; c.etablissementNom = e.etablissementNom + suffixe;
+        c.cle = M.cleEleve(c.nomCourt, c.classe, c.etablissementNom); c.id = M.idEleve(c.annee, c.cle); eleves[e.id] = c.id;
+        o.eleves.push(c);
+      });
+      d.cours.forEach(function (co) {
+        var c = JSON.parse(JSON.stringify(co));
+        c.id = k + "|" + co.id; c.eleveId = eleves[co.eleveId]; c.etablissement = ids[co.etablissement];
+        o.cours.push(c);
+      });
+      d.aesh.forEach(function (a) {
+        var c = JSON.parse(JSON.stringify(a));
+        c.id = a.id + suffixe; c.nom = a.nom + suffixe;
+        c.etablissements = a.etablissements.map(function (id) { return ids[id]; });
+        o.aesh.push(c);
+      });
+    }
+    return o;
+  }
+  function avecAffectations(d, affs) {
+    var o = {};
+    Object.keys(d).forEach(function (k) { o[k] = d[k]; });
+    o.affectations = affs;
+    return o;
+  }
+  // juge indépendant : verifierAffectation sur chaque affectation proposée
+  function violationsMoteur(M, d, res) {
+    var ctx = M.contexte(avecAffectations(d, res.affectations)), out = [];
+    res.affectations.forEach(function (a) {
+      if (a.epinglee) return;
+      M.verifierAffectation(a, ctx).forEach(function (v) { if (v.niveau === "erreur") out.push(a.id + " : " + v.message); });
+    });
+    return out;
+  }
+
+  /* =============== tests du moteur =============== */
+  function testsMoteur(t, P, M, env) {
+    // petit collège à une classe : élèves, cours et AESH à la demande
+    function mini() {
+      var etab = M.etablissementParDefaut("Collège Mini"), an = "2026-2027", eleves = [], cours = [], n = 0;
+      return {
+        etab: etab,
+        eleve: function (prenom, ind, mut, extra) {
+          var court = M.nomCourt(prenom, "Test"), cle = M.cleEleve(court, "5A", etab.nom);
+          var e = { id: M.idEleve(an, cle), cle: cle, annee: an, nomCourt: court, classe: "5A", etablissement: etab.id,
+            heuresInd: ind || 0, heuresMut: mut || 0, recreation: false, meridienne: false, besoins: [] };
+          Object.keys(extra || {}).forEach(function (k) { e[k] = extra[k]; });
+          eleves.push(e);
+          return e;
+        },
+        cours: function (e, jour, debut, fin, extra) {
+          n++;
+          var c = { id: "c" + String(n).padStart(3, "0"), eleveId: e.id, etablissement: etab.id, classe: "5A", jour: jour, debut: debut, fin: fin,
+            matiere: "Français", semaine: "", groupe: "", etat: "normal" };
+          Object.keys(extra || {}).forEach(function (k) { c[k] = extra[k]; });
+          cours.push(c);
+          return c;
+        },
+        donnees: function (aesh, affectations) {
+          return { annee: an, etablissements: [etab], eleves: eleves, aesh: aesh, cours: cours, affectations: affectations || [], reglages: {} };
+        }
+      };
+    }
+    function aeshMini(id, quotite, extra) {
+      var a = { id: id, nom: id, prenom: "Test", quotite: quotite, etablissements: [], indisponibilites: [] };
+      Object.keys(extra || {}).forEach(function (k) { a[k] = extra[k]; });
+      return a;
+    }
+    function heures(M2, d, res, e) { return M2.couvertureEleve(e, M2.contexte(avecAffectations(d, res.affectations))); }
+    function proposees(res) { return res.affectations.filter(function (a) { return a.origine === "moteur" && !a.epinglee; }); }
+
+    t("moteur : prioritaires d'abord, exclus jamais", function () {
+      var m = mini(), e = m.eleve("Lucas", 2);
+      ["08:00", "09:00", "10:00"].forEach(function (h, i) { m.cours(e, "lundi", h, h.replace(":00", ":55"), { etat: i === 1 ? "exclu" : "normal" }); });
+      var prio = m.cours(e, "vendredi", "15:00", "15:55", { etat: "prioritaire" });
+      var res = P.proposer(m.donnees([aeshMini("a", 24)]));
+      var c = proposees(res).map(function (a) { return a.creneau.jour + " " + a.creneau.debut; });
+      egal(c, ["vendredi 15:00", "lundi 08:00"], "le prioritaire d'abord, puis l'ordre chronologique");
+      vrai(c.indexOf("lundi 09:00") < 0, "cours exclu jamais couvert");
+      egal(violationsMoteur(M, m.donnees([aeshMini("a", 24)]), res), []);
+      vrai(prio, "");
+    });
+    t("moteur : répartition sur les jours de la semaine", function () {
+      var m = mini(), e = m.eleve("Léa", 3);
+      ["lundi", "mardi"].forEach(function (j) { ["08:00", "09:00", "10:00", "11:00"].forEach(function (h) { m.cours(e, j, h, h.replace(":00", ":55")); }); });
+      var res = P.proposer(m.donnees([aeshMini("a", 24)]));
+      egal(proposees(res).map(function (a) { return a.creneau.jour + " " + a.creneau.debut; }).sort(), ["lundi 08:00", "lundi 09:00", "mardi 08:00"]);
+    });
+    t("moteur : reste d'un demi-cours couvert en semaine A seulement", function () {
+      var m = mini(), e = m.eleve("Hugo", 1.5);
+      ["08:00", "09:00", "10:00"].forEach(function (h) { m.cours(e, "lundi", h, h.replace(":00", ":55")); });
+      var d = m.donnees([aeshMini("a", 24)]), res = P.proposer(d);
+      egal(proposees(res).map(function (a) { return a.creneau.debut + " " + a.creneau.semaine; }), ["08:00 toutes", "09:00 A"]);
+      proche(heures(M, d, res, e).ind.moy, 1.5);
+      egal(P.morceau(0.4, 1, ["A", "B"], m.etab), null, "moins d'un demi-cours : rien");
+      egal(P.morceau(0.5, 1, ["A", "B"], M.etablissementParDefaut("École Mini")), ["A", "B"], "sans alternance : cours entier");
+    });
+    t("moteur : AESH différentes en semaine A et en semaine B", function () {
+      var m = mini(), e = m.eleve("Zoé", 1), autre = m.eleve("Noé", 2);
+      m.cours(e, "lundi", "08:00", "08:55");
+      m.cours(autre, "mardi", "08:00", "08:55", { semaine: "A" });
+      m.cours(autre, "mardi", "09:00", "09:55", { semaine: "B" });
+      function epingle(aeshId, debut, semaine) {
+        return { id: "e-" + aeshId, version: 0, aeshId: aeshId, creneau: { etab: m.etab.id, jour: "mardi", debut: debut, fin: debut.replace(":00", ":55"), semaine: semaine },
+          modalite: "individuel", eleves: [autre.id], epinglee: true, origine: "manuel" };
+      }
+      // p a déjà sa semaine B pleine, q sa semaine A : personne ne peut prendre lundi en A et B
+      var d = m.donnees([aeshMini("p", 1), aeshMini("q", 1)], [epingle("p", "09:00", "B"), epingle("q", "08:00", "A")]);
+      var res = P.proposer(d);
+      egal(proposees(res).map(function (a) { return a.aeshId + " " + a.creneau.semaine; }), ["p A", "q B"]);
+      proche(heures(M, d, res, e).ind.moy, 1);
+      egal(violationsMoteur(M, d, res), []);
+    });
+    t("moteur : épinglages repris tels quels, même en conflit ; relance partielle", function () {
+      var f = fixture(M), e = f.e;
+      // aesh|y (quotité 2 h) : trois heures épinglées, dont une en chevauchement
+      var pins = [aff("aesh|y", f.cA, "lundi", "08:00", "08:55", "individuel", [e.ind]),
+        aff("aesh|y", f.cA, "lundi", "08:00", "08:55", "individuel", [e.autreClasse]),
+        aff("aesh|y", f.cA, "lundi", "10:05", "11:00", "individuel", [e.ind])];
+      var d = { annee: f.an, etablissements: [f.cA, f.cB, f.ec], eleves: Object.keys(e).map(function (k) { return e[k]; }),
+        aesh: f.aesh, cours: f.cours, affectations: pins, reglages: {} };
+      var avant = JSON.stringify(pins);
+      var res = P.proposer(d);
+      egal(JSON.stringify(res.affectations.filter(function (a) { return a.epinglee; })), avant, "épinglées inchangées");
+      vrai(!proposees(res).some(function (a) { return a.aeshId === "aesh|y"; }), "rien de plus pour une AESH en dépassement");
+      egal(violationsMoteur(M, d, res), []);
+      // relance : les non épinglées sont remplacées, avec le même résultat
+      var res2 = P.proposer(avecAffectations(d, res.affectations));
+      egal(JSON.stringify(res2.affectations), JSON.stringify(res.affectations), "relance sur sa propre proposition");
+      // épingler une proposition : elle est reprise, le reste est recalculé
+      var gardee = JSON.parse(JSON.stringify(proposees(res)[0]));
+      gardee.epinglee = true;
+      var res3 = P.proposer(avecAffectations(d, pins.concat([gardee])));
+      vrai(res3.affectations.some(function (a) { return JSON.stringify(a) === JSON.stringify(gardee); }), "proposition épinglée conservée");
+      egal(violationsMoteur(M, d, res3), []);
+    });
+    t("moteur : AESH d'un créneau classées par score, avec les raisons", function () {
+      var f = fixture(M), e = f.e;
+      var d = { annee: f.an, etablissements: [f.cA, f.cB, f.ec], eleves: Object.keys(e).map(function (k) { return e[k]; }),
+        aesh: f.aesh, cours: f.cours, affectations: [aff("aesh|x", f.cA, "lundi", "08:00", "08:55", "individuel", [e.ind])], reglages: {} };
+      var l = P.classerAesh(d, { creneau: { etab: f.cA.id, jour: "lundi", debut: "08:55", fin: "09:50", semaine: "toutes" }, modalite: "individuel", eleves: [e.ind.id] });
+      egal(l.map(function (x) { return x.aeshId + " " + x.possible; }), ["aesh|x true", "aesh|y true"]);
+      vrai(l[0].score > l[1].score, "continuité et journée compacte");
+      vrai(l[0].raisons.indexOf("déjà avec Lucas M.") > -1 && l[0].raisons.indexOf("journée compacte") > -1, l[0].raisons.join(" ; "));
+      var mer = P.classerAesh(d, { creneau: { etab: f.cA.id, jour: "mercredi", debut: "08:00", fin: "08:55", semaine: "toutes" }, modalite: "individuel", eleves: [e.ind.id] });
+      egal(mer.map(function (x) { return x.aeshId + " " + (x.motif || x.possible); }), ["aesh|x true", "aesh|y indisponibilite"]);
+    });
+
+    /* ---------- sur les données d'exemple ---------- */
+    var exemples = null, resultat = null;
+    function charger() {
+      if (!exemples) exemples = chargerExemples(env).then(function (d) { return { d: d, res: P.proposer(d) }; });
+      return exemples.then(function (x) { resultat = x; return x; });
+    }
+    function eleveNomme(nomCourt, classe) {
+      return resultat.d.eleves.filter(function (e) { return e.nomCourt === nomCourt && (!classe || e.classe === classe); })[0];
+    }
+    function affsDe(eleve) { return resultat.res.affectations.filter(function (a) { return a.eleves.indexOf(eleve.id) > -1; }); }
+
+    t("moteur (exemples) : déterministe, y compris sur des données mélangées", function () {
+      return charger().then(function (x) {
+        egal(JSON.stringify(P.proposer(x.d)), JSON.stringify(x.res), "deux exécutions");
+        function melanger(l) { var c = l.slice().reverse(); return c.slice(7).concat(c.slice(0, 7)); }
+        var m = {};
+        Object.keys(x.d).forEach(function (k) { m[k] = Array.isArray(x.d[k]) ? melanger(x.d[k]) : x.d[k]; });
+        egal(JSON.stringify(P.proposer(m).affectations), JSON.stringify(x.res.affectations), "ordre des données sans effet");
+      });
+    });
+    t("moteur (exemples) : aucune des 7 contraintes dures n'est violée", function () {
+      return charger().then(function (x) {
+        vrai(proposees(x.res).length > 100, "proposition non vide");
+        egal(violationsMoteur(M, x.d, x.res), []);
+        egal(x.res.rapport.violations, []);
+      });
+    });
+    t("moteur (exemples) : jeu agrandi ×4 (180 élèves, 56 AESH), contraintes respectées", function () {
+      return charger().then(function (x) {
+        var g = agrandir(M, x.d, 4), res = P.proposer(g);
+        egal([g.eleves.length, g.aesh.length], [180, 56]);
+        egal(violationsMoteur(M, g, res), []);
+      });
+    });
+    t("moteur (exemples) : cas 1 et 2 — mutualisation", function () {
+      return charger().then(function () {
+        var rose = eleveNomme("Rose É."), arthur = eleveNomme("Arthur S.");
+        vrai(!affsDe(rose).some(function (a) { return a.eleves.indexOf(arthur.id) > -1 && /lv2/i.test(M.coursSurCreneau(rose.id, a.creneau, M.contexte(resultat.d))[0].matiere); }),
+          "cas 1 : groupes de LV2 différents jamais ensemble");
+        var trio = ["Hugo M.", "Léna M.", "Adam E."].map(function (n) { return eleveNomme(n, "5A").id; });
+        vrai(resultat.res.affectations.some(function (a) { return a.modalite === "mutualise" && trio.every(function (id) { return a.eleves.indexOf(id) > -1; }); }),
+          "cas 2 : les trois élèves mutualisés ensemble");
+      });
+    });
+    t("moteur (exemples) : cas 3, 4 et 6 — déplacements, indisponibilités, école", function () {
+      return charger().then(function (x) {
+        vrai(proposees(x.res).some(function (a) { return a.raisons.some(function (r) { return /déplacement\)/.test(r) || /\d+ déplacement/.test(r); }); }),
+          "cas 3 : la règle du déplacement a écarté au moins une AESH");
+        var hugo = proposees(x.res).filter(function (a) { return a.aeshId === "fictif|hugo"; });
+        vrai(hugo.length > 0 && !hugo.some(function (a) { return a.creneau.jour === "mercredi"; }), "cas 4 : rien le mercredi pour Hugo Fictif");
+        vrai(!proposees(x.res).some(function (a) { return a.aeshId === "demonstration|nadia" && a.creneau.jour === "vendredi" && M.minutes(a.creneau.fin) > 720; }),
+          "cas 4 : rien le vendredi après-midi pour Nadia Démonstration");
+        var lilas = proposees(x.res).filter(function (a) { return a.creneau.etab === M.idEtablissement("École Fictive des Lilas"); });
+        vrai(lilas.length > 0 && lilas.every(function (a) { return a.creneau.jour !== "mercredi" && a.creneau.semaine === "toutes"; }), "cas 6 : école sans mercredi ni alternance");
+      });
+    });
+    t("moteur (exemples) : cas 5 — cours de semaine B affecté en semaine B", function () {
+      return charger().then(function (x) {
+        var ctx = M.contexte(x.d);
+        var surB = proposees(x.res).filter(function (a) {
+          return a.modalite !== "periscolaire" && a.eleves.every(function (id) {
+            return M.coursSurCreneau(id, a.creneau, ctx).every(function (co) { return M.semaineNormalisee(co.semaine) === "B"; });
+          });
+        });
+        vrai(surB.length > 0, "au moins un cours de semaine B couvert");
+        egal(surB.filter(function (a) { return a.creneau.semaine !== "B"; }), []);
+      });
+    });
+    t("moteur (exemples) : cas 7 et 8 — capacité insuffisante, pause méridienne prioritaire", function () {
+      return charger().then(function (x) {
+        var r = x.res.rapport;
+        vrai(r.sousCouverts.some(function (s) { return s.motif === "quotite"; }), "cas 7 : sous-couvertures signalées, motif quotité");
+        vrai(r.heures.individuel.couvert + r.heures.mutualise.couvert < r.heures.individuel.demande + r.heures.mutualise.demande, "cas 7");
+        var louis = eleveNomme("Louis I.");
+        var merid = affsDe(louis).filter(function (a) { return a.periscolaire === "meridienne"; });
+        vrai(merid.length >= 4, "cas 8 : pause méridienne couverte chaque jour (" + merid.length + ")");
+        egal(r.periscolaireNonCouvert.filter(function (p) { return p.eleveId === louis.id && p.type === "meridienne"; }), []);
+      });
+    });
+    t("moteur (exemples) : cas 9 — prioritaires couverts d'abord, exclus jamais", function () {
+      return charger().then(function (x) {
+        var ctx = M.contexte(x.d), nathan = eleveNomme("Nathan C.");
+        var etats = affsDe(nathan).map(function (a) { return M.coursSurCreneau(nathan.id, a.creneau, ctx)[0].etat; });
+        vrai(etats.length > 0 && etats.every(function (s) { return s === "prioritaire"; }), "Nathan C. : " + etats.join(", "));
+        var exclus = x.d.cours.filter(function (c) { return c.etat === "exclu"; });
+        vrai(exclus.length > 0, "cours exclus présents");
+        vrai(!x.res.affectations.some(function (a) {
+          return a.modalite !== "periscolaire" && a.eleves.some(function (id) { return M.coursSurCreneau(id, a.creneau, ctx).every(function (co) { return co.etat === "exclu"; }); });
+        }), "aucun cours exclu couvert");
+      });
+    });
+  }
+
   /* =============== exécution =============== */
   function executer(env) {
     var tests = [];
@@ -660,6 +957,7 @@ var PialTests = (function () {
     testsModele(t, env.modele);
     if (env.zip) { groupeCourant = "zip"; testsZip(t, env.zip, env); }
     if (env.importFichiers) { groupeCourant = "import"; testsImport(t, env.importFichiers, env.modele, env.zip, env); }
+    if (env.moteur && env.importFichiers) { groupeCourant = "moteur"; testsMoteur(t, env.moteur, env.modele, env); }
     var bilan = { reussis: 0, echecs: [], ignores: 0, lignes: [] };
     return tests.reduce(function (p, test) {
       return p.then(function () {
@@ -680,7 +978,7 @@ var PialTests = (function () {
     }, Promise.resolve()).then(function () { return bilan; });
   }
 
-  return { executer: executer };
+  return { executer: executer, chargerExemples: chargerExemples, agrandir: agrandir, HORAIRES_DEMO: HORAIRES_DEMO };
 })();
 
 if (typeof module !== "undefined" && module.exports) module.exports = PialTests;

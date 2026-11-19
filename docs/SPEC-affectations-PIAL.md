@@ -232,7 +232,7 @@ Les poids sont regroupés dans **un seul objet de configuration** (`POIDS` dans 
 Les affectations proposées ont un identifiant déterministe (`mo|aeshId|creneauCle`) : deux exécutions sur les mêmes données donnent un résultat identique.
 
 6. Pour chaque affectation proposée, enregistrer les **raisons** : critères retenus et nombre d'AESH écartées par contrainte. Exemple : « Sophie D. : déjà avec Lucas, même établissement le lundi ».
-7. Produire un rapport de fin : heures couvertes / heures demandées, élèves sous-couverts, AESH sous-utilisées, et pour chaque heure non couverte la contrainte qui a bloqué (quotité épuisée partout, aucune AESH disponible, déplacement impossible…). Le motif d'un élève sous-couvert est la contrainte qui a écarté le plus d'AESH sur ses créneaux tentés ; « pas assez de cours » si ses cours non exclus ne suffisent pas.
+7. Produire un rapport de fin : heures couvertes / heures demandées, élèves sous-couverts, AESH sous-utilisées, et pour chaque heure non couverte la contrainte qui a bloqué (quotité épuisée partout, aucune AESH disponible, déplacement impossible…). Le motif d'un élève sous-couvert est la contrainte qui a écarté le plus d'AESH sur ses créneaux tentés ; « pas assez de cours » si ses cours non exclus ne suffisent pas. Les AESH qui n'interviennent pas dans l'établissement ne sont comptées ni dans ce motif ni dans les raisons (« 3 AESH écartées (2 quotité, 1 indisponible) ») : elles n'auraient jamais pu prendre le créneau. Le motif « aucune AESH n'intervient dans l'établissement » n'apparaît que si c'est le seul obstacle.
 
 ### 5.4 Saisie manuelle
 
@@ -411,10 +411,11 @@ pial/affectations.js      onglet Affectations (vues, menus, annulation, alertes)
 pial/aesh.js              onglet AESH (fiches, rapprochement rapports)
 pial/exports.js           ZIP par AESH, .eml, EDT HTML, pial-affectation/1, impressions
 pial/tests.js             assertions communes (navigateur et Node)
-pial/tests.html           lanceur navigateur des tests de modele.js, zip.js, import-fichiers.js (puis moteur.js)
+pial/tests.html           lanceur navigateur des tests de modele.js, zip.js, import-fichiers.js et moteur.js
 exemples/                 jeux de données fictifs (§10), hors cache du service worker
 outils/generer-exemples.js  script de génération des exemples (outil de dev, non publié dans l'app)
 outils/tests-node.js      lanceur des mêmes tests en ligne de commande (Node sans npm)
+outils/rapport-moteur.js  rapport de fin du moteur sur exemples/ et temps de calcul (outil de dev)
 ```
 
 Ajouter **tous** les fichiers de `/pial/` nécessaires à l'application (existants compris : ils n'y figuraient pas) à `FICHIERS` dans `service-worker.js`, et incrémenter `CACHE_VERSION`. Le gestionnaire `fetch` ne met jamais en cache `exemples/` ni `outils/`, et le repli hors ligne d'une navigation sous `/pial/` renvoie `pial/index.html` (et non le `index.html` racine).

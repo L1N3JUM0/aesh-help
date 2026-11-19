@@ -381,9 +381,11 @@ var PialImport = (function () {
     if (isNaN(ind)) erreurs.push("heures individuelles illisibles (« " + v.heuresInd + " »)");
     if (isNaN(mut)) erreurs.push("heures mutualisées illisibles (« " + v.heuresMut + " »)");
     if (!isNaN(ind) && !isNaN(mut) && !(ind > 0) && !(mut > 0)) erreurs.push("aucune heure notifiée");
-    var recre = booleen(v.recreation), merid = booleen(v.meridienne);
-    if (recre === null) erreurs.push("récréation : oui ou non attendu");
-    if (merid === null) erreurs.push("pause méridienne : oui ou non attendu");
+    // oui / non, ou « prioritaire » (= oui, créneaux prioritaires par défaut, spec §5.2)
+    var prioRecre = M.normaliser(v.recreation) === "prioritaire", prioMerid = M.normaliser(v.meridienne) === "prioritaire";
+    var recre = prioRecre || booleen(v.recreation), merid = prioMerid || booleen(v.meridienne);
+    if (recre === null) erreurs.push("récréation : oui, non ou prioritaire attendu");
+    if (merid === null) erreurs.push("pause méridienne : oui, non ou prioritaire attendu");
     var debut = dateIso(v.debutNotif), fin = dateIso(v.finNotif);
     if (debut === null) erreurs.push("date de début illisible");
     if (fin === null) erreurs.push("date de fin illisible");
@@ -394,16 +396,21 @@ var PialImport = (function () {
     });
     if (erreurs.length) return { erreurs: erreurs };
     var court = M.nomCourt(v.prenom, v.nom), cle = M.cleEleve(court, v.classe, v.etablissement);
-    return {
-      avertissements: avert,
-      objet: {
-        id: M.idEleve(options.annee, cle), cle: cle, annee: options.annee, nomCourt: court,
-        classe: v.classe.replace(/\s+/g, " "), etablissement: M.idEtablissement(v.etablissement), etablissementNom: v.etablissement.replace(/\s+/g, " "),
-        heuresInd: ind || 0, heuresMut: mut || 0, recreation: !!recre, meridienne: !!merid,
-        besoins: besoins, debutNotif: debut || "", finNotif: fin || ""
-        // le nom de famille n'est jamais conservé (spec §3) : seul nomCourt l'est
-      }
+    var objet = {
+      id: M.idEleve(options.annee, cle), cle: cle, annee: options.annee, nomCourt: court,
+      classe: v.classe.replace(/\s+/g, " "), etablissement: M.idEtablissement(v.etablissement), etablissementNom: v.etablissement.replace(/\s+/g, " "),
+      heuresInd: ind || 0, heuresMut: mut || 0, recreation: !!recre, meridienne: !!merid,
+      besoins: besoins, debutNotif: debut || "", finNotif: fin || ""
+      // le nom de famille n'est jamais conservé (spec §3) : seul nomCourt l'est
     };
+    // comme la colonne Priorite de l'EDT : seul « prioritaire » est transmis,
+    // un « oui » ne remet pas à « normal » un état choisi dans l'application
+    if (prioRecre || prioMerid) {
+      objet.etatsPeriscolaires = {};
+      if (prioRecre) objet.etatsPeriscolaires.recreation = "prioritaire";
+      if (prioMerid) objet.etatsPeriscolaires.meridienne = "prioritaire";
+    }
+    return { avertissements: avert, objet: objet };
   }
   function validerAesh(v, options) {
     var erreurs = [], avert = [];

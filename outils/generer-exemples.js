@@ -154,8 +154,8 @@ var ELEVES = [
   { e: TILLEULS, c: "6A", p: "Noah", n: "Fictif", mut: 6, besoins: ["Recentrage sur la tâche"] },
   { e: TILLEULS, c: "6A", p: "Jade", n: "Factice", mut: 6, besoins: ["Lecture à voix haute"] },
   { e: TILLEULS, c: "6A", p: "Tom", n: "Figurant", ind: 6 },
-  // cas 8 : récréation et pause méridienne accompagnées
-  { e: TILLEULS, c: "6B", p: "Louis", n: "Imaginaire", ind: 12, recre: true, merid: true, besoins: ["Aide aux déplacements", "Gestes du quotidien"] },
+  // cas 8 : récréation et pause méridienne accompagnées, pause méridienne prioritaire
+  { e: TILLEULS, c: "6B", p: "Louis", n: "Imaginaire", ind: 12, recre: true, merid: "prioritaire", besoins: ["Aide aux déplacements", "Gestes du quotidien"] },
   { e: TILLEULS, c: "6B", p: "Alice", n: "Prototype", ind: 6, besoins: ["Secrétaire, scripteur"] },
   // cas 2 : trois élèves mutualisés dans la même classe (même cours, même groupe)
   { e: TILLEULS, c: "5A", p: "Hugo", n: "Maquette", mut: 6, lv2: "LV2 espagnol", besoins: ["Recentrage sur la tâche"] },
@@ -260,7 +260,7 @@ function csv(lignes, sep) {
   return lignes.map(function (l) { return l.map(function (v) { return celluleCSV(v, sep); }).join(sep); }).join("\r\n") + "\r\n";
 }
 function heuresFr(h) { return h ? String(h).replace(".", ",") : ""; }
-function ouiNon(b) { return b ? "oui" : "non"; }
+function ouiNon(b) { return b === "prioritaire" ? "prioritaire" : (b ? "oui" : "non"); }
 
 var ENTETE_ELEVES = ["Etablissement", "Classe", "Prenom", "Nom", "Heures_individuelles", "Heures_mutualisees",
   "Recreation", "Pause_meridienne", "Besoins", "Debut_notification", "Fin_notification"];

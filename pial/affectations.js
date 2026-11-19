@@ -173,6 +173,12 @@ var PialAffectations = (function () {
     Object.keys(nouveau).forEach(function (k) { o[k] = nouveau[k]; });
     if (type === "aesh") { o.ignorerIndispos = !!existant.ignorerIndispos; o.alias = existant.alias || []; }
     if (type === "edt" && nouveau.etat === "normal" && existant.etat) o.etat = existant.etat;
+    if (type === "eleves" && (existant.etatsPeriscolaires || nouveau.etatsPeriscolaires)) {
+      o.etatsPeriscolaires = {};
+      [existant.etatsPeriscolaires, nouveau.etatsPeriscolaires].forEach(function (m) {
+        Object.keys(m || {}).forEach(function (k) { o.etatsPeriscolaires[k] = m[k]; });
+      });
+    }
     return o;
   }
 

@@ -12,7 +12,8 @@
    - établissement : {id, nom, type, alternance, recreations:[{debut,fin}],
        meridienne:{debut,fin}, pauseRepas:{debut,fin}, joursOuvres:[...]}
    - élève : {id, cle, annee, nomCourt, classe, etablissement (id),
-       heuresInd, heuresMut, recreation, meridienne, besoins, finNotif...}
+       heuresInd, heuresMut, recreation, meridienne, etatsPeriscolaires,
+       besoins, finNotif...}
    - AESH : {id, nom, prenom, quotite, etablissements:[id] (vide = tous),
        indisponibilites:["mer","ven-pm"], ignorerIndispos, formations}
    - cours : {id, eleveId, etablissement, classe, jour, debut, fin,
@@ -345,6 +346,7 @@ var PialModele = (function () {
         if (e.etablissement !== c.etab) out.push(violation("mutualisation", e.nomCourt + " n'est pas dans cet établissement."));
         var concerne = aff.periscolaire === "meridienne" ? e.meridienne : e.recreation;
         if (!concerne) out.push(violation("notification", e.nomCourt + " n'est pas notifié(e) pour ce temps périscolaire."));
+        else if (etatPeriscolaire(e, aff.periscolaire, c) === "exclu") out.push(violation("exclu", "Temps périscolaire exclu pour " + e.nomCourt + "."));
       });
     } else {
       var coursParEleve = eleves.map(function (e) {
@@ -444,9 +446,17 @@ var PialModele = (function () {
   }
 
   /* =============== besoins périscolaires (§5.2) =============== */
+  // état prioritaire / normal / exclu d'un créneau périscolaire, stocké dans
+  // l'élève : clé précise « type|jour|debut », sinon état par défaut du type
+  function cleEtatPeriscolaire(type, c) { return type + "|" + c.jour + "|" + c.debut; }
+  function etatPeriscolaire(eleve, type, c) {
+    var m = eleve.etatsPeriscolaires || {};
+    return m[cleEtatPeriscolaire(type, c)] || m[type] || "normal";
+  }
   // créneaux de récréation / pause méridienne pour lesquels l'élève doit
   // être accompagné : les jours où il a cours dans la demi-journée concernée
-  // (le matin et l'après-midi pour la pause méridienne).
+  // (le matin et l'après-midi pour la pause méridienne). Chaque créneau
+  // porte son état (prioritaire / normal / exclu).
   function creneauxPeriscolaires(eleve, ctx) {
     var etab = etabDe(ctx, eleve.etablissement);
     var cours = ctx._coursParEleve[eleve.id] || [];
@@ -466,6 +476,7 @@ var PialModele = (function () {
         out.push({ type: "meridienne", creneau: { etab: etab.id, jour: j, debut: etab.meridienne.debut, fin: etab.meridienne.fin, semaine: "toutes" } });
       }
     });
+    out.forEach(function (p) { p.etat = etatPeriscolaire(eleve, p.type, p.creneau); });
     return out;
   }
 
@@ -542,8 +553,9 @@ var PialModele = (function () {
     etatCouverture: etatCouverture, couvertureEleve: couvertureEleve,
     etatCharge: etatCharge, chargeAesh: chargeAesh,
     memeCours: memeCours, peutMutualiser: peutMutualiser, coursSurCreneau: coursSurCreneau,
-    indisponibilite: indisponibilite, verifierAffectation: verifierAffectation,
-    motifsIndisponibilite: motifsIndisponibilite, creneauxPeriscolaires: creneauxPeriscolaires,
+    indisponibilite: indisponibilite, verifierPauseRepas: verifierPauseRepas, verifierAffectation: verifierAffectation,
+    motifsIndisponibilite: motifsIndisponibilite, cleEtatPeriscolaire: cleEtatPeriscolaire,
+    etatPeriscolaire: etatPeriscolaire, creneauxPeriscolaires: creneauxPeriscolaires,
     joursEntre: joursEntre, alertes: alertes, synthese: synthese
   };
 })();

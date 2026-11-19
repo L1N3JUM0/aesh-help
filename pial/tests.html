@@ -30,6 +30,7 @@ li:last-child{border-bottom:none}
 <script src="modele.js"></script>
 <script src="zip.js" onerror="void 0"></script>
 <script src="import-fichiers.js" onerror="void 0"></script>
+<script src="moteur.js" onerror="void 0"></script>
 <script src="tests.js"></script>
 <script>
 (function () {
@@ -39,6 +40,7 @@ li:last-child{border-bottom:none}
     modele: window.PialModele,
     zip: window.PialZip || null,
     importFichiers: window.PialImport || null,
+    moteur: window.PialMoteur || null,
     // les fichiers d'exemple ne sont lisibles que si la page est servie en
     // http(s) ; ouverte par double-clic (file://), ces tests sont ignorés.
     lireExemple: function (nom) {

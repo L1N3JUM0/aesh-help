@@ -367,6 +367,31 @@ var PialTests = (function () {
         ["recreation lundi 10:00", "recreation lundi 15:00", "meridienne lundi 12:00"]);
       egal(M.creneauxPeriscolaires(e.peri2, f.ctx([])).map(function (x) { return x.type + " " + x.creneau.debut; }), ["recreation 10:00"], "matin seulement");
     });
+    t("annulation : opérations inverses (création, modification, suppression)", function () {
+      function appliquer(base, ops) {
+        var o = {};
+        Object.keys(base).forEach(function (m) { o[m] = {}; base[m].forEach(function (x) { o[m][x.id] = x; }); });
+        ops.forEach(function (op) {
+          o[op.magasin] = o[op.magasin] || {};
+          (op.supprimer || []).forEach(function (id) { delete o[op.magasin][id]; });
+          (op.enregistrer || []).forEach(function (x) { o[op.magasin][x.id] = x; });
+        });
+        var r = {};
+        Object.keys(o).forEach(function (m) { r[m] = Object.keys(o[m]).sort().map(function (id) { return o[m][id]; }); });
+        return r;
+      }
+      var base = { affectations: [{ id: "a", aeshId: "x", epinglee: true }, { id: "b", aeshId: "y" }, { id: "mo|x|1", aeshId: "x" }],
+        cours: [{ id: "c1", etat: "normal" }] };
+      // « Proposer » : supprime et réécrit le même identifiant, en crée un autre ; plus un changement d'état de cours
+      var ops = [{ magasin: "affectations", supprimer: ["b", "mo|x|1"], enregistrer: [{ id: "mo|x|1", aeshId: "x", score: 3 }, { id: "mo|z|2", aeshId: "z" }] },
+        { magasin: "cours", enregistrer: [{ id: "c1", etat: "exclu" }] }];
+      var inv = M.operationsInverses(ops, base);
+      var apres = appliquer(base, ops);
+      egal(apres.affectations.map(function (x) { return x.id; }), ["a", "mo|x|1", "mo|z|2"]);
+      egal(appliquer(apres, inv), appliquer(base, []), "retour exact à l'état d'avant");
+      base.cours[0].etat = "modifié ensuite";
+      egal(inv[0].enregistrer[0].etat, "normal", "copies : l'inverse ne suit pas les objets d'origine");
+    });
     t("comparatif de deux versions : élève × créneau × semaine", function () {
       var f = fixture(M), e = f.e, etabs = [f.cA, f.cB, f.ec];
       var avant = [

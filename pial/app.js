@@ -903,6 +903,7 @@ $("entree-restauration").addEventListener("change", function () {
           initialiserFiltres(); initialiserPurge(); rendreRapports(); rendreImports(); rendreIndicateurs();
           initialiserFiltresStats(); rendreStats();
           PialAffectations.rendreReglages();
+          PialAffectations.viderAnnulation();
           if (typeof PialAffectations.surChangement === "function") PialAffectations.surChangement();
           toast("Sauvegarde restaurée.");
         });

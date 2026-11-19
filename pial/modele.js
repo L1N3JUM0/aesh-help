@@ -546,6 +546,33 @@ var PialModele = (function () {
     return s;
   }
 
+  /* =============== annulation (§6) =============== */
+  // ops : opérations PialDB.appliquer ({magasin, supprimer:[id],
+  // enregistrer:[objet]}) sur des objets de clé « id » ; existants :
+  // {magasin: [objets avant l'opération]}. Renvoie les opérations qui
+  // remettent ces magasins dans leur état d'avant : objets supprimés ou
+  // modifiés réenregistrés (copies), objets créés supprimés.
+  function operationsInverses(ops, existants) {
+    var inv = [];
+    ops.forEach(function (op) {
+      var parId = {}, vus = {}, remettre = [], supprimer = [];
+      (existants[op.magasin] || []).forEach(function (o) { parId[o.id] = o; });
+      (op.supprimer || []).forEach(function (id) {
+        if (vus[id]) return;
+        vus[id] = true;
+        if (parId[id]) remettre.push(JSON.parse(JSON.stringify(parId[id])));
+      });
+      (op.enregistrer || []).forEach(function (o) {
+        if (vus[o.id]) return;
+        vus[o.id] = true;
+        if (parId[o.id]) remettre.push(JSON.parse(JSON.stringify(parId[o.id])));
+        else supprimer.push(o.id);
+      });
+      inv.push({ magasin: op.magasin, supprimer: supprimer, enregistrer: remettre });
+    });
+    return inv.reverse();
+  }
+
   /* =============== comparatif de deux versions (§6) =============== */
   // avant, apres : listes d'affectations ; etablissements : liste (pour
   // l'alternance A/B). Comparaison par élève × créneau × semaine : un
@@ -609,7 +636,8 @@ var PialModele = (function () {
     indisponibilite: indisponibilite, verifierPauseRepas: verifierPauseRepas, verifierAffectation: verifierAffectation,
     motifsIndisponibilite: motifsIndisponibilite, cleEtatPeriscolaire: cleEtatPeriscolaire,
     etatPeriscolaire: etatPeriscolaire, creneauxPeriscolaires: creneauxPeriscolaires,
-    joursEntre: joursEntre, alertes: alertes, synthese: synthese, comparerAffectations: comparerAffectations
+    joursEntre: joursEntre, alertes: alertes, synthese: synthese, comparerAffectations: comparerAffectations,
+    operationsInverses: operationsInverses
   };
 })();
 

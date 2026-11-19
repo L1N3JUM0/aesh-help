@@ -273,6 +273,7 @@ var PialAffectations = (function () {
   function ecrireImport(mode) {
     var r = operationsImport(mode), imp = importEnCours;
     return PialDB.appliquer(r.ops).then(recharger).then(function () {
+      viderAnnulation();
       fermerImport();
       messageImport("ok", "« " + ech(imp.nomFichier) + " » importé : " + r.plan.ajouts.length + " ajout(s), " + r.plan.modifies.length + " modification(s)"
         + (mode === "remplacer" ? ", " + r.plan.supprimes.length + " suppression(s)" : "") + "."
@@ -415,6 +416,7 @@ var PialAffectations = (function () {
       + '<span class="selecteur-semaine" role="group" aria-label="Semaine affichée">'
       + '<button type="button" data-semaine="A" aria-pressed="' + (semaineAffichee === "A") + '">Semaine A</button>'
       + '<button type="button" data-semaine="B" aria-pressed="' + (semaineAffichee === "B") + '">Semaine B</button></span>'
+      + '<button type="button" class="btn btn-vide" id="aff-annuler"' + (pileAnnulation.length ? ' title="Annuler : ' + ech(pileAnnulation[pileAnnulation.length - 1].libelle) + ' (Ctrl+Z)"' : " disabled") + '>↶ Annuler</button>'
       + '<button type="button" class="btn btn-plein" id="aff-proposer"' + (etat.eleves.length && etat.aesh.length ? "" : " disabled")
       + ' title="Remplace les affectations non épinglées par une proposition ; les épinglées sont conservées">Proposer</button>'
       + (dernierRapport ? '<button type="button" class="btn btn-vide" id="aff-voir-rapport">Rapport</button>' : "")
@@ -425,6 +427,7 @@ var PialAffectations = (function () {
       b.addEventListener("click", function () { semaineAffichee = this.dataset.semaine; rendreAffectations(); });
     });
     $("aff-proposer").addEventListener("click", proposer);
+    $("aff-annuler").addEventListener("click", annuler);
     if (dernierRapport) $("aff-voir-rapport").addEventListener("click", afficherRapport);
     $("aff-desepingler").addEventListener("click", toutDesepingler);
   }
@@ -450,7 +453,7 @@ var PialAffectations = (function () {
       var nouvelles = res.affectations.filter(function (a) { return !a.epinglee; });
       dernierRapport = { rapport: res.rapport, ms: ms, nbRemplacees: remplacees.length };
       enregistrerPuisRendre([{ magasin: "affectations", supprimer: remplacees, enregistrer: nouvelles }],
-        pluriel(nouvelles.length, "affectation proposée", "affectations proposées") + ".").then(afficherRapport);
+        pluriel(nouvelles.length, "affectation proposée", "affectations proposées") + ".", "la proposition").then(afficherRapport);
     }, 30);
   }
   function toutDesepingler() {
@@ -462,7 +465,7 @@ var PialAffectations = (function () {
       var affs = etat.affectations.filter(function (a) { return a.epinglee; }).map(function (a) {
         var b = JSON.parse(JSON.stringify(a)); b.epinglee = false; return b;
       });
-      enregistrerPuisRendre([{ magasin: "affectations", enregistrer: affs }], pluriel(n, "affectation désépinglée", "affectations désépinglées") + ".");
+      enregistrerPuisRendre([{ magasin: "affectations", enregistrer: affs }], pluriel(n, "affectation désépinglée", "affectations désépinglées") + ".", "« Tout désépingler »");
     });
   }
 
@@ -890,8 +893,32 @@ var PialAffectations = (function () {
     chaque("[data-epingler]", function () { basculerEpingle(this.dataset.epingler); });
   }
 
+  /* =============== annulation (§6) =============== */
+  // pile en mémoire des 20 dernières actions : opérations inverses calculées
+  // avant d'écrire. Perdue au rechargement ; vidée par un import ou une
+  // restauration de sauvegarde, qui changent les données sous-jacentes.
+  var pileAnnulation = [], MAX_ANNULATION = 20;
+  function viderAnnulation() { pileAnnulation = []; }
+  function annuler() {
+    var action = pileAnnulation.pop();
+    if (!action) { ui.toast("Rien à annuler."); return; }
+    if (action.libelle === "la proposition") dernierRapport = null;   // le rapport ne décrit plus le brouillon
+    enregistrerPuisRendre(action.ops, "Annulé : " + action.libelle + ".");
+  }
+  document.addEventListener("keydown", function (ev) {
+    if (!(ev.ctrlKey || ev.metaKey) || ev.shiftKey || ev.altKey || (ev.key !== "z" && ev.key !== "Z")) return;
+    if ($("vue-affectations").classList.contains("masque") || /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || "")) return;
+    ev.preventDefault();
+    annuler();
+  });
+
   /* =============== modifications (toute saisie manuelle épingle, §5.4) =============== */
-  function enregistrerPuisRendre(ops, message) {
+  // libelleAnnulation : l'action est annulable (§6), sous ce nom
+  function enregistrerPuisRendre(ops, message, libelleAnnulation) {
+    if (libelleAnnulation) {
+      pileAnnulation.push({ libelle: libelleAnnulation, ops: M.operationsInverses(ops, { affectations: etat.affectations, cours: etat.cours, eleves: etat.eleves, aesh: etat.aesh }) });
+      if (pileAnnulation.length > MAX_ANNULATION) pileAnnulation.shift();
+    }
     return PialDB.appliquer(ops).then(recharger).then(function () {
       rendreAffectations();
       if (menu) {
@@ -931,7 +958,8 @@ var PialAffectations = (function () {
     }) : [];
     ops.push({ magasin: "affectations", supprimer: remplacees.map(function (a) { return a.id; }), enregistrer: [avecAlertes(aff)] });
     var a = aeshParId(aeshId);
-    enregistrerPuisRendre(ops, nomAesh(a) + " affectée à " + menu.eleve.nomCourt + (aff.alertes.length ? " — attention : contrainte non respectée." : "."));
+    enregistrerPuisRendre(ops, nomAesh(a) + " affectée à " + menu.eleve.nomCourt + (aff.alertes.length ? " — attention : contrainte non respectée." : "."),
+      "l'affectation de " + nomAesh(a) + " à " + menu.eleve.nomCourt);
   }
   function retirer(affId) {
     var aff = etat.affectations.filter(function (a) { return a.id === affId; })[0];
@@ -943,19 +971,20 @@ var PialAffectations = (function () {
       b.eleves = restants; b.epinglee = true; b.origine = "manuel";
       op = { magasin: "affectations", enregistrer: [avecAlertes(b)] };
     } else op = { magasin: "affectations", supprimer: [affId] };
-    enregistrerPuisRendre([op], "Affectation retirée.");
+    enregistrerPuisRendre([op], "Affectation retirée.", "le retrait de " + nomAesh(aeshParId(aff.aeshId)) + " (" + menu.eleve.nomCourt + ")");
   }
   function basculerEpingle(affId) {
     var aff = JSON.parse(JSON.stringify(etat.affectations.filter(function (a) { return a.id === affId; })[0]));
     aff.epinglee = !aff.epinglee;
-    enregistrerPuisRendre([{ magasin: "affectations", enregistrer: [aff] }], aff.epinglee ? "Affectation épinglée." : "Affectation désépinglée.");
+    enregistrerPuisRendre([{ magasin: "affectations", enregistrer: [aff] }], aff.epinglee ? "Affectation épinglée." : "Affectation désépinglée.",
+      aff.epinglee ? "l'épinglage" : "le désépinglage");
   }
   function changerEtatCours(nouvelEtat) {
     if (menu.cas.type === "periscolaire") { changerEtatPeriscolaire(nouvelEtat); return; }
     var co = JSON.parse(JSON.stringify(menu.cas.cours));
     if (co.etat === nouvelEtat) return;
     co.etat = nouvelEtat;
-    enregistrerPuisRendre([{ magasin: "cours", enregistrer: [co] }], "Créneau marqué « " + nouvelEtat + " ».");
+    enregistrerPuisRendre([{ magasin: "cours", enregistrer: [co] }], "Créneau marqué « " + nouvelEtat + " ».", "le changement d'état du créneau");
   }
 
   // état posé sur ce créneau précis (clé type|jour|debut, spec §5.2)
@@ -964,7 +993,7 @@ var PialAffectations = (function () {
     if (M.etatPeriscolaire(e, c.periscolaire, c) === nouvelEtat) return;
     e.etatsPeriscolaires = e.etatsPeriscolaires || {};
     e.etatsPeriscolaires[M.cleEtatPeriscolaire(c.periscolaire, c)] = nouvelEtat;
-    enregistrerPuisRendre([{ magasin: "eleves", enregistrer: [e] }], "Créneau marqué « " + nouvelEtat + " ».");
+    enregistrerPuisRendre([{ magasin: "eleves", enregistrer: [e] }], "Créneau marqué « " + nouvelEtat + " ».", "le changement d'état du créneau");
   }
 
   /* =============== panneau d'alertes =============== */
@@ -1030,7 +1059,7 @@ var PialAffectations = (function () {
   return {
     etat: etat, recharger: recharger, compteurs: compteurs, contexte: contexte,
     anneeCourante: anneeCourante, aujourdhui: aujourdhui, initialiser: initialiser,
-    rendreReglages: rendreReglages, nomEtablissement: nomEtablissement, heures: heures, ouvrirOnglet: ouvrirOnglet,
+    rendreReglages: rendreReglages, nomEtablissement: nomEtablissement, heures: heures, ouvrirOnglet: ouvrirOnglet, viderAnnulation: viderAnnulation,
     surChangement: null
   };
 })();

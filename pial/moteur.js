@@ -46,7 +46,8 @@ var PialMoteur = (function () {
 
   // variantes de l'algorithme (spec §14), activables pour les mesures
   var OPTIONS = {
-    aeshConnue: true   // à jour égal, préférer un créneau où une AESH de l'élève est libre
+    aeshConnue: true,  // à jour égal, préférer un créneau où une AESH de l'élève est libre
+    echanges: true     // passe d'échanges après le glouton
   };
 
   // §5.3.2.3 : lien besoin → matières. Aucune table n'est définie (spec
@@ -499,8 +500,117 @@ var PialMoteur = (function () {
       }
     }
 
+    var nbEchanges = OPTIONS.echanges ? ameliorer(et, nouvelles) : 0;
     var finales = epinglees.concat(nouvelles);
-    return { affectations: finales, rapport: rapport(donnees, finales, nouvelles, epinglees, motifs, motifsPeri, dem) };
+    var r = rapport(donnees, finales, nouvelles, epinglees, motifs, motifsPeri, dem);
+    r.nbEchanges = nbEchanges;
+    return { affectations: finales, rapport: r };
+  }
+
+  /* =============== passe d'échanges (spec §14) =============== */
+  // Après le glouton, pour chaque élève qui a plus de maxAeshParEleve AESH
+  // (le plus d'AESH d'abord, puis clé) : on essaie de retirer son AESH la
+  // plus rare en donnant chacun de ses créneaux avec lui à une AESH qu'il a
+  // déjà, soit telle quelle (réattribution), soit en échange d'un créneau
+  // de même durée, le même jour et les mêmes semaines, qu'elle tient avec
+  // d'autres élèves (échange). Le lot n'est gardé que si l'excès total
+  // Σ max(0, nb AESH − seuil) baisse, sans contrainte dure enfreinte. Seules
+  // les affectations proposées bougent ; élèves et créneaux couverts ne
+  // changent pas. Ordre fixe : le résultat reste déterministe.
+  function ameliorer(et, nouvelles) {
+    var ctx = et.ctx, seuil = POIDS.maxAeshParEleve, nbMouvements = 0, notes = [];
+    function nb(id) { return Object.keys(et.aeshParEleve[id] || {}).length; }
+    function exces() { var t = 0; ctx.eleves.forEach(function (e) { t += Math.max(0, nb(e.id) - seuil); }); return t; }
+    function semainesDe(a) { return semainesCreneau(a.creneau, ctx); }
+    function unite(a) { return { creneau: a.creneau, modalite: a.modalite, periscolaire: a.periscolaire, eleves: a.eleves }; }
+    function deplacer(a, aeshId, journal) { retirer(et, a); journal.push({ aff: a, de: a.aeshId }); a.aeshId = aeshId; ajouter(et, a); }
+    function defaire(journal) {
+      journal.slice().reverse().forEach(function (j) { retirer(et, j.aff); j.aff.aeshId = j.de; ajouter(et, j.aff); });
+    }
+    // donne X à une AESH « b » de la liste, telle quelle ou contre un créneau Y
+    function placer(X, autres, eleveId, journal) {
+      var semX = semainesDe(X), dX = duree(X.creneau, X.modalite, ctx);
+      for (var i = 0; i < autres.length; i++) {
+        var b = ctx._aesh[autres[i]];
+        if (!b) continue;
+        retirer(et, X);
+        var libre = !obstacle(et, b, unite(X), semX);
+        ajouter(et, X);
+        if (libre) { deplacer(X, b.id, journal); return "réattribué"; }
+      }
+      for (i = 0; i < autres.length; i++) {
+        var bId = autres[i], a = X.aeshId;
+        if (!ctx._aesh[bId]) continue;
+        var ys = nouvelles.filter(function (Y) {
+          return Y !== X && Y.aeshId === bId && Y.creneau.jour === X.creneau.jour && Y.eleves.indexOf(eleveId) < 0
+            && duree(Y.creneau, Y.modalite, ctx) === dX && semainesDe(Y).join() === semX.join();
+        }).sort(function (p, q) { return cmp(p.creneauCle, q.creneauCle) || cmp(p.id, q.id); });
+        for (var k = 0; k < ys.length; k++) {
+          var Y = ys[k], local = [];
+          retirer(et, X); retirer(et, Y);
+          var ok = !obstacle(et, ctx._aesh[bId], unite(X), semX);
+          if (ok) {
+            local.push({ aff: X, de: a }); X.aeshId = bId; ajouter(et, X);
+            ok = !obstacle(et, ctx._aesh[a], unite(Y), semainesDe(Y));
+            if (ok) { local.push({ aff: Y, de: bId }); Y.aeshId = a; ajouter(et, Y); }
+            else { retirer(et, X); X.aeshId = a; local = []; }
+          }
+          if (!ok) { ajouter(et, X); ajouter(et, Y); continue; }
+          local.forEach(function (j) { journal.push(j); });
+          return Y;
+        }
+      }
+      return null;
+    }
+    for (var passe = 0; passe < 3; passe++) {
+      var progres = false;
+      ctx.eleves.filter(function (e) { return nb(e.id) > seuil; })
+        .sort(function (x, y) { return (nb(y.id) - nb(x.id)) || cmp(x.cle, y.cle); })
+        .forEach(function (e) {
+          var compte = et.aeshParEleve[e.id];
+          Object.keys(compte).sort(function (p, q) { return (compte[p] - compte[q]) || cmp(p, q); }).forEach(function (a) {
+            if (nb(e.id) <= seuil || !compte[a]) return;
+            var xs = nouvelles.filter(function (x) { return x.aeshId === a && x.eleves.indexOf(e.id) > -1; });
+            // une affectation épinglée avec cette AESH : elle restera, inutile d'essayer
+            if (xs.length < compte[a]) return;
+            xs.sort(function (p, q) { return cmp(p.creneauCle, q.creneauCle) || cmp(p.id, q.id); });
+            var autres = Object.keys(compte).filter(function (b) { return b !== a; })
+              .sort(function (p, q) { return (compte[q] - compte[p]) || cmp(p, q); });
+            var avant = exces(), journal = [], lot = [];
+            for (var i = 0; i < xs.length; i++) {
+              var r = placer(xs[i], autres, e.id, journal);
+              if (!r) { defaire(journal); return; }
+              lot.push({ X: xs[i], Y: r === "réattribué" ? null : r });
+            }
+            if (exces() >= avant) { defaire(journal); return; }
+            progres = true;
+            nbMouvements += lot.length;
+            lot.forEach(function (m) { notes.push({ X: m.X, Y: m.Y, de: a, eleve: e }); });
+          });
+        });
+      if (!progres) break;
+    }
+    // identifiants et raisons des affectations déplacées
+    function nom(id) { var x = ctx._aesh[id]; return x ? x.prenom + " " + x.nom : id; }
+    notes.forEach(function (n) {
+      var raison = "pour limiter " + n.eleve.nomCourt + " à " + seuil + " AESH";
+      n.X.raisons = [(n.Y ? "échangé avec " + nom(n.de) + " " : "repris à " + nom(n.de) + " ") + raison];
+      if (n.Y) n.Y.raisons = ["échangé avec " + nom(n.X.aeshId) + " " + raison];
+      [n.X, n.Y].forEach(function (a) { if (a) { a.id = "mo|" + a.aeshId + "|" + a.creneauCle; a.score = null; } });
+    });
+    return nbMouvements;
+  }
+
+  // passe d'échanges seule, sur un brouillon (affectations non épinglées
+  // déplaçables) : sert aux tests. Ne modifie pas donnees.
+  function ameliorerAffectations(donnees) {
+    var affs = JSON.parse(JSON.stringify(donnees.affectations || []));
+    var ctx = M.contexte({ etablissements: donnees.etablissements, eleves: donnees.eleves, aesh: donnees.aesh,
+      cours: donnees.cours, affectations: affs, reglages: donnees.reglages });
+    var et = creerEtat(ctx);
+    ctx.affectations.slice().sort(parId).forEach(function (a) { ajouter(et, a); });
+    var n = ameliorer(et, ctx.affectations.filter(function (a) { return !a.epinglee; }));
+    return { affectations: affs, nbEchanges: n };
   }
 
   /* =============== rapport de fin (§5.3.7) =============== */
@@ -596,7 +706,7 @@ var PialMoteur = (function () {
 
   return {
     POIDS: POIDS, OPTIONS: OPTIONS, BESOINS_MATIERES: BESOINS_MATIERES, LIBELLE_MOTIF: LIBELLE_MOTIF,
-    proposer: proposer, classerAesh: classerAesh, morceau: morceau
+    proposer: proposer, classerAesh: classerAesh, morceau: morceau, ameliorerAffectations: ameliorerAffectations
   };
 })();
 

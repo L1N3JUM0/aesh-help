@@ -958,6 +958,35 @@ var PialTests = (function () {
         egal(choix(), ["a mercredi"], "avec le levier : le mercredi, où « a » est libre");
       } finally { P.OPTIONS.aeshConnue = avant; }
     });
+    t("moteur : passe d'échanges — élève ramené de 4 à 3 AESH", function () {
+      var m = mini(), L = m.eleve("Lucas", 4), R = m.eleve("Rose", 1), S = m.eleve("Sami", 1), T2 = m.eleve("Tom", 1);
+      ["08:00", "09:00", "10:00", "11:00"].forEach(function (h) { m.cours(L, "lundi", h, h.replace(":00", ":55")); });
+      [R, S, T2].forEach(function (e) { m.cours(e, "lundi", "08:00", "08:55"); });
+      function prop(aeshId, h, eleves) {
+        var x = aff(aeshId, m.etab, "lundi", h, h.replace(":00", ":55"), "individuel", eleves);
+        x.epinglee = false; x.origine = "moteur";
+        return x;
+      }
+      // Lucas : quatre AESH ; à 08:00, c et d sont prises (épinglées), b est avec Rose
+      var brouillon = [prop("a", "08:00", [L]), prop("b", "09:00", [L]), prop("c", "10:00", [L]), prop("d", "11:00", [L]),
+        prop("b", "08:00", [R]), aff("c", m.etab, "lundi", "08:00", "08:55", "individuel", [S]), aff("d", m.etab, "lundi", "08:00", "08:55", "individuel", [T2])];
+      var d = m.donnees(["a", "b", "c", "d"].map(function (id) { return aeshMini(id, 24); }), brouillon);
+      var res = P.ameliorerAffectations(d);
+      function aeshDe(e) { var o = {}; res.affectations.forEach(function (x) { if (x.eleves.indexOf(e.id) > -1) o[x.aeshId] = true; }); return Object.keys(o).sort(); }
+      egal(res.nbEchanges, 1);
+      egal([aeshDe(L), aeshDe(R)], [["b", "c", "d"], ["a"]], "b prend Lucas à 08:00, a prend Rose");
+      var lucas8 = res.affectations.filter(function (x) { return x.eleves[0] === L.id && x.creneau.debut === "08:00"; })[0];
+      egal(lucas8.id, "mo|b|" + lucas8.creneauCle, "identifiant recalculé");
+      vrai(/^échangé avec Test a pour limiter Lucas T\. à 3 AESH$/.test(lucas8.raisons[0]), lucas8.raisons.join());
+      egal(res.affectations.filter(function (x) { return x.epinglee; }).map(function (x) { return x.aeshId; }), ["c", "d"], "épinglées intactes");
+      egal(violationsMoteur(M, d, res), [], "aucune contrainte dure enfreinte");
+      egal(JSON.stringify(P.ameliorerAffectations(d)), JSON.stringify(res), "déterministe");
+      // Rose épinglée avec b : pas d'échange à 08:00, mais a peut reprendre le 09:00 de b (réattribution)
+      brouillon[4].epinglee = true;
+      res = P.ameliorerAffectations(m.donnees(d.aesh, brouillon));
+      egal([res.nbEchanges, aeshDe(L)], [1, ["a", "c", "d"]]);
+      vrai(res.affectations.some(function (x) { return x.aeshId === "a" && x.creneau.debut === "09:00" && x.raisons[0] === "repris à Test b pour limiter Lucas T. à 3 AESH"; }), "raison de la réattribution");
+    });
     t("moteur : entre groupes mutualisés, le moins couvert d'abord", function () {
       var m = mini(), a = m.eleve("Ana", 0, 2), b = m.eleve("Bea", 0, 2), c = m.eleve("Cyr", 0, 1);
       [a, b].forEach(function (e) { m.cours(e, "lundi", "08:00", "08:55"); m.cours(e, "lundi", "09:00", "09:55"); });

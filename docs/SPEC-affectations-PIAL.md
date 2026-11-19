@@ -506,6 +506,7 @@ Générées par `outils/generer-exemples.js` (Node sans npm, déterministe, exé
 - Épinglage, relance partielle, « Tout désépingler », annulation.
 - État prioritaire / normal / exclu des récréations et pauses méridiennes.
 - Interrupteur « ignorer les indisponibilités » par AESH (panneau simple ; la fiche complète vient en phase 4).
+- Réglage « Gérer les temps périscolaires » (décoché par défaut).
 - Brouillon, versions, comparatif.
 - ✔ *Acceptation* : sur les exemples, aucune contrainte dure n'est violée par le moteur ; les cas 1 à 9 se comportent comme décrit ; deux exécutions donnent le même résultat ; une affectation épinglée n'est jamais modifiée.
 

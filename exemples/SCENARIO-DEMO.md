@@ -1,4 +1,4 @@
-# Scénario de démonstration — module Affectations (phase 1)
+# Scénario de démonstration — module Affectations (phases 1 et 2)
 
 Toutes les données de ce dossier sont **fictives** (préfixe `FICTIF_`, e-mails en
 `exemple.invalid`). Avant une démonstration, régénérez-les pour que les dates de
@@ -117,10 +117,26 @@ Marquez un autre cours « prioritaire » ou « exclu » (cas 9 : voir aussi Nath
   liste plus que quelques temps périscolaires.
 - **Tout désépingler** rend toutes les affectations au moteur (après
   confirmation) : la prochaine proposition pourra les remplacer.
+- **↶ Annuler** (ou Ctrl+Z) défait les dernières actions, jusqu'à 20 : une
+  affectation, un changement d'état, une proposition entière.
+- Cliquez sur **Hugo Fictif** dans la liste des AESH : sa fiche s'affiche, avec
+  l'interrupteur « Ignorer ses indisponibilités et ses établissements
+  possibles » (cas 4 : le mercredi redevient possible pour lui).
+
+## 12. Versions et comparatif
+
+- **Valider la version** : date d'effet (aujourd'hui), commentaire « Rentrée ».
+  S'il reste des conflits (étape 10), l'application en donne le nombre et
+  demande confirmation.
+- Modifiez le brouillon : retirez une affectation, changez l'AESH d'un créneau.
+- **Historique** → « Comparer au brouillon » : une ligne par élève et par
+  créneau ajouté, retiré ou changé d'AESH ; un créneau scindé en semaines A et B
+  se compare correctement à un créneau « toutes semaines ».
+- « Consulter » affiche la version en lecture seule ; « Restaurer » en refait le
+  brouillon (annulable).
 
 Pour finir : **Réglages → Sauvegarde** exporte tout (format `pial-suivi/2`).
 
-> À venir (phases 2 et suivantes) : moteur de proposition, versions et
-> historique, grille AESH, exports ZIP par AESH, statistiques d'affectation,
-> fiches AESH et rapprochement des rapports (cas 14 : transmissions signées
-> « sophie durand » et « S. Durand »).
+> À venir (phases 3 et 4) : grille AESH, impressions et exports ZIP par AESH,
+> statistiques d'affectation, fiches AESH et rapprochement des rapports (cas 14 :
+> transmissions signées « sophie durand » et « S. Durand »).

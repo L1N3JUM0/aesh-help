@@ -44,6 +44,11 @@ var PialMoteur = (function () {
     maxAeshParEleve: 3
   };
 
+  // variantes de l'algorithme (spec §14), activables pour les mesures
+  var OPTIONS = {
+    aeshConnue: true   // à jour égal, préférer un créneau où une AESH de l'élève est libre
+  };
+
   // §5.3.2.3 : lien besoin → matières. Aucune table n'est définie (spec
   // §14) : le critère est inactif tant que cet objet reste vide.
   // Forme attendue : { "Aide à la manipulation": ["SVT", "Technologie"] }
@@ -124,8 +129,25 @@ var PialMoteur = (function () {
       var k = cv[aff.modalite] ? aff.modalite : "periscolaire";
       sem.forEach(function (s) { cv[k][s] += d; });
       if (k !== "periscolaire") cv.jours[c.jour] = (cv.jours[c.jour] || 0) + d * sem.length / 2;
-      et.occupe[id].push({ jour: c.jour, debut: mn(c.debut), fin: mn(c.fin), semaines: sem });
-      et.aeshParEleve[id][aff.aeshId] = true;
+      et.occupe[id].push({ jour: c.jour, debut: mn(c.debut), fin: mn(c.fin), semaines: sem, aff: aff });
+      et.aeshParEleve[id][aff.aeshId] = (et.aeshParEleve[id][aff.aeshId] || 0) + 1;
+    });
+  }
+  // inverse exact de ajouter()
+  function retirer(et, aff) {
+    var ctx = et.ctx, c = aff.creneau, sem = semainesCreneau(c, ctx), d = duree(c, aff.modalite, ctx);
+    var liste = affsDe(et, aff.aeshId);
+    liste.splice(liste.indexOf(aff), 1);
+    var ch = chargeDe(et, aff.aeshId);
+    sem.forEach(function (s) { ch[s] -= d; });
+    (aff.eleves || []).forEach(function (id) {
+      var cv = et.couv[id];
+      if (!cv) return;
+      var k = cv[aff.modalite] ? aff.modalite : "periscolaire";
+      sem.forEach(function (s) { cv[k][s] -= d; });
+      if (k !== "periscolaire") cv.jours[c.jour] -= d * sem.length / 2;
+      et.occupe[id] = et.occupe[id].filter(function (o) { return o.aff !== aff; });
+      if (!--et.aeshParEleve[id][aff.aeshId]) delete et.aeshParEleve[id][aff.aeshId];
     });
   }
   // parmi « semaines », celles où l'élève n'est pas déjà accompagné sur ce créneau
@@ -334,6 +356,13 @@ var PialMoteur = (function () {
       return n > 0 ? moy(et.couv[e.id][modalite]) / n : 1;
     }
     function chargeJour(e, jour) { return et.couv[e.id].jours[jour] || 0; }
+    // 0 si une AESH déjà affectée à l'un de ces élèves peut prendre le créneau
+    function connueLibre(ids, u, semaines) {
+      if (!OPTIONS.aeshConnue) return 0;
+      var connues = {};
+      ids.forEach(function (id) { Object.keys(et.aeshParEleve[id] || {}).forEach(function (a) { connues[a] = true; }); });
+      return Object.keys(connues).sort().some(function (a) { return ctx._aesh[a] && !obstacle(et, ctx._aesh[a], u, semaines); }) ? 0 : 1;
+    }
     function deja(cle, semaines) { return tentes[cle + "|" + semaines.join("")]; }
 
     // Meilleure unité de chaque entité (élève en individuel, groupe
@@ -346,9 +375,10 @@ var PialMoteur = (function () {
     dem.peri.forEach(function (g) { suivre({ calcul: function () { return unitePeriscolaire(g); } }, g.membres.map(function (mb) { return mb.eleveId; })); });
     function invalider(ids) { ids.forEach(function (id) { (parEleve[id] || []).forEach(function (ent) { ent.calcule = false; }); }); }
     // unité la plus pressante (§5.3.4) : prioritaires, puis individuelles,
-    // mutualisées (les plus nombreuses d'abord), périscolaires ; à égalité,
+    // mutualisées (la moins couverte d'abord), périscolaires ; à égalité,
     // l'élève le moins couvert en proportion, puis préférences de l'élève
-    // (jour le moins chargé, matière liée, ordre chronologique).
+    // (jour le moins chargé, AESH déjà connue libre, matière liée, ordre
+    // chronologique).
     function prochaineUnite() {
       var meilleure = null;
       entites.forEach(function (ent) {
@@ -368,7 +398,8 @@ var PialMoteur = (function () {
         var libres = semainesLibres(et, e.id, ca.creneau, ca.semaines);
         var m = morceau(r, duree(ca.creneau, "individuel", ctx), libres, etab);
         if (!m || deja(ca.cle, m)) return;
-        candidate([ca.prio ? 0 : 1, 0, 0, prop, e.cle, chargeJour(e, ca.creneau.jour), -ca.lien,
+        candidate([ca.prio ? 0 : 1, 0, 0, prop, e.cle, chargeJour(e, ca.creneau.jour),
+          connueLibre([e.id], { creneau: ca.creneau, modalite: "individuel" }, m), -ca.lien,
           M.JOURS.indexOf(ca.creneau.jour), mn(ca.creneau.debut), ca.cle],
           { cle: ca.cle, modalite: "individuel", creneau: ca.creneau, libres: libres, morceau: m, eleves: [e.id] });
       });
@@ -392,7 +423,8 @@ var PialMoteur = (function () {
       // groupe ne fait que départager (spec §14)
       return { cleTri: [membres.some(function (v) { return v.prio; }) ? 0 : 1, 1,
         Math.min.apply(null, membres.map(function (v) { return proportion(v.e, "mutualise"); })), -membres.length, membres[0].e.cle,
-        Math.max.apply(null, membres.map(function (v) { return chargeJour(v.e, g.creneau.jour); })), 0,
+        Math.max.apply(null, membres.map(function (v) { return chargeJour(v.e, g.creneau.jour); })),
+        connueLibre(membres.map(function (v) { return v.e.id; }), { creneau: g.creneau, modalite: "mutualise" }, choix), 0,
         M.JOURS.indexOf(g.creneau.jour), mn(g.creneau.debut), g.cle],
         u: { cle: g.cle, modalite: "mutualise", creneau: g.creneau, libres: libresGroupe, morceau: choix,
           eleves: membres.map(function (v) { return v.e.id; }) } };
@@ -403,7 +435,7 @@ var PialMoteur = (function () {
       if (!membres.length) return null;
       var eleves = membres.map(function (mb) { return ctx._eleves[mb.eleveId]; });
       return { cleTri: [membres.some(function (mb) { return mb.prio; }) ? 0 : 1, 2, -membres.length,
-        Math.min.apply(null, eleves.map(function (e) { return proportion(e, "periscolaire"); })), eleves[0].cle, 0, 0,
+        Math.min.apply(null, eleves.map(function (e) { return proportion(e, "periscolaire"); })), eleves[0].cle, 0, 0, 0,
         M.JOURS.indexOf(g.creneau.jour), mn(g.creneau.debut), g.cle],
         u: { cle: g.cle, modalite: "periscolaire", periscolaire: g.periscolaire, creneau: g.creneau, libres: g.semaines,
           morceau: g.semaines, eleves: membres.map(function (mb) { return mb.eleveId; }) } };
@@ -454,7 +486,18 @@ var PialMoteur = (function () {
     }
 
     var u, garde = 0;
-    while ((u = prochaineUnite()) && garde++ < 1000000) { tenter(u); invalider(u.eleves); }
+    while ((u = prochaineUnite()) && garde++ < 1000000) {
+      var avant = nouvelles.length;
+      tenter(u);
+      invalider(u.eleves);
+      if (OPTIONS.aeshConnue) {
+        var prises = {};
+        nouvelles.slice(avant).forEach(function (a) { prises[a.aeshId] = true; });
+        if (Object.keys(prises).length) invalider(ctx.eleves.filter(function (e) {
+          return Object.keys(et.aeshParEleve[e.id]).some(function (a) { return prises[a]; });
+        }).map(function (e) { return e.id; }));
+      }
+    }
 
     var finales = epinglees.concat(nouvelles);
     return { affectations: finales, rapport: rapport(donnees, finales, nouvelles, epinglees, motifs, motifsPeri, dem) };
@@ -552,7 +595,7 @@ var PialMoteur = (function () {
   }
 
   return {
-    POIDS: POIDS, BESOINS_MATIERES: BESOINS_MATIERES, LIBELLE_MOTIF: LIBELLE_MOTIF,
+    POIDS: POIDS, OPTIONS: OPTIONS, BESOINS_MATIERES: BESOINS_MATIERES, LIBELLE_MOTIF: LIBELLE_MOTIF,
     proposer: proposer, classerAesh: classerAesh, morceau: morceau
   };
 })();

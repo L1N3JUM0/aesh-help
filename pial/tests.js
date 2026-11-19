@@ -942,6 +942,22 @@ var PialTests = (function () {
       a.ignorerIndispos = false;
       egal(proposees(P.proposer(d)).length, 1, "réglage global décoché : même effet pour toutes");
     });
+    t("moteur : à jour égal, un créneau où une AESH de l'élève est libre", function () {
+      var m = mini(), e = m.eleve("Lucas", 2), autre = m.eleve("Emma", 1);
+      m.cours(e, "lundi", "08:00", "08:55"); m.cours(e, "mardi", "08:00", "08:55"); m.cours(e, "mercredi", "08:00", "08:55");
+      m.cours(autre, "mardi", "08:00", "08:55");
+      // « a » accompagne déjà Lucas le lundi et Emma le mardi à 08:00
+      var pins = [aff("a", m.etab, "lundi", "08:00", "08:55", "individuel", [e]), aff("a", m.etab, "mardi", "08:00", "08:55", "individuel", [autre])];
+      var d = m.donnees([aeshMini("a", 24), aeshMini("b", 24)], pins);
+      function choix() { return proposees(P.proposer(d)).map(function (x) { return x.aeshId + " " + x.creneau.jour; }); }
+      var avant = P.OPTIONS.aeshConnue;
+      try {
+        P.OPTIONS.aeshConnue = false;
+        egal(choix(), ["b mardi"], "sans le levier : ordre chronologique, « a » occupée, 2e AESH");
+        P.OPTIONS.aeshConnue = true;
+        egal(choix(), ["a mercredi"], "avec le levier : le mercredi, où « a » est libre");
+      } finally { P.OPTIONS.aeshConnue = avant; }
+    });
     t("moteur : entre groupes mutualisés, le moins couvert d'abord", function () {
       var m = mini(), a = m.eleve("Ana", 0, 2), b = m.eleve("Bea", 0, 2), c = m.eleve("Cyr", 0, 1);
       [a, b].forEach(function (e) { m.cours(e, "lundi", "08:00", "08:55"); m.cours(e, "lundi", "09:00", "09:55"); });

@@ -226,11 +226,14 @@ table.grille-edt td.heure{font-variant-numeric:tabular-nums;color:var(--gris);bo
 .cellule-cours.prioritaire{background:#FFF4E0}
 .cellule-cours.exclu{background:repeating-linear-gradient(45deg,#F2F2F2,#F2F2F2 6px,#E6E6E6 6px,#E6E6E6 12px);color:var(--gris)}
 .cellule-cours.periscolaire{background:#EEF3FB;font-style:italic}
+.cellule-cours.periscolaire.prioritaire{background:#FFF4E0}
+.cellule-cours.periscolaire.exclu{background:repeating-linear-gradient(45deg,#F2F2F2,#F2F2F2 6px,#E6E6E6 6px,#E6E6E6 12px);color:var(--gris)}
 .cellule-cours .cc-mat{font-weight:600}
 .cellule-cours .cc-etat{font-size:10.5px;text-transform:uppercase;letter-spacing:.3px;color:#8A5A12}
 .puce-aesh{display:inline-block;margin:2px 3px 0 0;padding:1px 6px;border-radius:9px;color:#fff;font-weight:700;font-size:11px}
 .puce-aesh.conflit{outline:2px solid var(--sous);outline-offset:1px}
 .modale-large{max-width:620px;max-height:90vh;overflow:auto}
+.modale-rapport{max-width:780px}
 .modale h3{font-family:var(--serif);font-size:17px;color:var(--encre);margin:0 0 4px}
 .mc-section{margin:14px 0 0}
 .mc-section h4{font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:var(--gris);margin:0 0 6px}
@@ -242,6 +245,7 @@ table.grille-edt td.heure{font-variant-numeric:tabular-nums;color:var(--gris);bo
 .mc-aesh li.indispo{color:var(--gris-clair)}
 .mc-aesh li .mc-motif{display:block;font-size:12px;color:var(--gris)}
 .mc-aesh .btn{padding:5px 10px;font-size:12.5px}
+.mc-score{display:inline-block;min-width:26px;padding:0 6px;border-radius:10px;background:#E8EEF7;color:var(--encre);font-size:12px;font-weight:600;text-align:center}
 .mc-actuelle{background:#F4F6F9;border-radius:8px;padding:8px 10px;margin:0 0 6px;font-size:13.5px}
 .mc-actuelle .mc-alerte{color:var(--sous);font-size:12.5px;margin:3px 0 0}
 .mc-actuelle .mc-info{color:var(--sur);font-size:12.5px;margin:3px 0 0}
@@ -844,6 +848,14 @@ table.grille-edt td.heure{font-variant-numeric:tabular-nums;color:var(--gris);bo
   </div>
 </div>
 
+<div class="voile" id="voile-rapport" hidden>
+  <div class="modale modale-large modale-rapport" role="dialog" aria-modal="true" aria-labelledby="rp-titre">
+    <h3 id="rp-titre">Rapport de la proposition</h3>
+    <div id="rp-corps"></div>
+    <div class="actions"><button type="button" class="btn btn-vide" id="rp-fermer">Fermer</button></div>
+  </div>
+</div>
+
 <div class="voile" id="voile-confirmation" hidden>
   <div class="modale">
     <p id="modale-message"></p>
@@ -904,6 +916,7 @@ table.grille-edt td.heure{font-variant-numeric:tabular-nums;color:var(--gris);bo
 <script src="db.js"></script>
 <script src="graphiques.js"></script>
 <script src="modele.js"></script>
+<script src="moteur.js"></script>
 <script src="zip.js"></script>
 <script src="import-fichiers.js"></script>
 <script src="affectations.js"></script>

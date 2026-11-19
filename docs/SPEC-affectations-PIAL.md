@@ -234,7 +234,7 @@ Les poids sont regroupés dans **un seul objet de configuration** (`POIDS` dans 
 Les affectations proposées ont un identifiant déterministe (`mo|aeshId|creneauCle`) : deux exécutions sur les mêmes données donnent un résultat identique.
 
 6. Pour chaque affectation proposée, enregistrer les **raisons** : critères retenus et nombre d'AESH écartées par contrainte. Exemple : « Sophie D. : déjà avec Lucas, même établissement le lundi ».
-7. Produire un rapport de fin : heures couvertes / heures demandées, élèves sous-couverts, AESH sous-utilisées, et pour chaque heure non couverte la contrainte qui a bloqué (quotité épuisée partout, aucune AESH disponible, déplacement impossible…). Le motif d'un élève sous-couvert est la contrainte qui a écarté le plus d'AESH sur ses créneaux tentés ; « pas assez de cours » si ses cours non exclus ne suffisent pas. Les AESH qui n'interviennent pas dans l'établissement ne sont comptées ni dans ce motif ni dans les raisons (« 3 AESH écartées (2 quotité, 1 indisponible) ») : elles n'auraient jamais pu prendre le créneau. Le motif « aucune AESH n'intervient dans l'établissement » n'apparaît que si c'est le seul obstacle.
+7. Produire un rapport de fin : heures couvertes / heures demandées, élèves sous-couverts, AESH sous-utilisées, et pour chaque heure non couverte la contrainte qui a bloqué (quotités épuisées, AESH déjà occupées, déplacement impossible…). Le motif d'un élève sous-couvert est le **motif principal** : la contrainte qui a écarté le plus d'AESH sur ses créneaux tentés (d'autres AESH ont pu être écartées pour un autre motif) ; « pas assez de cours » si ses cours non exclus ne suffisent pas. Les AESH qui n'interviennent pas dans l'établissement ne sont comptées ni dans ce motif ni dans les raisons (« 3 AESH écartées (2 quotité, 1 indisponible) ») : elles n'auraient jamais pu prendre le créneau. Le motif « aucune AESH n'intervient dans l'établissement » n'apparaît que si c'est le seul obstacle.
 
 ### 5.4 Saisie manuelle
 
@@ -576,6 +576,12 @@ Revue du rapport du moteur (même jour) :
 10. Pénalité « plus de 3 AESH » progressive : −25 par AESH au-delà de 3, cumulable (§5.3.5). Mesurée sans effet sur les exemples : quand l'élève reçoit une 4e AESH, aucune des précédentes n'est libre sur le créneau ; une passe d'amélioration par échanges est proposée (notes de travail), non codée.
 11. Réglage global « Gérer les temps périscolaires », décoché par défaut (§2.2, §5.2) ; les exemples et le scénario le cochent.
 12. `FICTIF_aesh_renfort.csv` (2 AESH, un établissement chacune) et étape du scénario : pénurie → import du renfort → relance → la couverture remonte (§10).
+
+Interface du moteur (commit 4) :
+
+13. Le rapport de fin affiche le **motif principal** (« quotités épuisées » plutôt que « quotité épuisée partout », d'autres AESH ayant pu être écartées pour un autre motif) (§5.3.7).
+14. « Proposer » remplace toutes les affectations non épinglées du brouillon, sans confirmation (toute saisie manuelle est épinglée, §5.4) ; le rapport s'ouvre dans une fenêtre et reste consultable (bouton « Rapport ») jusqu'au rechargement de la page. « Tout désépingler » demande une confirmation.
+15. Menu d'un créneau : les AESH disponibles sont triées par le score du moteur, affiché avec ses raisons ; une affectation proposée affiche ses raisons. L'état d'un créneau périscolaire se change dans le même menu, pour ce créneau seulement (§5.2).
 
 ## 15. Sujets ouverts
 

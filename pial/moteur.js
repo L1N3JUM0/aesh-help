@@ -61,7 +61,7 @@ var PialMoteur = (function () {
   };
   // motif d'une heure non couverte (rapport de fin, §5.3.7)
   var LIBELLE_MOTIF = {
-    quotite: "quotité épuisée partout",
+    quotite: "quotités épuisées",
     chevauchement: "AESH déjà occupées sur ces créneaux",
     indisponibilite: "AESH indisponibles sur ces créneaux",
     etablissement: "aucune AESH n'intervient dans l'établissement",
@@ -529,8 +529,9 @@ var PialMoteur = (function () {
   // candidat : {creneau, modalite, periscolaire, eleves:[id]} ; remplaceId :
   // affectation remplacée (rejoindre un groupe, changer d'AESH). Renvoie
   // toutes les AESH : possibles d'abord, triées par score, puis écartées
-  // (motif = première contrainte qui bloque).
-  function classerAesh(donnees, candidat, remplaceId) {
+  // (motif = première contrainte qui bloque). seule : n'évaluer que cette
+  // AESH (le menu construit un candidat par AESH : rejoindre un groupe).
+  function classerAesh(donnees, candidat, remplaceId, seule) {
     var affs = (donnees.affectations || []).filter(function (a) { return a.id !== remplaceId; });
     var ctx = M.contexte({ etablissements: donnees.etablissements, eleves: donnees.eleves, aesh: donnees.aesh,
       cours: donnees.cours, affectations: affs, reglages: donnees.reglages });
@@ -540,6 +541,7 @@ var PialMoteur = (function () {
     var semaines = semainesCreneau(candidat.creneau, ctx);
     var possibles = [], ecartees = [];
     et.aeshTriees.forEach(function (a) {
+      if (seule && a.id !== seule) return;
       var o = obstacle(et, a, u, semaines);
       if (o) { ecartees.push({ aeshId: a.id, possible: false, motif: o }); return; }
       var ev = evaluer(et, a, u, semaines);

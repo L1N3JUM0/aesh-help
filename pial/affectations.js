@@ -7,13 +7,14 @@
    Ce fichier tient l'état en mémoire du module (chargé depuis IndexedDB
    via PialDB) et l'interface : import des fichiers élèves / AESH /
    emplois du temps, paramètres des établissements, onglet Affectations.
-   Toutes les règles de calcul sont dans modele.js (fonctions pures).
+   Toutes les règles de calcul sont dans modele.js (fonctions pures), la
+   proposition automatique dans moteur.js.
    Les utilitaires d'interface communs (toast, confirmation renforcée,
    téléchargement, navigation) sont fournis par app.js via initialiser().
    ===================================================================== */
 var PialAffectations = (function () {
 
-  var M = PialModele, I = PialImport;
+  var M = PialModele, I = PialImport, P = PialMoteur;
   var ui = null; // {toast, confirmationForte, telecharger, vue}
 
   function $(id) { return document.getElementById(id); }
@@ -414,13 +415,122 @@ var PialAffectations = (function () {
       + '<span class="selecteur-semaine" role="group" aria-label="Semaine affichée">'
       + '<button type="button" data-semaine="A" aria-pressed="' + (semaineAffichee === "A") + '">Semaine A</button>'
       + '<button type="button" data-semaine="B" aria-pressed="' + (semaineAffichee === "B") + '">Semaine B</button></span>'
-      + '<button type="button" class="btn btn-vide" disabled title="Disponible avec le moteur de proposition (phase 2)">Proposer</button>'
+      + '<button type="button" class="btn btn-plein" id="aff-proposer"' + (etat.eleves.length && etat.aesh.length ? "" : " disabled")
+      + ' title="Remplace les affectations non épinglées par une proposition ; les épinglées sont conservées">Proposer</button>'
+      + (dernierRapport ? '<button type="button" class="btn btn-vide" id="aff-voir-rapport">Rapport</button>' : "")
+      + '<button type="button" class="btn btn-vide" id="aff-desepingler"' + (nbEpinglees() ? "" : " disabled") + '>Tout désépingler</button>'
       + '<button type="button" class="btn btn-vide" disabled title="Disponible avec les versions (phase 2)">Valider la version</button>'
       + '</span>';
     Array.prototype.forEach.call($("aff-synthese").querySelectorAll("[data-semaine]"), function (b) {
       b.addEventListener("click", function () { semaineAffichee = this.dataset.semaine; rendreAffectations(); });
     });
+    $("aff-proposer").addEventListener("click", proposer);
+    if (dernierRapport) $("aff-voir-rapport").addEventListener("click", afficherRapport);
+    $("aff-desepingler").addEventListener("click", toutDesepingler);
   }
+
+  /* =============== proposition automatique (§5) =============== */
+  var dernierRapport = null; // {rapport, ms, nbRemplacees} : en mémoire, jusqu'au rechargement
+  function nbEpinglees() { return etat.affectations.filter(function (a) { return a.epinglee; }).length; }
+  function donneesMoteur(affectations) {
+    return { annee: anneeCourante(), etablissements: etat.etablissements, eleves: etat.eleves, aesh: etat.aesh, cours: etat.cours,
+      affectations: affectations || etat.affectations, reglages: etat.reglages };
+  }
+  // relance partielle : les épinglées sont gardées, les autres remplacées
+  function proposer() {
+    var bouton = $("aff-proposer");
+    bouton.disabled = true;
+    bouton.textContent = "Calcul…";
+    // laisse le navigateur afficher « Calcul… » avant le calcul (thread principal)
+    setTimeout(function () {
+      var t0 = (window.performance || Date).now();
+      var res = P.proposer(donneesMoteur());
+      var ms = (window.performance || Date).now() - t0;
+      var remplacees = etat.affectations.filter(function (a) { return !a.epinglee; }).map(function (a) { return a.id; });
+      var nouvelles = res.affectations.filter(function (a) { return !a.epinglee; });
+      dernierRapport = { rapport: res.rapport, ms: ms, nbRemplacees: remplacees.length };
+      enregistrerPuisRendre([{ magasin: "affectations", supprimer: remplacees, enregistrer: nouvelles }],
+        pluriel(nouvelles.length, "affectation proposée", "affectations proposées") + ".").then(afficherRapport);
+    }, 30);
+  }
+  function toutDesepingler() {
+    var n = nbEpinglees();
+    if (!n) return;
+    ui.confirmationForte(n > 1
+      ? "Désépingler les " + n + " affectations épinglées ? Elles restent en place, mais la prochaine proposition pourra les remplacer."
+      : "Désépingler l'affectation épinglée ? Elle reste en place, mais la prochaine proposition pourra la remplacer.", "Tout désépingler", function () {
+      var affs = etat.affectations.filter(function (a) { return a.epinglee; }).map(function (a) {
+        var b = JSON.parse(JSON.stringify(a)); b.epinglee = false; return b;
+      });
+      enregistrerPuisRendre([{ magasin: "affectations", enregistrer: affs }], pluriel(n, "affectation désépinglée", "affectations désépinglées") + ".");
+    });
+  }
+
+  /* =============== rapport de fin (§5.3.7) =============== */
+  var LIB_PERI = { recreation: "Récréation", meridienne: "Pause méridienne" };
+  function afficherRapport() {
+    if (!dernierRapport) return;
+    var r = dernierRapport.rapport, x = r.heures;
+    function pct(a, b) { return b ? Math.round(100 * a / b) + " %" : "—"; }
+    function ligneHeures(lib, v) { return '<tr><td>' + lib + '</td><td>' + heures(v.demande) + '</td><td>' + heures(v.couvert) + '</td><td>' + pct(v.couvert, v.demande) + '</td></tr>'; }
+    var tot = { demande: x.individuel.demande + x.mutualise.demande, couvert: x.individuel.couvert + x.mutualise.couvert };
+    var h = '<p class="aide">Calculée en ' + Math.round(dernierRapport.ms) + ' ms · ' + pluriel(r.nbProposees, "affectation proposée", "affectations proposées")
+      + ' · ' + pluriel(r.nbEpinglees, "affectation épinglée conservée", "affectations épinglées conservées")
+      + (dernierRapport.nbRemplacees ? ' · ' + pluriel(dernierRapport.nbRemplacees, "affectation non épinglée remplacée", "affectations non épinglées remplacées") : "") + '.</p>';
+    if (r.violations.length) h += '<p class="note alerte">⚠ ' + pluriel(r.violations.length, "contrainte non respectée", "contraintes non respectées") + ' par la proposition : signalez-le.</p>';
+    h += '<div class="mc-section"><h4>Heures</h4><div class="tableau-conteneur"><table class="tableau"><thead><tr><th></th><th>Demandées</th><th>Couvertes</th><th>Taux</th></tr></thead><tbody>'
+      + ligneHeures("Individuel", x.individuel) + ligneHeures("Mutualisé", x.mutualise)
+      + '<tr><td><strong>Total notifié</strong></td><td>' + heures(tot.demande) + '</td><td><strong>' + heures(tot.couvert) + '</strong></td><td>' + pct(tot.couvert, tot.demande) + '</td></tr>'
+      + (r.periscolaireGere ? ligneHeures("Périscolaire (à part)", x.periscolaire) : "")
+      + '</tbody></table></div></div>';
+    h += '<div class="mc-section"><h4>Élèves sous-couverts ou partiellement couverts (' + r.sousCouverts.length + ')</h4>';
+    h += r.sousCouverts.length ? '<div class="tableau-conteneur"><table class="tableau"><thead><tr><th>Élève</th><th>Manque</th><th>Motif principal</th></tr></thead><tbody>'
+      + r.sousCouverts.map(function (sc) {
+        var manque = [sc.manqueInd ? heures(sc.manqueInd) + " ind." : "", sc.manqueMut ? heures(sc.manqueMut) + " mut." : ""].filter(Boolean).join(", ");
+        return '<tr><td><button type="button" class="btn-lien" data-rapport-eleve="' + ech(sc.eleveId) + '">' + ech(sc.nomCourt) + '</button><br><span class="aide">'
+          + ech(sc.classe) + ' · ' + ech(sc.etablissement) + '</span></td><td>' + manque + '</td><td>' + ech(sc.libelle) + '</td></tr>';
+      }).join("") + '</tbody></table></div>' : '<p class="aide">Aucun : toutes les heures notifiées sont couvertes.</p>';
+    h += '</div>';
+    if (r.periscolaireGere) {
+      // par élève, puis par temps (et motif) : « Récréation : lundi 09:50, mardi 09:50 — quotités épuisées »
+      var parEleve = {}, ordre = [];
+      r.periscolaireNonCouvert.forEach(function (p) {
+        if (!parEleve[p.eleveId]) { parEleve[p.eleveId] = { p: p, groupes: {}, cles: [] }; ordre.push(p.eleveId); }
+        var y = parEleve[p.eleveId], k = p.type + "|" + p.prioritaire + "|" + p.libelle;
+        if (!y.groupes[k]) { y.groupes[k] = { p: p, creneaux: [] }; y.cles.push(k); }
+        y.groupes[k].creneaux.push(p.jour + " " + p.debut + (p.semaines.length < 2 ? " (sem. " + p.semaines[0] + ")" : ""));
+      });
+      ordre.forEach(function (id) {
+        var y = parEleve[id];
+        y.liste = y.cles.map(function (k) {
+          var g = y.groupes[k];
+          return LIB_PERI[g.p.type] + (g.p.prioritaire ? " (prioritaire)" : "") + " : " + g.creneaux.join(", ") + " — " + g.p.libelle;
+        });
+      });
+      h += '<div class="mc-section"><h4>Temps périscolaires non couverts (' + r.periscolaireNonCouvert.length + ')</h4>';
+      h += ordre.length ? '<ul class="liste-motifs">' + ordre.map(function (id) {
+        var y = parEleve[id];
+        return '<li><button type="button" class="btn-lien" data-rapport-eleve="' + ech(id) + '">' + ech(y.p.nomCourt) + '</button> (' + ech(y.p.classe) + ') : ' + y.liste.map(ech).join(" ; ") + '</li>';
+      }).join("") + '</ul>' : '<p class="aide">Aucun.</p>';
+      h += '</div>';
+    }
+    h += '<div class="mc-section"><h4>AESH sous-utilisées (' + r.aeshSousUtilisees.length + ')</h4>';
+    h += r.aeshSousUtilisees.length ? '<ul class="liste-motifs">' + r.aeshSousUtilisees.map(function (a) {
+      return '<li>' + ech(a.nom) + ' : reste ' + heures(a.restantA) + (a.restantA !== a.restantB ? ' en semaine A, ' + heures(a.restantB) + ' en semaine B' : '') + ' sur ' + heures(a.quotite) + '</li>';
+    }).join("") + '</ul>' : '<p class="aide">Aucune.</p>';
+    h += '</div>';
+    h += '<p class="aide">Chaque affectation proposée garde ses raisons : ouvrez un créneau pour les voir. Épinglez ce que vous voulez garder, puis relancez « Proposer ».</p>';
+    $("rp-corps").innerHTML = h;
+    Array.prototype.forEach.call($("rp-corps").querySelectorAll("[data-rapport-eleve]"), function (b) {
+      b.addEventListener("click", function () { fermerRapport(); ouvrirGrilleEleve(this.dataset.rapportEleve); });
+    });
+    $("voile-rapport").hidden = false;
+    $("rp-fermer").focus();
+  }
+  function fermerRapport() { $("voile-rapport").hidden = true; }
+  $("rp-fermer").addEventListener("click", fermerRapport);
+  $("voile-rapport").addEventListener("click", function (ev) { if (ev.target === this) fermerRapport(); });
+  document.addEventListener("keydown", function (ev) { if (ev.key === "Escape" && !$("voile-rapport").hidden) fermerRapport(); });
 
   /* =============== filtres =============== */
   function remplirSelect(id, valeurs, libelleTous) {
@@ -534,7 +644,7 @@ var PialAffectations = (function () {
       return M.semainesDe(c.semaine, etab).indexOf(semaineAffichee) > -1;
     }).map(function (c) { return { type: "cours", cours: c, jour: c.jour, debut: c.debut, fin: c.fin }; });
     M.creneauxPeriscolaires(e, ctxCourant).forEach(function (p) {
-      cases.push({ type: "periscolaire", periscolaire: p.type, jour: p.creneau.jour, debut: p.creneau.debut, fin: p.creneau.fin });
+      cases.push({ type: "periscolaire", periscolaire: p.type, etat: p.etat, jour: p.creneau.jour, debut: p.creneau.debut, fin: p.creneau.fin });
     });
     return cases;
   }
@@ -591,7 +701,8 @@ var PialAffectations = (function () {
           var affs = affsEleveCreneau(e.id, e.etablissement, j, l.debut, l.fin, semaineAffichee);
           var cle = j + "|" + l.debut + "|" + l.fin + "|" + k;
           if (c.type === "periscolaire") {
-            return '<div class="cellule-cours periscolaire" tabindex="0" data-case="' + ech(cle) + '"><div class="cc-mat">' + (c.periscolaire === "meridienne" ? "Pause méridienne" : "Récréation") + '</div>'
+            return '<div class="cellule-cours periscolaire' + (c.etat !== "normal" ? " " + c.etat : "") + '" tabindex="0" data-case="' + ech(cle) + '"><div class="cc-mat">' + LIB_PERI[c.periscolaire] + '</div>'
+              + (c.etat !== "normal" ? '<div class="cc-etat">' + c.etat + '</div>' : "")
               + affs.filter(function (a) { return a.modalite === "periscolaire"; }).map(puceAff).join("") + '</div>';
           }
           var co = c.cours;
@@ -703,6 +814,7 @@ var PialAffectations = (function () {
       return '<div class="mc-actuelle">' + puceAff(a) + " <strong>" + ech(nomAesh(aeshParId(a.aeshId))) + "</strong> · " + LIB_MODALITE[a.modalite]
         + (a.creneau.semaine !== "toutes" ? " · semaine " + a.creneau.semaine : "")
         + (autres.length ? " · avec " + ech(autres.join(", ")) : "")
+        + (a.origine === "moteur" && (a.raisons || []).length ? '<div class="mc-info">Proposée par le moteur : ' + a.raisons.map(ech).join(" · ") + '</div>' : "")
         + v.map(function (x) { return '<div class="' + (x.niveau === "erreur" ? "mc-alerte" : "mc-info") + '">' + (x.niveau === "erreur" ? "⚠ " : "ℹ ") + ech(x.message) + '</div>'; }).join("")
         + '<div class="actions" style="margin-top:6px">'
         + '<button type="button" class="btn btn-vide" data-epingler="' + ech(a.id) + '">' + (a.epinglee ? "Désépingler" : "Épingler") + '</button>'
@@ -711,12 +823,13 @@ var PialAffectations = (function () {
     h += '</div>';
 
     // état du cours
-    if (c.type === "cours") {
-      h += '<div class="mc-section"><h4>État du créneau</h4><div class="mc-boutons">'
-        + ["prioritaire", "normal", "exclu"].map(function (s) {
-          return '<button type="button" class="btn btn-vide" data-etat-cours="' + s + '" aria-pressed="' + (c.cours.etat === s) + '">' + s.charAt(0).toUpperCase() + s.slice(1) + '</button>';
-        }).join("") + '</div></div>';
-    }
+    var etatCase = c.type === "cours" ? c.cours.etat : M.etatPeriscolaire(e, c.periscolaire, c);
+    h += '<div class="mc-section"><h4>État du créneau</h4><div class="mc-boutons">'
+      + ["prioritaire", "normal", "exclu"].map(function (s) {
+        return '<button type="button" class="btn btn-vide" data-etat-cours="' + s + '" aria-pressed="' + (etatCase === s) + '">' + s.charAt(0).toUpperCase() + s.slice(1) + '</button>';
+      }).join("") + '</div>'
+      + (c.type === "periscolaire" ? '<p class="aide">Pour ce créneau seulement (' + c.jour + ' ' + c.debut + '). Un créneau prioritaire est traité avec les cours prioritaires ; « normal » est traité en dernier.</p>' : "")
+      + '</div>';
 
     // paramètres de la nouvelle affectation
     var modalites = modalitesPossibles(e, c);
@@ -741,18 +854,27 @@ var PialAffectations = (function () {
       var motifs = M.motifsIndisponibilite(a.id, cand.aff, ctxCourant, cand.remplaceId);
       var rejoint = cand.remplaceId ? etat.affectations.filter(function (x) { return x.id === cand.remplaceId; })[0] : null;
       var info = rejoint ? "rejoint le groupe de " + rejoint.eleves.map(function (id) { var x = eleveParId(id); return x ? x.nomCourt : id; }).join(", ") : "";
-      (motifs.length ? indispo : dispo).push({ a: a, motifs: motifs, info: info });
+      var x = { a: a, motifs: motifs, info: info };
+      if (!motifs.length) {
+        // score et raisons du moteur (§5.3.5), pour trier les disponibles
+        var ev = P.classerAesh(donneesMoteur(), cand.aff, cand.remplaceId, a.id)[0];
+        if (ev && ev.possible) { x.score = ev.score; x.raisons = ev.raisons; }
+      }
+      (motifs.length ? indispo : dispo).push(x);
     });
+    dispo.sort(function (p, q) { return ((q.score == null ? -1e9 : q.score) - (p.score == null ? -1e9 : p.score)) || nomAesh(p.a).localeCompare(nomAesh(q.a), "fr"); });
     function ligne(x, dispoAesh) {
       var ch = M.chargeAesh(x.a, ctxCourant);
       return '<li class="' + (dispoAesh ? "" : "indispo") + '"><span><span class="puce-aesh" style="background:' + couleurAesh(x.a.id) + (dispoAesh ? "" : ";opacity:.5") + '">' + ech(initialesAesh(x.a)) + '</span> '
         + ech(nomAesh(x.a)) + ' <span class="aide">(' + heures(ch.moy) + ' / ' + heures(ch.quotite) + ')</span>'
+        + (x.score != null ? ' <span class="mc-score" title="Score du moteur">' + Math.round(x.score) + '</span>' : "")
         + (x.info ? '<span class="mc-motif">' + ech(x.info) + '</span>' : "")
+        + (x.raisons && x.raisons.length ? '<span class="mc-motif">' + x.raisons.map(ech).join(" · ") + '</span>' : "")
         + (x.motifs.length ? '<span class="mc-motif">' + x.motifs.map(function (m) { return ech(m.message); }).join(" · ") + '</span>' : "") + '</span>'
         + '<button type="button" class="btn ' + (dispoAesh ? "btn-plein" : "btn-danger") + '" data-affecter="' + ech(x.a.id) + '">' + (dispoAesh ? "Affecter" : "Affecter quand même") + '</button></li>';
     }
     h += '<div class="mc-section"><h4>' + (actuelles.length ? "Ajouter ou changer d'AESH" : "Affecter une AESH") + ' — ' + LIB_MODALITE[menu.modalite].toLowerCase() + '</h4>';
-    if (c.type === "cours" && c.cours.etat === "exclu") h += '<p class="note alerte">Créneau exclu : une affectation ici sera signalée dans les alertes.</p>';
+    if (etatCase === "exclu") h += '<p class="note alerte">Créneau exclu : une affectation ici sera signalée dans les alertes.</p>';
     h += etat.aesh.length ? '<ul class="mc-aesh">' + dispo.map(function (x) { return ligne(x, true); }).join("") + indispo.map(function (x) { return ligne(x, false); }).join("") + '</ul>'
       : '<p class="aide">Aucune AESH : importez d\'abord le fichier des AESH.</p>';
     if (actuelles.length && menu.modalite === "individuel") h += '<p class="aide">En individuel, choisir une autre AESH remplace l\'affectation actuelle.</p>';
@@ -829,10 +951,20 @@ var PialAffectations = (function () {
     enregistrerPuisRendre([{ magasin: "affectations", enregistrer: [aff] }], aff.epinglee ? "Affectation épinglée." : "Affectation désépinglée.");
   }
   function changerEtatCours(nouvelEtat) {
+    if (menu.cas.type === "periscolaire") { changerEtatPeriscolaire(nouvelEtat); return; }
     var co = JSON.parse(JSON.stringify(menu.cas.cours));
     if (co.etat === nouvelEtat) return;
     co.etat = nouvelEtat;
     enregistrerPuisRendre([{ magasin: "cours", enregistrer: [co] }], "Créneau marqué « " + nouvelEtat + " ».");
+  }
+
+  // état posé sur ce créneau précis (clé type|jour|debut, spec §5.2)
+  function changerEtatPeriscolaire(nouvelEtat) {
+    var c = menu.cas, e = JSON.parse(JSON.stringify(menu.eleve));
+    if (M.etatPeriscolaire(e, c.periscolaire, c) === nouvelEtat) return;
+    e.etatsPeriscolaires = e.etatsPeriscolaires || {};
+    e.etatsPeriscolaires[M.cleEtatPeriscolaire(c.periscolaire, c)] = nouvelEtat;
+    enregistrerPuisRendre([{ magasin: "eleves", enregistrer: [e] }], "Créneau marqué « " + nouvelEtat + " ».");
   }
 
   /* =============== panneau d'alertes =============== */

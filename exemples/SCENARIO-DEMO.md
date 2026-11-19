@@ -96,6 +96,28 @@ Marquez un autre cours « prioritaire » ou « exclu » (cas 9 : voir aussi Nath
 - Cas 4 : un mercredi, Hugo Fictif apparaît « Indisponible (mer) » ; un vendredi
   après-midi, Nadia Démonstration « Indisponible (ven-pm) ».
 
+## 11. Proposition automatique : pénurie, puis renfort
+
+- Onglet **Affectations**, bouton **Proposer**. Les affectations faites à la main
+  aux étapes 8 à 10 sont épinglées (🔒) et conservées ; le reste est proposé en
+  une fraction de seconde. Le rapport s'ouvre : individuel 100 %, mutualisé
+  environ 77 %, une douzaine d'élèves sous-couverts, tous en mutualisé, motif
+  principal « quotités épuisées » (cas 7 : 327,5 h notifiées pour 274 h de
+  quotités). Un clic sur un élève du rapport ouvre sa grille.
+- Ouvrez un créneau proposé : la ligne « Proposée par le moteur » donne les
+  raisons (par exemple « déjà avec Emma E. · 6 AESH écartées… ») ; la
+  liste des AESH disponibles est triée par score.
+- **Louis I.** (cas 8) : sa pause méridienne, prioritaire, est couverte chaque
+  jour ; ses récréations, « normal », passent en dernier. Cliquez sur une
+  récréation et marquez-la « Prioritaire » : seul ce créneau change.
+- Onglet **Importer** : importez `FICTIF_aesh_renfort.csv` (Camille Renfort,
+  24 h aux Tilleuls ; Alix Appoint, 12 h aux Lilas), puis revenez sur
+  **Affectations** et relancez **Proposer**. Les épinglées sont gardées, le reste
+  est recalculé : la couverture remonte à 100 % ou presque, et le rapport ne
+  liste plus que quelques temps périscolaires.
+- **Tout désépingler** rend toutes les affectations au moteur (après
+  confirmation) : la prochaine proposition pourra les remplacer.
+
 Pour finir : **Réglages → Sauvegarde** exporte tout (format `pial-suivi/2`).
 
 > À venir (phases 2 et suivantes) : moteur de proposition, versions et

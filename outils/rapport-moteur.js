@@ -136,5 +136,21 @@ Promise.all([T.chargerExemples(env), T.chargerExemples(env, { renfort: true })])
       + [0, 1, 2, 3, 4].map(function (k) { return ap.dist[k] || 0; }).concat([cinq]).join(" / ") + " | "
       + (ap.plus.length ? ap.plus.length + " : " + ap.plus.join(", ") : "0") + " |");
   });
+  l.push("");
+  l.push("### Variantes : levier « AESH connue libre » et passe d'échanges");
+  l.push("");
+  l.push("Élèves à 4 AESH ou plus / heures notifiées couvertes. Réglage retenu : " + JSON.stringify(P.OPTIONS) + ".");
+  l.push("");
+  l.push("| Variante | Exemples (pénurie) | Exemples + renfort | AESH doublées |");
+  l.push("|---|---|---|---|");
+  var retenu = JSON.parse(JSON.stringify(P.OPTIONS));
+  [["aucun", false, false], ["levier seul", true, false], ["échanges seuls", false, true], ["les deux", true, true]].forEach(function (v) {
+    P.OPTIONS.aeshConnue = v[1]; P.OPTIONS.echanges = v[2];
+    l.push("| " + v[0] + " | " + [d, jeux[1], doublees].map(function (x) {
+      var res = P.proposer(x), rr = res.rapport, ap = aeshParEleve(x, res.affectations);
+      return ap.plus.length + " / " + h(rr.heures.individuel.couvert + rr.heures.mutualise.couvert) + (rr.nbEchanges ? " (" + rr.nbEchanges + " mouvements)" : "");
+    }).join(" | ") + " |");
+  });
+  P.OPTIONS.aeshConnue = retenu.aeshConnue; P.OPTIONS.echanges = retenu.echanges;
   console.log(l.join("\n"));
 }).catch(function (err) { console.error(err); process.exitCode = 1; });

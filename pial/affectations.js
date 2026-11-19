@@ -484,7 +484,8 @@ var PialAffectations = (function () {
     var tot = { demande: x.individuel.demande + x.mutualise.demande, couvert: x.individuel.couvert + x.mutualise.couvert };
     var h = '<p class="aide">Calculée en ' + Math.round(dernierRapport.ms) + ' ms · ' + pluriel(r.nbProposees, "affectation proposée", "affectations proposées")
       + ' · ' + pluriel(r.nbEpinglees, "affectation épinglée conservée", "affectations épinglées conservées")
-      + (dernierRapport.nbRemplacees ? ' · ' + pluriel(dernierRapport.nbRemplacees, "affectation non épinglée remplacée", "affectations non épinglées remplacées") : "") + '.</p>';
+      + (dernierRapport.nbRemplacees ? ' · ' + pluriel(dernierRapport.nbRemplacees, "affectation non épinglée remplacée", "affectations non épinglées remplacées") : "")
+      + (r.nbEchanges ? ' · ' + pluriel(r.nbEchanges, "créneau repris ou échangé", "créneaux repris ou échangés") + ' entre AESH pour limiter à ' + P.POIDS.maxAeshParEleve + ' le nombre d\'AESH par élève' : "") + '.</p>';
     if (r.violations.length) h += '<p class="note alerte">⚠ ' + pluriel(r.violations.length, "contrainte non respectée", "contraintes non respectées") + ' par la proposition : signalez-le.</p>';
     h += '<div class="mc-section"><h4>Heures</h4><div class="tableau-conteneur"><table class="tableau"><thead><tr><th></th><th>Demandées</th><th>Couvertes</th><th>Taux</th></tr></thead><tbody>'
       + ligneHeures("Individuel", x.individuel) + ligneHeures("Mutualisé", x.mutualise)

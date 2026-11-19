@@ -46,7 +46,11 @@ var PialMoteur = (function () {
 
   // variantes de l'algorithme (spec §14), activables pour les mesures
   var OPTIONS = {
-    aeshConnue: true,  // à jour égal, préférer un créneau où une AESH de l'élève est libre
+    // à jour égal, préférer un créneau où une AESH de l'élève est libre.
+    // Désactivé : moins d'élèves à 4 AESH ou plus, mais la couverture baisse
+    // (303 h → 269,5 h sur les exemples) : les AESH de plusieurs
+    // établissements restent là où elles ont commencé (notes de la phase 2)
+    aeshConnue: false,
     echanges: true     // passe d'échanges après le glouton
   };
 

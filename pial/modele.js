@@ -243,6 +243,130 @@ var PialModele = (function () {
     });
   }
 
+  /* =============== fiches : identité, collisions, classes, archivage (§17) =============== */
+  // « Lucas M. » -> {prenom: "Lucas", nom: "M."} (l'initiale terminée par un point)
+  function decomposerNomCourt(nc) {
+    var m = /^(.*\S)\s+(\S+\.)$/.exec(txt(nc).replace(/\s+/g, " ").trim());
+    return m ? { prenom: m[1], nom: m[2] } : { prenom: txt(nc).trim(), nom: "" };
+  }
+  /* fiche élève après un changement d'identité (prénom, nom, classe,
+     établissement) : seuls des champs changent, l'identifiant reste.
+     changements : {prenom?, nom?, classe?, etablissement? (id),
+     etablissementNom?} ; nom réduit à l'initiale (§3). */
+  function eleveModifie(e, changements) {
+    var c = JSON.parse(JSON.stringify(e)), d = decomposerNomCourt(e.nomCourt), ch = changements || {};
+    if ("prenom" in ch || "nom" in ch) c.nomCourt = nomCourt("prenom" in ch ? ch.prenom : d.prenom, "nom" in ch ? ch.nom : d.nom);
+    if ("classe" in ch) c.classe = txt(ch.classe).replace(/\s+/g, " ").trim();
+    if ("etablissement" in ch) { c.etablissement = ch.etablissement; c.etablissementNom = ch.etablissementNom || ch.etablissement; }
+    c.cle = cleEleve(c.nomCourt, c.classe, c.etablissement);
+    return c;
+  }
+  function aeshModifiee(a, changements) {
+    var c = JSON.parse(JSON.stringify(a)), ch = changements || {};
+    if ("nom" in ch) c.nom = txt(ch.nom).replace(/\s+/g, " ").trim();
+    if ("prenom" in ch) c.prenom = txt(ch.prenom).replace(/\s+/g, " ").trim();
+    c.cle = cleAesh(c);
+    return c;
+  }
+  // autre fiche qui a déjà la clé de « fiche » (même année pour un élève),
+  // archivées comprises ; null s'il n'y en a pas
+  function collisionEleve(eleves, fiche) {
+    var k = cleFicheEleve(fiche);
+    return (eleves || []).filter(function (e) { return e.id !== fiche.id && cleFicheEleve(e) === k; })[0] || null;
+  }
+  function collisionAesh(aesh, fiche) {
+    var k = cleAesh(fiche);
+    return (aesh || []).filter(function (a) { return a.id !== fiche.id && (a.cle || cleAesh(a)) === k; })[0] || null;
+  }
+  // les cours d'un élève suivent sa classe et son établissement
+  function coursSuivantEleve(cours, e) {
+    var out = [];
+    (cours || []).forEach(function (c) {
+      if (c.eleveId !== e.id) return;
+      var x = copie(c);
+      x.eleveCle = e.cle; x.classe = e.classe; x.etablissement = e.etablissement;
+      if (e.etablissementNom) x.etablissementNom = e.etablissementNom;
+      if (x.eleveCle !== c.eleveCle || x.classe !== c.classe || x.etablissement !== c.etablissement || x.etablissementNom !== c.etablissementNom) out.push(x);
+    });
+    return out;
+  }
+
+  // ordre des classes : niveau (NIVEAUX), puis ordre naturel (6A, 6B, 6C10)
+  function comparerClasses(a, b) {
+    return (NIVEAUX.indexOf(niveauClasse(a)) - NIVEAUX.indexOf(niveauClasse(b)))
+      || txt(a).localeCompare(txt(b), "fr", { numeric: true, sensitivity: "base" });
+  }
+  /* référentiel des classes d'une année : {etablissement (id): [classe]}.
+     enregistre : table modifiée dans Réglages (prioritaire, garde son
+     orthographe) ; complétée par les classes des élèves et des cours.
+     Classes comparées sans casse ni espaces superflus, triées. */
+  function referentielClasses(enregistre, eleves, cours) {
+    var out = {}, vus = {};
+    function ajouter(etab, classe) {
+      var c = txt(classe).replace(/\s+/g, " ").trim(), k = etab + "|" + normaliser(c);
+      if (!etab || !c || vus[k]) return;
+      vus[k] = true;
+      (out[etab] = out[etab] || []).push(c);
+    }
+    Object.keys(enregistre || {}).forEach(function (etab) { (enregistre[etab] || []).forEach(function (c) { ajouter(etab, c); }); });
+    (eleves || []).forEach(function (e) { ajouter(e.etablissement, e.classe); });
+    (cours || []).forEach(function (c) { ajouter(c.etablissement, c.classe); });
+    Object.keys(out).forEach(function (etab) { out[etab].sort(comparerClasses); });
+    return out;
+  }
+
+  // archivé (§17) : sorti des listes actives et des propositions, gardé dans
+  // l'historique et les versions. archiveLe : date ISO (aujourd'hui ou passée).
+  function estArchive(x) { return !!(x && x.archiveLe); }
+  function actifs(liste) { return (liste || []).filter(function (x) { return !estArchive(x); }); }
+  /* données du moteur sans les fiches archivées : leurs cours et leurs
+     affectations sortent avec elles (un élève archivé quitte un groupe
+     mutualisé, qui reste aux autres). */
+  function donneesActives(d) {
+    var arch = {};
+    (d.eleves || []).concat(d.aesh || []).forEach(function (x) { if (estArchive(x)) arch[x.id] = true; });
+    if (!Object.keys(arch).length) return d;
+    var out = copie(d);
+    out.eleves = actifs(d.eleves); out.aesh = actifs(d.aesh);
+    out.cours = (d.cours || []).filter(function (c) { return !arch[c.eleveId]; });
+    out.affectations = [];
+    (d.affectations || []).forEach(function (a) {
+      if (arch[a.aeshId]) return;
+      var restants = (a.eleves || []).filter(function (id) { return !arch[id]; });
+      if (!restants.length) return;
+      if (restants.length === a.eleves.length) { out.affectations.push(a); return; }
+      var c = copie(a); c.eleves = restants; out.affectations.push(c);
+    });
+    return out;
+  }
+  /* effets de l'archivage ou de la suppression d'élèves / d'AESH sur les
+     affectations (ids : identifiants ; type : "eleves" | "aesh").
+     brouillon : affectations version 0 ; versions : copies validées.
+     Renvoie {supprimees: [id], modifiees: [affectation], mutualisees
+     (groupes quittés), versions: [numéro] (versions où ces fiches
+     figurent), cours (nombre, élèves seulement), exclusions (nombre
+     d'AESH dont la liste « ne pas affecter » les cite)}. */
+  function effetsRetrait(type, ids, d) {
+    var cible = {}, r = { supprimees: [], modifiees: [], mutualisees: 0, versions: [], cours: 0, exclusions: 0 };
+    ids.forEach(function (id) { cible[id] = true; });
+    var vers = {};
+    (d.affectations || []).forEach(function (a) {
+      var touche = type === "aesh" ? cible[a.aeshId] : (a.eleves || []).some(function (id) { return cible[id]; });
+      if (!touche) return;
+      if (a.version) { vers[a.version] = true; return; }
+      if (type === "aesh") { r.supprimees.push(a.id); return; }
+      var restants = a.eleves.filter(function (id) { return !cible[id]; });
+      if (!restants.length) r.supprimees.push(a.id);
+      else { var c = JSON.parse(JSON.stringify(a)); c.eleves = restants; r.modifiees.push(c); r.mutualisees++; }
+    });
+    r.versions = Object.keys(vers).map(Number).sort(function (a, b) { return a - b; });
+    if (type === "eleves") {
+      r.cours = (d.cours || []).filter(function (c) { return cible[c.eleveId]; }).length;
+      r.exclusions = (d.aesh || []).filter(function (a) { return (a.elevesExclus || []).some(function (id) { return cible[id]; }); }).length;
+    }
+    return r;
+  }
+
   // renvoie les clés présentes plusieurs fois : {cle: [indices]}
   function collisions(cles) {
     var vus = {}, out = {};
@@ -968,6 +1092,10 @@ var PialModele = (function () {
     nouvelIdentifiant: nouvelIdentifiant, estIdentifiantInterne: estIdentifiantInterne, cleAesh: cleAesh, cleFicheEleve: cleFicheEleve,
     idCours: idCours, idAffectationTraduit: idAffectationTraduit, tableCles: tableCles, traduireIds: traduireIds,
     donneesParCles: donneesParCles, migrerV4: migrerV4, attribuerIdentifiants: attribuerIdentifiants,
+    decomposerNomCourt: decomposerNomCourt, eleveModifie: eleveModifie, aeshModifiee: aeshModifiee,
+    collisionEleve: collisionEleve, collisionAesh: collisionAesh, coursSuivantEleve: coursSuivantEleve,
+    comparerClasses: comparerClasses, referentielClasses: referentielClasses,
+    estArchive: estArchive, actifs: actifs, donneesActives: donneesActives, effetsRetrait: effetsRetrait,
     anneeScolaire: anneeScolaire, niveauClasse: niveauClasse, typeEtablissement: typeEtablissement,
     etablissementParDefaut: etablissementParDefaut,
     jourNormalise: jourNormalise, minutes: minutes, hhmm: hhmm, heureNormalisee: heureNormalisee,

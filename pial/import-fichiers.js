@@ -273,6 +273,36 @@ var PialImport = (function () {
     return "\uFEFF" + lignes.map(function (l) { return l.map(celluleCSV).join(";"); }).join("\r\n") + "\r\n";
   }
 
+  /* export des fiches au format des gabarits, pour un aller-retour avec
+     l'import (spec \u00A717). Nom de l'\u00E9l\u00E8ve : l'initiale suivie d'un point,
+     gard\u00E9e telle quelle \u00E0 l'import, donc m\u00EAme cl\u00E9. contexte :
+     {etablissements: {id: nom}, gererPeriscolaire} ; sans temps
+     p\u00E9riscolaires g\u00E9r\u00E9s, les colonnes R\u00E9cr\u00E9ation et Pause m\u00E9ridienne
+     restent vides. */
+  function nombreFr(x) { return String(Math.round((x || 0) * 100) / 100).replace(".", ","); }
+  function ligneExport(type, o, ctx) {
+    function nomEtab(id) { return (ctx.etablissements || {})[id] || id; }
+    if (type === "eleves") {
+      var n = M.decomposerNomCourt(o.nomCourt), peri = !!ctx.gererPeriscolaire;
+      var p = function (k) {
+        if (!peri) return "";
+        return (o.etatsPeriscolaires || {})[k] === "prioritaire" ? "prioritaire" : (o[k] ? "oui" : "non");
+      };
+      return [o.etablissementNom || nomEtab(o.etablissement), o.classe, n.prenom, n.nom, nombreFr(o.heuresInd), nombreFr(o.heuresMut),
+        p("recreation"), p("meridienne"), (o.besoins || []).join(" | "), o.debutNotif || "", o.finNotif || ""];
+    }
+    var noms = o.etablissementsNoms || [];
+    var etabs = (o.etablissements || []).map(function (id, i) { return noms[i] && M.idEtablissement(noms[i]) === id ? noms[i] : nomEtab(id); });
+    return [o.nom, o.prenom, nombreFr(o.quotite), o.email || "", etabs.join(" | "), (o.indisponibilites || []).join("; "), (o.formations || []).join(" | ")];
+  }
+  function exporterCSV(type, objets, contexte) {
+    var lignes = [TYPES[type].champs.map(function (c) { return c.entete; })].concat((objets || []).map(function (o) { return ligneExport(type, o, contexte || {}); }));
+    return "\uFEFF" + lignes.map(function (l) { return l.map(celluleCSV).join(";"); }).join("\r\n") + "\r\n";
+  }
+  // une ligne saisie dans l'application (cr\u00E9ation, saisie rapide) :
+  // m\u00EAmes r\u00E8gles que l'import. valeurs : {cle du champ: texte}.
+  function validerLigne(type, valeursLigne, options) { return VALIDATEURS[type](valeursLigne, options || {}); }
+
   function normaliserEntete(h) { return M.normaliser(txt(h).replace(/[_\-.'’\/]/g, " ")); }
 
   // entetes : première ligne du fichier ; memorisee : {cleChamp: entête
@@ -567,7 +597,7 @@ var PialImport = (function () {
     normaliserEntete: normaliserEntete, correspondanceAuto: correspondanceAuto,
     correspondanceAMemoriser: correspondanceAMemoriser, champsManquants: champsManquants,
     nombre: nombre, booleen: booleen, dateIso: dateIso, heure: heure,
-    apercu: apercu, planFusion: planFusion
+    apercu: apercu, planFusion: planFusion, exporterCSV: exporterCSV, validerLigne: validerLigne
   };
 })();
 

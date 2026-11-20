@@ -1518,6 +1518,123 @@ var PialTests = (function () {
     });
   }
 
+  /* =============== fiches : identité, classes, archivage, export (§17) =============== */
+  function testsFiches(t, M, I, env) {
+    var AN = "2026-2027";
+    function eleve(id, prenom, nom, classe, etab) {
+      var nc = M.nomCourt(prenom, nom);
+      return { id: id, annee: AN, nomCourt: nc, classe: classe, etablissement: M.idEtablissement(etab), etablissementNom: etab, cle: M.cleEleve(nc, classe, etab), parcours: id };
+    }
+    t("fiches : nom court décomposé", function () {
+      egal(M.decomposerNomCourt("Lucas M."), { prenom: "Lucas", nom: "M." });
+      egal(M.decomposerNomCourt("Marie  Lou Ma."), { prenom: "Marie Lou", nom: "Ma." });
+      egal(M.decomposerNomCourt("Zoé"), { prenom: "Zoé", nom: "" });
+    });
+    t("fiches : changer de classe ou de nom ne change que des champs", function () {
+      var e = eleve("el-1", "Lucas", "Martin", "5B", "Collège A");
+      var c = M.eleveModifie(e, { classe: " 4A " });
+      egal([c.id, c.parcours, c.classe, c.cle, c.nomCourt], ["el-1", "el-1", "4A", "lucas m.|4a|college a", "Lucas M."]);
+      egal(M.eleveModifie(e, { nom: "Moreau" }).nomCourt, "Lucas M.", "nom réduit à l'initiale");
+      egal(M.eleveModifie(e, { nom: "Ma." }).cle, "lucas ma.|5b|college a", "abréviation gardée");
+      var d = M.eleveModifie(e, { etablissement: M.idEtablissement("École B"), etablissementNom: "École B" });
+      egal([d.etablissement, d.etablissementNom, d.cle], ["ecole b", "École B", "lucas m.|5b|ecole b"]);
+      egal(e.classe, "5B", "fiche d'origine intacte");
+      var a = { id: "ae-1", nom: "Durand", prenom: "Sophie", cle: "durand|sophie" };
+      egal(M.aeshModifiee(a, { nom: "Durand-Petit" }).cle, "durand-petit|sophie");
+      egal(M.aeshModifiee(a, { nom: "Durand-Petit" }).id, "ae-1");
+    });
+    t("fiches : collision de clé (même année, archivées comprises)", function () {
+      var e1 = eleve("el-1", "Lucas", "Martin", "5B", "Collège A"), e2 = eleve("el-2", "Lucas", "Moreau", "4A", "Collège A");
+      e2.archiveLe = "2026-10-01";
+      vrai(M.collisionEleve([e1, e2], e1) === null, "pas de collision avec soi-même");
+      egal(M.collisionEleve([e1, e2], M.eleveModifie(e1, { classe: "4A" })).id, "el-2", "collision avec un élève archivé");
+      var autreAnnee = JSON.parse(JSON.stringify(e2)); autreAnnee.annee = "2025-2026"; autreAnnee.id = "el-3";
+      vrai(M.collisionEleve([e1, autreAnnee], M.eleveModifie(e1, { classe: "4A" })) === null, "autre année : pas de collision");
+      vrai(M.collisionEleve([e1], eleve("", "Lucas", "Ma.", "5B", "Collège A")) === null, "abréviation différente");
+      egal(M.collisionEleve([e1], eleve("", "LUCAS", "martin", "5b", "collège a")).id, "el-1", "nouvelle fiche, casse et accents ignorés");
+      var a = { id: "ae-1", nom: "Durand", prenom: "Sophie", cle: "durand|sophie" };
+      egal(M.collisionAesh([a], { nom: "DURAND", prenom: "sophie" }).id, "ae-1");
+      vrai(M.collisionAesh([a], { id: "ae-1", nom: "Durand", prenom: "Sophie" }) === null);
+    });
+    t("fiches : les cours suivent la classe et l'établissement", function () {
+      var e = eleve("el-1", "Lucas", "Martin", "5B", "Collège A");
+      var cours = [{ id: "c1", eleveId: "el-1", eleveCle: e.cle, classe: "5B", etablissement: "college a", etablissementNom: "Collège A" },
+        { id: "c2", eleveId: "el-9", eleveCle: "x", classe: "5B", etablissement: "college a" }];
+      egal(M.coursSuivantEleve(cours, e), [], "rien à changer");
+      var m = M.coursSuivantEleve(cours, M.eleveModifie(e, { classe: "4A" }));
+      egal(m.map(function (c) { return [c.id, c.classe, c.eleveCle]; }), [["c1", "4A", "lucas m.|4a|college a"]]);
+      egal(cours[0].classe, "5B", "cours d'origine intacts");
+    });
+    t("classes : ordre par niveau puis ordre naturel", function () {
+      egal(["4A", "6B", "6A10", "6A2", "3e1", "5 C", "Ulis"].sort(M.comparerClasses), ["6A2", "6A10", "6B", "5 C", "4A", "3e1", "Ulis"]);
+      egal(["CM2", "CP", "CE1", "GS"].sort(M.comparerClasses), ["GS", "CP", "CE1", "CM2"]);
+    });
+    t("classes : référentiel construit à partir des données, table enregistrée prioritaire", function () {
+      var eleves = [eleve("el-1", "A", "B", "5b", "Collège A"), eleve("el-2", "C", "D", "6A", "Collège A"), eleve("el-3", "E", "F", "CE2", "École B")];
+      var cours = [{ etablissement: "college a", classe: "4C" }, { etablissement: "college a", classe: " 6a " }];
+      egal(M.referentielClasses({}, eleves, cours), { "college a": ["6A", "5b", "4C"], "ecole b": ["CE2"] });
+      egal(M.referentielClasses({ "college a": ["5B", "3A"] }, eleves, cours)["college a"], ["6A", "5B", "4C", "3A"], "orthographe de la table gardée, classe sans élève gardée");
+    });
+    t("archivage : données du moteur sans les fiches archivées", function () {
+      var e1 = eleve("el-1", "A", "B", "5B", "Collège A"), e2 = eleve("el-2", "C", "D", "5B", "Collège A");
+      var a1 = { id: "ae-1" }, a2 = { id: "ae-2", archiveLe: "2026-11-01" };
+      var d = { eleves: [e1, e2], aesh: [a1, a2], cours: [{ id: "c1", eleveId: "el-1" }, { id: "c2", eleveId: "el-2" }],
+        affectations: [{ id: "x", aeshId: "ae-1", eleves: ["el-1", "el-2"] }, { id: "y", aeshId: "ae-2", eleves: ["el-1"] }, { id: "z", aeshId: "ae-1", eleves: ["el-2"] }] };
+      vrai(M.donneesActives({ eleves: [e1], aesh: [a1] }).eleves.length === 1, "rien d'archivé : inchangé");
+      e2.archiveLe = "2026-11-02";
+      var r = M.donneesActives(d);
+      egal(r.eleves.map(function (e) { return e.id; }), ["el-1"]);
+      egal(r.aesh.map(function (a) { return a.id; }), ["ae-1"]);
+      egal(r.cours.map(function (c) { return c.id; }), ["c1"]);
+      egal(r.affectations, [{ id: "x", aeshId: "ae-1", eleves: ["el-1"] }], "l'élève archivé quitte le groupe ; AESH archivée : affectation retirée");
+      egal(d.affectations[0].eleves, ["el-1", "el-2"], "données d'origine intactes");
+      vrai(M.estArchive(e2) && !M.estArchive(e1) && M.actifs([e1, e2]).length === 1);
+    });
+    t("archivage et suppression : affectations, versions, cours et exclusions touchés", function () {
+      var d = { cours: [{ eleveId: "el-1" }, { eleveId: "el-1" }, { eleveId: "el-2" }], aesh: [{ id: "ae-1", elevesExclus: ["el-1"] }, { id: "ae-2" }],
+        affectations: [
+          { id: "a", version: 0, aeshId: "ae-1", eleves: ["el-1"] },
+          { id: "b", version: 0, aeshId: "ae-2", eleves: ["el-1", "el-2"] },
+          { id: "c", version: 0, aeshId: "ae-2", eleves: ["el-2"] },
+          { id: "v1|a", version: 1, aeshId: "ae-1", eleves: ["el-1"] },
+          { id: "v3|b", version: 3, aeshId: "ae-2", eleves: ["el-1", "el-2"] }] };
+      var r = M.effetsRetrait("eleves", ["el-1"], d);
+      egal(r.supprimees, ["a"]); egal(r.modifiees.map(function (a) { return [a.id, a.eleves]; }), [["b", ["el-2"]]]);
+      egal([r.mutualisees, r.versions, r.cours, r.exclusions], [1, [1, 3], 2, 1]);
+      var s = M.effetsRetrait("aesh", ["ae-2"], d);
+      egal([s.supprimees, s.modifiees.length, s.versions], [["b", "c"], 0, [3]]);
+    });
+    t("export CSV : en-têtes et formats des gabarits", function () {
+      var e = eleve("el-1", "Lucas", "Martin", "5B", "Collège Paul Gauthier");
+      e.heuresInd = 6; e.heuresMut = 1.5; e.recreation = true; e.meridienne = false; e.etatsPeriscolaires = { meridienne: "prioritaire" };
+      e.besoins = ["Secrétaire, scripteur", "Aide aux déplacements"]; e.debutNotif = "2026-09-01"; e.finNotif = "";
+      var csv = I.exporterCSV("eleves", [e], { gererPeriscolaire: true });
+      egal(csv.charAt(0), "﻿", "BOM");
+      egal(csv.slice(1).split("\r\n"), ["Etablissement;Classe;Prenom;Nom;Heures_individuelles;Heures_mutualisees;Recreation;Pause_meridienne;Besoins;Debut_notification;Fin_notification",
+        "Collège Paul Gauthier;5B;Lucas;M.;6;1,5;oui;prioritaire;Secrétaire, scripteur | Aide aux déplacements;2026-09-01;", ""]);
+      egal(I.exporterCSV("eleves", [e], {}).split("\r\n")[1].split(";").slice(6, 8), ["", ""], "temps périscolaires non gérés : colonnes vides");
+      var a = { nom: "Durand", prenom: "Sophie", quotite: 20.5, email: "", etablissements: ["college a", "ecole b"], etablissementsNoms: ["Collège A"],
+        indisponibilites: ["mer", "ven-pm"], formations: ["TSA", "LSF"] };
+      egal(I.exporterCSV("aesh", [a], { etablissements: { "college a": "Collège A", "ecole b": "École B" } }).split("\r\n")[1],
+        "Durand;Sophie;20,5;;Collège A | École B;mer; ven-pm;TSA | LSF".replace("mer; ven-pm", '"mer; ven-pm"'), "point-virgule protégé par des guillemets");
+    });
+    t("export CSV : aller-retour avec l'import sur les exemples", function () {
+      return chargerExemples(env, { renfort: true }).then(function (d) {
+        var noms = {};
+        d.etablissements.forEach(function (e) { noms[e.id] = e.nom; });
+        [["eleves", d.eleves, { annee: AN, gererPeriscolaire: true }], ["aesh", d.aesh, { annee: AN }]].forEach(function (x) {
+          var type = x[0], fiches = M.attribuerIdentifiants(type, x[1], []);
+          var lu = I.analyserCSV(I.exporterCSV(type, fiches, { etablissements: noms, gererPeriscolaire: true }).slice(1), ";");
+          var ap = I.apercu(type, lu.slice(1), I.correspondanceAuto(type, lu[0]), x[2]);
+          egal([ap.erreurs.length, ap.collisions.length, ap.valides.length], [0, 0, fiches.length], type + " : tout est relu");
+          var relu = M.attribuerIdentifiants(type, ap.valides, fiches);
+          var plan = I.planFusion(fiches, relu, "id", "maj");
+          egal([plan.ajouts.length, plan.modifies.length, plan.inchanges.length], [0, 0, fiches.length], type + " : aucune modification au réimport");
+        });
+      });
+    });
+  }
+
   /* =============== exécution =============== */
   function executer(env) {
     var tests = [];
@@ -1528,6 +1645,7 @@ var PialTests = (function () {
     if (env.importFichiers) { groupeCourant = "import"; testsImport(t, env.importFichiers, env.modele, env.zip, env); }
     if (env.moteur && env.importFichiers) { groupeCourant = "moteur"; testsMoteur(t, env.moteur, env.modele, env); }
     if (env.moteur && env.importFichiers) { groupeCourant = "migration"; testsMigration(t, env.moteur, env.modele, env.importFichiers, env); }
+    if (env.importFichiers) { groupeCourant = "fiches"; testsFiches(t, env.modele, env.importFichiers, env); }
     var bilan = { reussis: 0, echecs: [], ignores: 0, lignes: [] };
     return tests.reduce(function (p, test) {
       return p.then(function () {

@@ -966,22 +966,6 @@ var PialTests = (function () {
       a.ignorerIndispos = false;
       egal(proposees(P.proposer(d)).length, 1, "réglage global décoché : même effet pour toutes");
     });
-    t("moteur : à jour égal, un créneau où une AESH de l'élève est libre", function () {
-      var m = mini(), e = m.eleve("Lucas", 2), autre = m.eleve("Emma", 1);
-      m.cours(e, "lundi", "08:00", "08:55"); m.cours(e, "mardi", "08:00", "08:55"); m.cours(e, "mercredi", "08:00", "08:55");
-      m.cours(autre, "mardi", "08:00", "08:55");
-      // « a » accompagne déjà Lucas le lundi et Emma le mardi à 08:00
-      var pins = [aff("a", m.etab, "lundi", "08:00", "08:55", "individuel", [e]), aff("a", m.etab, "mardi", "08:00", "08:55", "individuel", [autre])];
-      var d = m.donnees([aeshMini("a", 24), aeshMini("b", 24)], pins);
-      function choix() { return proposees(P.proposer(d)).map(function (x) { return x.aeshId + " " + x.creneau.jour; }); }
-      var avant = P.OPTIONS.aeshConnue;
-      try {
-        P.OPTIONS.aeshConnue = false;
-        egal(choix(), ["b mardi"], "sans le levier : ordre chronologique, « a » occupée, 2e AESH");
-        P.OPTIONS.aeshConnue = true;
-        egal(choix(), ["a mercredi"], "avec le levier : le mercredi, où « a » est libre");
-      } finally { P.OPTIONS.aeshConnue = avant; }
-    });
     t("moteur : passe d'échanges — élève ramené de 4 à 3 AESH", function () {
       var m = mini(), L = m.eleve("Lucas", 4), R = m.eleve("Rose", 1), S = m.eleve("Sami", 1), T2 = m.eleve("Tom", 1);
       ["08:00", "09:00", "10:00", "11:00"].forEach(function (h) { m.cours(L, "lundi", h, h.replace(":00", ":55")); });
@@ -1032,13 +1016,6 @@ var PialTests = (function () {
       vrai(c2.a.raisons.indexOf("comble un trou le lundi") > -1, c2.a.raisons.join(" ; "));
       vrai(c2.a.raisons.indexOf("journée de moins de 2 h le lundi") < 0 && c2.a.raisons.indexOf("complète une journée courte le lundi") > -1, c2.a.raisons.join(" ; "));
       vrai(c2.a.score > c2.b.score, "a d'abord");
-      // ancien critère, pour les mesures
-      var avant = P.OPTIONS.trous;
-      try {
-        P.OPTIONS.trous = false;
-        var c3 = classer([aff("a", m.etab, "lundi", "08:00", "08:55", "individuel", [autre])], "14:00");
-        vrai(c3.a.raisons.some(function (r) { return /^créneau isolé/.test(r); }) && !c3.b.raisons.some(function (r) { return /journée/.test(r); }), c3.a.raisons.join(" ; "));
-      } finally { P.OPTIONS.trous = avant; }
     });
     t("moteur : passe d'échanges sur les trous", function () {
       var m = mini(), L = m.eleve("Lucas", 1), R = m.eleve("Rose", 1), S = m.eleve("Sami", 1), T2 = m.eleve("Tom", 1);
@@ -1186,6 +1163,48 @@ var PialTests = (function () {
         var merid = affsDe(louis).filter(function (a) { return a.periscolaire === "meridienne"; });
         vrai(merid.length >= 4, "cas 8 : pause méridienne couverte chaque jour (" + merid.length + ")");
         egal(r.periscolaireNonCouvert.filter(function (p) { return p.eleveId === louis.id && p.type === "meridienne"; }), []);
+      });
+    });
+    t("moteur (exemples) : périscolaires prioritaires couverts sur les 3 jeux, 1 ou 12 ordres", function () {
+      return Promise.all([charger(), chargerExemples(env, { renfort: true })]).then(function (x) {
+        var d = x[0].d;
+        var doublees = avecAffectations(d, []);
+        doublees.aesh = d.aesh.concat(d.aesh.map(function (a) { var c = JSON.parse(JSON.stringify(a)); c.id = a.id + "-bis"; c.nom = a.nom + " bis"; return c; }));
+        var louis = eleveNomme("Louis I.");
+        [["pénurie", d], ["renfort", x[1]], ["AESH doublées", doublees]].forEach(function (j) {
+          [P.proposer(j[1]), P.proposerMeilleur(j[1], 12)].forEach(function (res, i) {
+            var lib = j[0] + (i ? ", 12 ordres" : ", 1 ordre");
+            egal(res.rapport.periscolaireNonCouvert.filter(function (p) { return p.prioritaire; }), [], lib + " : aucun prioritaire non couvert");
+            egal(res.rapport.qualite.periPrioNonCouvert, 0, lib);
+            var merid = res.affectations.filter(function (a) { return a.periscolaire === "meridienne" && a.eleves.indexOf(louis.id) > -1; });
+            vrai(merid.length >= 4, lib + " : pause méridienne de Louis I. couverte (" + merid.length + ")");
+          });
+        });
+      });
+    });
+    t("moteur (exemples) : plusieurs ordres de départage — meilleur résultat, déterministe", function () {
+      return charger().then(function (x) {
+        var ids = x.d.aesh.map(function (a) { return a.id; });
+        egal(P.ordreAesh(ids, 0), ids.slice().sort(), "ordre 0 : identifiants triés");
+        egal(P.ordreAesh(ids, 3), P.ordreAesh(ids.slice().reverse(), 3), "permutation indépendante de l'ordre des lignes");
+        egal(P.ordreAesh(ids, 3).slice().sort(), ids.slice().sort(), "permutation");
+        vrai(JSON.stringify(P.ordreAesh(ids, 1)) !== JSON.stringify(P.ordreAesh(ids, 2)), "ordres différents");
+        var m = P.proposerMeilleur(x.d, 6);
+        egal(m.rapport.ordres.essais.length, 6);
+        vrai(P.comparerQualite(m.rapport.qualite, x.res.rapport.qualite) <= 0, "au moins aussi bon que l'ordre 0");
+        m.rapport.ordres.essais.forEach(function (e) { vrai(P.comparerQualite(m.rapport.qualite, e.qualite) <= 0, "meilleur que l'ordre " + e.ordre); });
+        egal(JSON.stringify(P.proposerMeilleur(x.d, 6)), JSON.stringify(m), "relance identique");
+        var melange = avecAffectations(x.d, []);
+        melange.aesh = x.d.aesh.slice().reverse();
+        egal(JSON.stringify(P.proposerMeilleur(melange, 6).affectations), JSON.stringify(m.affectations), "ordre des lignes du fichier sans effet");
+        egal(violationsMoteur(M, x.d, m), []);
+        egal(JSON.stringify(P.proposerMeilleur(x.d, 1).affectations), JSON.stringify(x.res.affectations), "n = 1 : résultat d'un seul ordre");
+        // critères dans l'ordre : la couverture passe avant tout le reste
+        var q = { couvert: 10, periPrioNonCouvert: 0, elevesPlusDe3: 0, trous: 0, courtes: 0, periNormalNonCouvert: 0 };
+        function avec(k, v) { var o = JSON.parse(JSON.stringify(q)); o[k] = v; return o; }
+        vrai(P.comparerQualite(avec("couvert", 11), q) < 0 && P.comparerQualite(avec("periPrioNonCouvert", 1), avec("elevesPlusDe3", 5)) > 0
+          && P.comparerQualite(avec("elevesPlusDe3", 1), avec("trous", 9)) > 0 && P.comparerQualite(avec("trous", 1), avec("courtes", 9)) > 0
+          && P.comparerQualite(avec("courtes", 1), avec("periNormalNonCouvert", 9)) > 0 && P.comparerQualite(q, q) === 0, "ordre des critères");
       });
     });
     t("moteur (exemples) : le renfort de deux AESH fait remonter la couverture (scénario)", function () {

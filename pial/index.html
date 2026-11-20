@@ -196,6 +196,8 @@ label.case input{width:auto}
 }
 .bandeau-synthese .bs-chiffre strong{font-family:var(--serif);font-size:18px;color:var(--encre)}
 .sep-copie{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:pre}
+.progression-moteur{display:flex;align-items:center;gap:14px;padding:10px 16px;margin:-8px 0 18px;font-size:13.5px}
+.progression-moteur progress{flex:1;height:10px;accent-color:var(--encre)}
 .bandeau-synthese .bs-sep{color:var(--seyes);margin:0 -10px}
 .bandeau-synthese .bs-manque{color:var(--sous)!important}
 .bandeau-synthese .bs-marge{color:var(--couvert)!important}
@@ -606,6 +608,10 @@ button.ga-eleve:hover,button.ga-eleve:focus-visible{text-decoration-color:var(--
   <!-- ============ VUE : AFFECTATIONS ============ -->
   <section id="vue-affectations" class="masque">
     <div class="bandeau-synthese" id="aff-synthese"></div>
+    <div class="progression-moteur carte" id="aff-progression" hidden>
+      <span id="aff-progression-texte"></span>
+      <progress id="aff-progression-barre" max="1" value="0"></progress>
+    </div>
     <div class="aff-disposition" id="aff-disposition">
       <div class="aff-principal">
         <div class="carte">
@@ -902,6 +908,8 @@ button.ga-eleve:hover,button.ga-eleve:focus-visible{text-decoration-color:var(--
       <div class="champ" style="max-width:260px"><label for="reg-pause">Pause repas minimale des AESH (minutes)</label><input type="number" id="reg-pause" min="0" max="120" step="5"></div>
       <div class="champ" style="max-width:420px"><label for="reg-ecart">Écart maximal entre deux accompagnements d'une AESH (heures)</label><input type="number" id="reg-ecart" min="0.5" max="8" step="0.5">
         <p class="aide">Au-delà, la proposition évite de laisser un trou dans la journée de l'AESH (pénalité, pas une interdiction). 2 h par défaut.</p></div>
+      <div class="champ" style="max-width:420px"><label for="reg-ordres">Nombre d'ordres de départage essayés par « Proposer »</label><input type="number" id="reg-ordres" min="1" max="50" step="1">
+        <p class="aide">Le moteur départage les AESH à égalité dans un certain ordre ; il essaie plusieurs ordres et garde le meilleur résultat (heures couvertes d'abord). 12 par défaut ; 1 = plus rapide. Le résultat est le même à chaque relance.</p></div>
       <div class="actions"><button type="button" class="btn btn-vide" id="reg-enregistrer-regles">Enregistrer</button></div>
     </div>
 

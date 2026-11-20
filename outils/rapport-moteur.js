@@ -10,9 +10,11 @@
    Les fichiers de exemples/ sont importés comme dans l'interface ; les
    horaires des collèges sont ceux de l'étape 6 de SCENARIO-DEMO.md. Le
    moteur est lancé deux fois (contrôle du déterminisme), puis sur un jeu
-   agrandi ×4 pour mesurer le temps de calcul. Une dernière section compare
-   trois capacités : les exemples (pénurie), les exemples + le renfort
-   (FICTIF_aesh_renfort.csv), et les AESH doublées (capacité suffisante).
+   agrandi ×4 pour mesurer le temps de calcul. Les dernières sections
+   comparent trois capacités — les exemples (pénurie), les exemples + le
+   renfort (FICTIF_aesh_renfort.csv), les AESH doublées (capacité
+   suffisante) — avec ou sans passes d'amélioration, puis avec un seul
+   ordre de départage des AESH ou le meilleur de NB_ORDRES.
    ===================================================================== */
 
 var fs = require("fs");
@@ -30,7 +32,7 @@ var env = {
 function h(x) { return (Math.round(x * 100) / 100).toString().replace(".", ",") + " h"; }
 function pct(a, b) { return b ? Math.round(100 * a / b) + " %" : "—"; }
 function chrono(fn) { var t0 = process.hrtime.bigint(); var r = fn(); return { r: r, ms: Number(process.hrtime.bigint() - t0) / 1e6 }; }
-var NB_PERMUTATIONS = 12;
+var NB_ORDRES = 12;
 function ms(x) { return Math.round(x) + " ms"; }
 // nombre d'AESH différentes par élève : {0: n, 1: n, …} et élèves à 4 ou plus
 function aeshParEleve(d, affs) {
@@ -139,71 +141,44 @@ Promise.all([T.chargerExemples(env), T.chargerExemples(env, { renfort: true })])
       + (ap.plus.length ? ap.plus.length + " : " + ap.plus.join(", ") : "0") + " |");
   });
   l.push("");
-  l.push("### Variantes : levier « AESH connue libre » et passe d'échanges");
+  l.push("### Passes d'amélioration");
   l.push("");
-  l.push("Élèves à 4 AESH ou plus / heures notifiées couvertes. Réglage retenu : " + JSON.stringify(P.OPTIONS) + ".");
+  l.push("Un seul ordre de départage (identifiants triés). Cellule : heures notifiées couvertes · trous de plus de " + (r.ecartMax / 60)
+    + " h (A + B) · journées de moins de " + (r.journeeMin / 60) + " h (A + B) · élèves à 4 AESH ou plus.");
   l.push("");
-  l.push("| Variante | Exemples (pénurie) | Exemples + renfort | AESH doublées |");
+  l.push("| Passes | Exemples (pénurie) | Exemples + renfort | AESH doublées |");
   l.push("|---|---|---|---|");
-  var retenu = JSON.parse(JSON.stringify(P.OPTIONS));
-  [["aucun", false, false], ["levier seul", true, false], ["échanges seuls", false, true], ["les deux", true, true]].forEach(function (v) {
-    P.OPTIONS.aeshConnue = v[1]; P.OPTIONS.echanges = v[2];
-    l.push("| " + v[0] + " | " + [d, jeux[1], doublees].map(function (x) {
-      var res = P.proposer(x), rr = res.rapport, ap = aeshParEleve(x, res.affectations);
-      return ap.plus.length + " / " + h(rr.heures.individuel.couvert + rr.heures.mutualise.couvert) + (rr.nbEchanges ? " (" + rr.nbEchanges + " mouvements)" : "");
-    }).join(" | ") + " |");
-  });
-  P.OPTIONS.aeshConnue = retenu.aeshConnue; P.OPTIONS.echanges = retenu.echanges;
-  l.push("");
-  l.push("### Trous et journées courtes : avant / après");
-  l.push("");
-  l.push("Par jeu : heures notifiées couvertes · trous de plus de " + (r.ecartMax / 60) + " h (A + B, toutes AESH) · journées de moins de "
-    + (r.journeeMin / 60) + " h de présence (A + B) · élèves à 4 AESH ou plus. « Avant » = phase 2 (critère « créneau isolé » −10, sans passe sur les trous).");
-  l.push("Le glouton est sensible à l'ordre de départage des AESH (identifiants) : la seconde table donne la moyenne sur " + NB_PERMUTATIONS
-    + " permutations des identifiants des AESH, plus représentative qu'un seul jeu.");
-  var poidsCourte = P.POIDS.journeeCourte, opt = JSON.parse(JSON.stringify(P.OPTIONS));
-  var variantes = [
-    ["avant (phase 2)", { trous: false, colleConnue: false, echangesTrous: false }, 0],
-    ["passe sur les trous seule", { trous: false, colleConnue: false, echangesTrous: true }, poidsCourte],
-    ["score : trou −30", { trous: true, colleConnue: false, echangesTrous: false }, 0],
-    ["score : trou −30, journée courte −10", { trous: true, colleConnue: false, echangesTrous: false }, poidsCourte],
-    ["score trou + journée courte, passe sur les trous", { trous: true, colleConnue: false, echangesTrous: true }, poidsCourte],
-    ["idem + créneau collé à une AESH connue", { trous: true, colleConnue: true, echangesTrous: true }, poidsCourte]
-  ];
-  function regler(v) { Object.keys(v[1]).forEach(function (k) { P.OPTIONS[k] = v[1][k]; }); P.POIDS.journeeCourte = v[2]; }
-  function mesure(x) {
-    var res = P.proposer(x), rr = res.rapport;
-    return { couvert: rr.heures.individuel.couvert + rr.heures.mutualise.couvert, trous: rr.trous.A + rr.trous.B,
-      courtes: rr.courtes.A + rr.courtes.B, plus: aeshParEleve(x, res.affectations).plus.length, violations: rr.violations.length };
-  }
-  function cellule(m, dec) {
+  var opt = JSON.parse(JSON.stringify(P.OPTIONS));
+  function cellule(q, dec) {
     function f(x) { return dec ? x.toFixed(1).replace(".", ",") : String(x); }
-    return h(m.couvert) + " · " + f(m.trous) + " trous · " + f(m.courtes) + " courtes · " + f(m.plus) + (m.violations ? " · **" + m.violations + " violation(s)**" : "");
+    return h(q.couvert) + " · " + f(q.trous) + " trous · " + f(q.courtes) + " courtes · " + f(q.elevesPlusDe3);
   }
-  // permutation k des identifiants des AESH (noms inchangés)
-  function permuter(x, k) {
-    var o = copie(x, {});
-    o.aesh = x.aesh.map(function (a, i) { var c = JSON.parse(JSON.stringify(a)); c.id = String.fromCharCode(97 + ((i * 7 + k * 5) % 26)) + ((i * 13 + k * 11) % 97) + "|" + a.id; return c; });
-    return o;
-  }
-  [["Exemples tels quels", false], ["Moyenne sur " + NB_PERMUTATIONS + " permutations", true]].forEach(function (t) {
-    l.push("");
-    l.push("**" + t[0] + "**");
-    l.push("");
-    l.push("| Variante | Exemples (pénurie) | Exemples + renfort | AESH doublées |");
-    l.push("|---|---|---|---|");
-    variantes.forEach(function (v) {
-      regler(v);
-      l.push("| " + v[0] + (JSON.stringify(v[1]) === JSON.stringify({ trous: opt.trous, colleConnue: opt.colleConnue, echangesTrous: opt.echangesTrous }) ? " (retenu)" : "") + " | "
-        + [d, jeux[1], doublees].map(function (x) {
-          if (!t[1]) return cellule(mesure(x), false);
-          var s = { couvert: 0, trous: 0, courtes: 0, plus: 0, violations: 0 };
-          for (var k = 0; k < NB_PERMUTATIONS; k++) { var m = mesure(permuter(x, k)); Object.keys(s).forEach(function (c) { s[c] += m[c]; }); }
-          Object.keys(s).forEach(function (c) { if (c !== "violations") s[c] /= NB_PERMUTATIONS; });
-          return cellule(s, true);
-        }).join(" | ") + " |");
-    });
+  [["aucune", false, false], ["nombre d'AESH par élève", true, false], ["nombre d'AESH par élève, puis trous (retenu)", true, true]].forEach(function (v) {
+    P.OPTIONS.echanges = v[1]; P.OPTIONS.echangesTrous = v[2];
+    l.push("| " + v[0] + " | " + [d, jeux[1], doublees].map(function (x) { return cellule(P.proposer(x).rapport.qualite, false); }).join(" | ") + " |");
   });
-  P.POIDS.journeeCourte = poidsCourte; Object.keys(opt).forEach(function (k) { P.OPTIONS[k] = opt[k]; });
+  Object.keys(opt).forEach(function (k) { P.OPTIONS[k] = opt[k]; });
+  l.push("");
+  l.push("### Plusieurs ordres de départage des AESH");
+  l.push("");
+  l.push("Le glouton départage les égalités de score par l'ordre des AESH. « Proposer » essaie " + NB_ORDRES
+    + " ordres (identifiants triés, puis permutations à graine fixe) et garde le meilleur : heures couvertes, puis périscolaire prioritaire couvert, élèves à plus de 3 AESH, trous, journées courtes, périscolaire normal couvert.");
+  l.push("Cellule : heures notifiées couvertes · trous · journées courtes · élèves à 4 AESH ou plus · périscolaire prioritaire non couvert / normal non couvert.");
+  l.push("");
+  l.push("| Jeu | Premier ordre | Moyenne des " + NB_ORDRES + " ordres | Meilleur (retenu) | Ordre retenu | Temps : 1 ordre / " + NB_ORDRES + " ordres |");
+  l.push("|---|---|---|---|---|---|");
+  function celluleOrdres(q, dec) {
+    function f(x) { return dec ? x.toFixed(1).replace(".", ",") : String(x); }
+    return cellule(q, dec) + " · " + h(q.periPrioNonCouvert) + " / " + h(q.periNormalNonCouvert);
+  }
+  [["Exemples (pénurie)", d], ["Exemples + renfort", jeux[1]], ["AESH doublées", doublees], ["Agrandi ×4", grand]].forEach(function (x) {
+    var t0 = process.hrtime.bigint(), un = P.proposer(x[1]), t1 = process.hrtime.bigint(), m = P.proposerMeilleur(x[1], NB_ORDRES), t2 = process.hrtime.bigint();
+    var moy = {};
+    Object.keys(m.rapport.qualite).forEach(function (k) { moy[k] = 0; });
+    m.rapport.ordres.essais.forEach(function (e) { Object.keys(moy).forEach(function (k) { moy[k] += e.qualite[k] / NB_ORDRES; }); });
+    l.push("| " + x[0] + " | " + celluleOrdres(un.rapport.qualite, false) + " | " + celluleOrdres(moy, true) + " | " + celluleOrdres(m.rapport.qualite, false)
+      + " | n° " + (m.rapport.ordres.retenu + 1) + " | " + ms(Number(t1 - t0) / 1e6) + " / " + ms(Number(t2 - t1) / 1e6)
+      + (m.rapport.violations.length ? " · **" + m.rapport.violations.length + " violation(s)**" : "") + " |");
+  });
   console.log(l.join("\n"));
 }).catch(function (err) { console.error(err); process.exitCode = 1; });

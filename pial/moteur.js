@@ -39,34 +39,20 @@ var PialMoteur = (function () {
     equilibrageMax: 15,        // proportionnel à la part de quotité restante
     trou: -30,                 // par trou de plus de reglages.ecartMax créé (bonus s'il en comble un)
     journeeCourte: -10,        // par journée de moins de reglages.journeeMin créée (bonus si complétée)
-    isole: -10,                // ancien critère « créneau isolé » (OPTIONS.trous = false, mesures seulement)
     tropAesh: -25,             // par AESH au-delà du seuil, cumulable (4e : -25, 5e : -50…)
     ecartColleMin: 15,         // « collé » : au plus 15 min d'écart
-    trouIsoleMin: 120,         // « isolé » : plus de 2 h jusqu'au créneau le plus proche
     maxAeshParEleve: 3,
     nouvelleAeshEchange: 40    // passe sur les trous : coût d'une AESH de plus pour un élève (= continuité)
   };
 
-  // variantes de l'algorithme (spec §14), activables pour les mesures
+  // passes d'amélioration après le glouton, désactivables pour les
+  // mesures (outils/rapport-moteur.js). Les variantes écartées
+  // (« AESH connue libre », « créneau collé à une AESH connue », ancien
+  // critère « créneau isolé ») sont décrites et mesurées dans les notes de
+  // travail de la phase 2.
   var OPTIONS = {
-    // à jour égal, préférer un créneau où une AESH de l'élève est libre.
-    // Désactivé : moins d'élèves à 4 AESH ou plus, mais la couverture baisse
-    // (303 h → 269,5 h sur les exemples) : les AESH de plusieurs
-    // établissements restent là où elles ont commencé (notes de la phase 2)
-    aeshConnue: false,
-    echanges: true,    // passe d'échanges après le glouton
-    // score des trous et journées courtes (écart compté) ; false = ancien
-    // critère « créneau isolé » (−10 au-delà de 2 h), pour les mesures
-    trous: true,
-    // à jour égal, préférer un créneau collé (≤ ecartColleMin) à un
-    // créneau d'une AESH qui accompagne déjà l'élève. Désactivé : sur 12
-    // permutations des AESH, la couverture moyenne baisse en pénurie
-    // (301,3 h → 297 h) pour un gain sur les trous que la passe d'échanges
-    // obtient sans perte (notes de travail, phase 2 bis)
-    colleConnue: false,
-    // passe d'échanges sur les trous et journées courtes, après la passe
-    // sur le nombre d'AESH par élève
-    echangesTrous: true
+    echanges: true,      // limiter le nombre d'AESH par élève
+    echangesTrous: true  // réduire les trous et les journées courtes
   };
 
   // §5.3.2.3 : lien besoin → matières. Aucune table n'est définie (spec
@@ -126,9 +112,20 @@ var PialMoteur = (function () {
   /* =============== état courant du calcul =============== */
   // index tenus à jour à chaque affectation : affectations et charge A/B
   // par AESH, couverture et créneaux occupés par élève.
-  function creerEtat(ctx) {
-    var et = { ctx: ctx, affsParAesh: {}, charge: {}, couv: {}, occupe: {}, aeshParEleve: {} };
+  // ordre : identifiants des AESH dans l'ordre de départage des égalités
+  // de score (par défaut, ordre alphabétique des identifiants)
+  function creerEtat(ctx, ordre) {
+    var et = { ctx: ctx, affsParAesh: {}, charge: {}, couv: {}, occupe: {}, aeshParEleve: {}, rang: {} };
     et.aeshTriees = ctx.aesh.slice().sort(parId);
+    if (ordre) {
+      var pos = {};
+      ordre.forEach(function (id, i) { pos[id] = i; });
+      et.aeshTriees.sort(function (a, b) {
+        var pa = a.id in pos ? pos[a.id] : 1e9, pb = b.id in pos ? pos[b.id] : 1e9;
+        return (pa - pb) || cmp(a.id, b.id);
+      });
+    }
+    et.aeshTriees.forEach(function (a, i) { et.rang[a.id] = i; });
     ctx.eleves.forEach(function (e) {
       et.couv[e.id] = { individuel: { A: 0, B: 0 }, mutualise: { A: 0, B: 0 }, periscolaire: { A: 0, B: 0 }, jours: {} };
       et.occupe[e.id] = [];
@@ -233,7 +230,7 @@ var PialMoteur = (function () {
     });
     // voisin du même établissement ; avec le critère des trous, seulement à
     // moins de ecartMax (au-delà, le voisin ne rapproche pas la journée)
-    var proche = function (ecart) { return !OPTIONS.trous || ecart <= ctx.reglages.ecartMax; };
+    var proche = function (ecart) { return ecart <= ctx.reglages.ecartMax; };
     if ((prec && prec.etab === c.etab && proche(deb - prec.fin)) || (suiv && suiv.etab === c.etab && proche(suiv.debut - fin))) {
       score += P.memeEtablissement; raisons.push("même établissement le " + c.jour);
     }
@@ -243,9 +240,8 @@ var PialMoteur = (function () {
     if (ecarts.length) {
       var mini = Math.min.apply(null, ecarts);
       if (mini <= P.ecartColleMin) { score += P.colle; raisons.push("journée compacte"); }
-      else if (!OPTIONS.trous && mini > P.trouIsoleMin) { score += P.isole; raisons.push("créneau isolé (trou de plus de " + (P.trouIsoleMin / 60) + " h)"); }
     }
-    if (OPTIONS.trous) {
+    {
       var dj = deltaJournee(et, aesh, c, semaines);
       if (dj.trous) {
         score += P.trou * dj.trous;
@@ -304,7 +300,7 @@ var PialMoteur = (function () {
       var ev = evaluer(et, a, u, semaines);
       res.candidats.push({ aeshId: a.id, score: ev.score, raisons: ev.raisons });
     });
-    res.candidats.sort(function (x, y) { return (y.score - x.score) || cmp(x.aeshId, y.aeshId); });
+    res.candidats.sort(function (x, y) { return (y.score - x.score) || (et.rang[x.aeshId] - et.rang[y.aeshId]); });
     res.meilleur = res.candidats[0] || null;
     return res;
   }
@@ -385,13 +381,13 @@ var PialMoteur = (function () {
   }
 
   /* =============== proposition =============== */
-  function proposer(donnees) {
+  function proposer(donnees, ordre) {
     donnees = donnees || {};
     var epinglees = (donnees.affectations || []).filter(function (a) { return a.epinglee; });
     var ctx = M.contexte({ etablissements: donnees.etablissements, eleves: donnees.eleves, aesh: donnees.aesh,
       cours: donnees.cours, affectations: epinglees, reglages: donnees.reglages });
     var annee = donnees.annee || (ctx.eleves[0] && ctx.eleves[0].annee) || "";
-    var et = creerEtat(ctx);
+    var et = creerEtat(ctx, ordre);
     // 1. ce que couvrent déjà les affectations épinglées
     epinglees.slice().sort(parId).forEach(function (a) { ajouter(et, a); });
     var dem = preparer(ctx);
@@ -410,29 +406,6 @@ var PialMoteur = (function () {
       return n > 0 ? moy(et.couv[e.id][modalite]) / n : 1;
     }
     function chargeJour(e, jour) { return et.couv[e.id].jours[jour] || 0; }
-    // 0 si une AESH déjà affectée à l'un de ces élèves peut prendre le créneau
-    function connueLibre(ids, u, semaines) {
-      if (!OPTIONS.aeshConnue) return 0;
-      var connues = {};
-      ids.forEach(function (id) { Object.keys(et.aeshParEleve[id] || {}).forEach(function (a) { connues[a] = true; }); });
-      return Object.keys(connues).sort().some(function (a) { return ctx._aesh[a] && !obstacle(et, ctx._aesh[a], u, semaines); }) ? 0 : 1;
-    }
-    // 0 si le créneau est collé (écart ≤ ecartColleMin, mêmes semaines) à
-    // un créneau d'une AESH qui accompagne déjà l'un de ces élèves
-    function colleConnue(ids, creneau, semaines) {
-      if (!OPTIONS.colleConnue) return 0;
-      var connues = {}, d = mn(creneau.debut), f = mn(creneau.fin);
-      ids.forEach(function (id) { Object.keys(et.aeshParEleve[id] || {}).forEach(function (a) { connues[a] = true; }); });
-      return Object.keys(connues).some(function (a) {
-        return affsDe(et, a).some(function (x) {
-          if (x.creneau.jour !== creneau.jour) return false;
-          var ad = mn(x.creneau.debut), af = mn(x.creneau.fin);
-          var ecart = af <= d ? d - af : (ad >= f ? ad - f : -1);
-          return ecart >= 0 && ecart <= POIDS.ecartColleMin
-            && semainesCreneau(x.creneau, ctx).some(function (s) { return semaines.indexOf(s) > -1; });
-        });
-      }) ? 0 : 1;
-    }
     function deja(cle, semaines) { return tentes[cle + "|" + semaines.join("")]; }
 
     // Meilleure unité de chaque entité (élève en individuel, groupe
@@ -447,7 +420,7 @@ var PialMoteur = (function () {
     // unité la plus pressante (§5.3.4) : prioritaires, puis individuelles,
     // mutualisées (la moins couverte d'abord), périscolaires ; à égalité,
     // l'élève le moins couvert en proportion, puis préférences de l'élève
-    // (jour le moins chargé, AESH déjà connue libre, matière liée, ordre
+    // (jour le moins chargé, matière liée, ordre
     // chronologique).
     function prochaineUnite() {
       var meilleure = null;
@@ -468,8 +441,7 @@ var PialMoteur = (function () {
         var libres = semainesLibres(et, e.id, ca.creneau, ca.semaines);
         var m = morceau(r, duree(ca.creneau, "individuel", ctx), libres, etab);
         if (!m || deja(ca.cle, m)) return;
-        candidate([ca.prio ? 0 : 1, 0, 0, prop, e.cle, chargeJour(e, ca.creneau.jour), colleConnue([e.id], ca.creneau, m),
-          connueLibre([e.id], { creneau: ca.creneau, modalite: "individuel" }, m), -ca.lien,
+        candidate([ca.prio ? 0 : 1, 0, 0, prop, e.cle, chargeJour(e, ca.creneau.jour), -ca.lien,
           M.JOURS.indexOf(ca.creneau.jour), mn(ca.creneau.debut), ca.cle],
           { cle: ca.cle, modalite: "individuel", creneau: ca.creneau, libres: libres, morceau: m, eleves: [e.id] });
       });
@@ -494,8 +466,7 @@ var PialMoteur = (function () {
       return { cleTri: [membres.some(function (v) { return v.prio; }) ? 0 : 1, 1,
         Math.min.apply(null, membres.map(function (v) { return proportion(v.e, "mutualise"); })), -membres.length, membres[0].e.cle,
         Math.max.apply(null, membres.map(function (v) { return chargeJour(v.e, g.creneau.jour); })),
-        colleConnue(membres.map(function (v) { return v.e.id; }), g.creneau, choix),
-        connueLibre(membres.map(function (v) { return v.e.id; }), { creneau: g.creneau, modalite: "mutualise" }, choix), 0,
+        0,
         M.JOURS.indexOf(g.creneau.jour), mn(g.creneau.debut), g.cle],
         u: { cle: g.cle, modalite: "mutualise", creneau: g.creneau, libres: libresGroupe, morceau: choix,
           eleves: membres.map(function (v) { return v.e.id; }) } };
@@ -506,7 +477,7 @@ var PialMoteur = (function () {
       if (!membres.length) return null;
       var eleves = membres.map(function (mb) { return ctx._eleves[mb.eleveId]; });
       return { cleTri: [membres.some(function (mb) { return mb.prio; }) ? 0 : 1, 2, -membres.length,
-        Math.min.apply(null, eleves.map(function (e) { return proportion(e, "periscolaire"); })), eleves[0].cle, 0, 0, 0, 0,
+        Math.min.apply(null, eleves.map(function (e) { return proportion(e, "periscolaire"); })), eleves[0].cle, 0, 0,
         M.JOURS.indexOf(g.creneau.jour), mn(g.creneau.debut), g.cle],
         u: { cle: g.cle, modalite: "periscolaire", periscolaire: g.periscolaire, creneau: g.creneau, libres: g.semaines,
           morceau: g.semaines, eleves: membres.map(function (mb) { return mb.eleveId; }) } };
@@ -558,18 +529,8 @@ var PialMoteur = (function () {
 
     var u, garde = 0;
     while ((u = prochaineUnite()) && garde++ < 1000000) {
-      var avant = nouvelles.length;
       tenter(u);
       invalider(u.eleves);
-      // la préférence d'un élève dépend des créneaux de ses AESH : on la
-      // recalcule pour les élèves qui ont une AESH qui vient d'être prise
-      if (OPTIONS.aeshConnue || OPTIONS.colleConnue) {
-        var prises = {};
-        nouvelles.slice(avant).forEach(function (a) { prises[a.aeshId] = true; });
-        if (Object.keys(prises).length) invalider(ctx.eleves.filter(function (e) {
-          return Object.keys(et.aeshParEleve[e.id]).some(function (a) { return prises[a]; });
-        }).map(function (e) { return e.id; }));
-      }
     }
 
     var nbEchanges = OPTIONS.echanges ? ameliorer(et, nouvelles) : 0;
@@ -855,6 +816,15 @@ var PialMoteur = (function () {
     r.aesh.forEach(function (x) { r.trous.A += x.trousA; r.trous.B += x.trousB; r.courtes.A += x.courtesA; r.courtes.B += x.courtesB; });
     r.ecartMax = ctx.reglages.ecartMax; r.journeeMin = ctx.reglages.journeeMin;
     r.aeshSousUtilisees = r.aesh.filter(function (a) { return a.etat === "sous"; });
+    // qualité du résultat, pour choisir entre plusieurs ordres de départage
+    var periPrio = 0, periNormal = 0, plus = 0;
+    r.periscolaireNonCouvert.forEach(function (p) {
+      var hp = M.dureeComptee(p.debut, p.fin, true, ctx.reglages) * p.semaines.length / 2;
+      if (p.prioritaire) periPrio += hp; else periNormal += hp;
+    });
+    ctx.eleves.forEach(function (e) { if (Object.keys(et.aeshParEleve[e.id] || {}).length > POIDS.maxAeshParEleve) plus++; });
+    r.qualite = { couvert: arrondi(r.heures.individuel.couvert + r.heures.mutualise.couvert), periPrioNonCouvert: arrondi(periPrio),
+      elevesPlusDe3: plus, trous: r.trous.A + r.trous.B, courtes: r.courtes.A + r.courtes.B, periNormalNonCouvert: arrondi(periNormal) };
     // contrôle : le moteur ne doit jamais enfreindre une contrainte dure
     nouvelles.forEach(function (a) {
       M.verifierAffectation(a, ctx).forEach(function (v) {
@@ -862,6 +832,77 @@ var PialMoteur = (function () {
       });
     });
     return r;
+  }
+
+  /* =============== plusieurs ordres de départage (spec §16) =============== */
+  // Le glouton départage les égalités de score par l'ordre des AESH : un
+  // autre ordre donne un autre résultat, parfois meilleur. On lance le
+  // moteur sur n ordres (l'ordre alphabétique des identifiants, puis des
+  // permutations à graine fixe : le résultat ne dépend ni de l'ordre des
+  // lignes du fichier ni de la relance) et on garde le meilleur.
+
+  // générateur pseudo-aléatoire à graine fixe (mulberry32) : pas de Math.random
+  function generateur(graine) {
+    var a = graine >>> 0;
+    return function () {
+      a = (a + 0x6D2B79F5) >>> 0;
+      var t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  // ordre k : 0 = identifiants triés ; k ≥ 1 = permutation de graine fixe
+  function ordreAesh(ids, k) {
+    var o = ids.slice().sort();
+    if (!k) return o;
+    var alea = generateur(0x5EED + k * 7919);
+    for (var i = o.length - 1; i > 0; i--) {
+      var j = Math.floor(alea() * (i + 1)), x = o[i];
+      o[i] = o[j]; o[j] = x;
+    }
+    return o;
+  }
+  // < 0 si la qualité q1 est meilleure que q2. Critères, dans l'ordre :
+  // heures notifiées couvertes, périscolaire prioritaire couvert, élèves à
+  // plus de 3 AESH, trous, journées courtes, périscolaire normal couvert.
+  var CRITERES = [["couvert", -1], ["periPrioNonCouvert", 1], ["elevesPlusDe3", 1], ["trous", 1], ["courtes", 1], ["periNormalNonCouvert", 1]];
+  function comparerQualite(q1, q2) {
+    for (var i = 0; i < CRITERES.length; i++) {
+      var c = CRITERES[i][0], d = arrondi(q1[c]) - arrondi(q2[c]);
+      if (Math.abs(d) > EPS) return d * CRITERES[i][1];
+    }
+    return 0;
+  }
+  // Calcul pas à pas (un ordre par appel de suivant()), pour que
+  // l'interface puisse rendre la main au navigateur entre deux ordres.
+  function plusieursOrdres(donnees, n) {
+    n = Math.max(1, Math.floor(n || 1));
+    var ids = (donnees.aesh || []).map(function (a) { return a.id; });
+    var k = 0, meilleur = null, essais = [];
+    return {
+      total: n,
+      fait: function () { return k; },
+      fini: function () { return k >= n; },
+      suivant: function () {
+        if (k >= n) return;
+        var res = proposer(donnees, ordreAesh(ids, k));
+        essais.push({ ordre: k, qualite: res.rapport.qualite });
+        // à qualité égale, le premier ordre essayé est gardé
+        if (!meilleur || comparerQualite(res.rapport.qualite, meilleur.res.rapport.qualite) < 0) meilleur = { ordre: k, res: res };
+        k++;
+      },
+      resultat: function () {
+        var res = meilleur.res;
+        res.rapport.ordres = { nb: n, retenu: meilleur.ordre, essais: essais };
+        return res;
+      }
+    };
+  }
+  function proposerMeilleur(donnees, n) {
+    var calc = plusieursOrdres(donnees, n);
+    while (!calc.fini()) calc.suivant();
+    return calc.resultat();
   }
 
   /* =============== menu de créneau (§7.1) =============== */
@@ -892,7 +933,8 @@ var PialMoteur = (function () {
 
   return {
     POIDS: POIDS, OPTIONS: OPTIONS, BESOINS_MATIERES: BESOINS_MATIERES, LIBELLE_MOTIF: LIBELLE_MOTIF,
-    proposer: proposer, classerAesh: classerAesh, morceau: morceau, ameliorerAffectations: ameliorerAffectations,
+    proposer: proposer, classerAesh: classerAesh, ordreAesh: ordreAesh, comparerQualite: comparerQualite,
+    plusieursOrdres: plusieursOrdres, proposerMeilleur: proposerMeilleur, morceau: morceau, ameliorerAffectations: ameliorerAffectations,
     ameliorerTrousAffectations: ameliorerTrousAffectations
   };
 })();

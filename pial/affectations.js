@@ -363,12 +363,15 @@ var PialAffectations = (function () {
     $("reg-periscolaire").checked = !!r.gererPeriscolaire;
     $("reg-pause").value = r.pauseRepasMin;
     $("reg-ecart").value = r.ecartMax / 60;
+    $("reg-ordres").value = r.nbOrdres;
   }
   $("reg-enregistrer-regles").addEventListener("click", function () {
     var pause = parseInt($("reg-pause").value, 10);
     if (isNaN(pause) || pause < 0 || pause > 120) { ui.toast("Durée de pause invalide (0 à 120 minutes)."); return; }
     var ecart = Math.round(parseFloat(String($("reg-ecart").value).replace(",", ".")) * 60);
     if (isNaN(ecart) || ecart < 30 || ecart > 480) { ui.toast("Écart maximal invalide (de 0,5 à 8 heures)."); return; }
+    var ordres = parseInt($("reg-ordres").value, 10);
+    if (isNaN(ordres) || ordres < 1 || ordres > 50) { ui.toast("Nombre d'ordres invalide (de 1 à 50)."); return; }
     var valeur = {};
     Object.keys(etat.reglages).forEach(function (k) { valeur[k] = etat.reglages[k]; });
     valeur.dureeReelle = $("reg-duree-reelle").checked;
@@ -376,6 +379,7 @@ var PialAffectations = (function () {
     valeur.gererPeriscolaire = $("reg-periscolaire").checked;
     valeur.pauseRepasMin = pause;
     valeur.ecartMax = ecart;
+    valeur.nbOrdres = ordres;
     PialDB.appliquer([{ magasin: "parametres", enregistrer: [{ cle: "reglages", valeur: valeur }] }]).then(recharger).then(function () {
       ui.toast("Règles de calcul enregistrées.");
       if (typeof PialAffectations.surChangement === "function") PialAffectations.surChangement();
@@ -465,22 +469,38 @@ var PialAffectations = (function () {
     return { annee: anneeCourante(), etablissements: etat.etablissements, eleves: etat.eleves, aesh: etat.aesh, cours: etat.cours,
       affectations: affectations || etat.affectations, reglages: etat.reglages };
   }
-  // relance partielle : les épinglées sont gardées, les autres remplacées
+  // relance partielle : les épinglées sont gardées, les autres remplacées.
+  // Le moteur essaie plusieurs ordres de départage (spec §16), un par tour,
+  // en rendant la main au navigateur entre deux ordres (thread principal,
+  // pas de Web Worker sous file://) ; une progression s'affiche si le
+  // calcul doit dépasser 1,5 s.
+  function maintenant() { return (window.performance || Date).now(); }
   function proposer() {
     var bouton = $("aff-proposer");
     bouton.disabled = true;
     bouton.textContent = "Calcul…";
-    // laisse le navigateur afficher « Calcul… » avant le calcul (thread principal)
-    setTimeout(function () {
-      var t0 = (window.performance || Date).now();
-      var res = P.proposer(donneesMoteur());
-      var ms = (window.performance || Date).now() - t0;
+    var n = M.contexte({ reglages: etat.reglages }).reglages.nbOrdres;
+    var calc = P.plusieursOrdres(donneesMoteur(), n), t0 = maintenant(), visible = false;
+    function etape() {
+      var debut = maintenant();
+      do { calc.suivant(); } while (!calc.fini() && maintenant() - debut < 50);
+      var ecoule = maintenant() - t0;
+      if (!visible && !calc.fini() && ecoule / calc.fait() * calc.total > 1500) { visible = true; $("aff-progression").hidden = false; }
+      if (visible) {
+        $("aff-progression-texte").textContent = "Recherche du meilleur résultat : " + calc.fait() + " ordre" + (calc.fait() > 1 ? "s" : "") + " essayé" + (calc.fait() > 1 ? "s" : "") + " sur " + calc.total;
+        $("aff-progression-barre").value = calc.fait() / calc.total;
+      }
+      if (!calc.fini()) { setTimeout(etape, 0); return; }
+      $("aff-progression").hidden = true;
+      var res = calc.resultat(), ms = maintenant() - t0;
       var remplacees = etat.affectations.filter(function (a) { return !a.epinglee; }).map(function (a) { return a.id; });
       var nouvelles = res.affectations.filter(function (a) { return !a.epinglee; });
       dernierRapport = { rapport: res.rapport, ms: ms, nbRemplacees: remplacees.length };
       enregistrerPuisRendre([{ magasin: "affectations", supprimer: remplacees, enregistrer: nouvelles }],
         pluriel(nouvelles.length, "affectation proposée", "affectations proposées") + ".", "la proposition").then(afficherRapport);
-    }, 30);
+    }
+    // laisse le navigateur afficher « Calcul… » avant le calcul
+    setTimeout(etape, 30);
   }
   function toutDesepingler() {
     var n = nbEpinglees();
@@ -508,6 +528,12 @@ var PialAffectations = (function () {
       + (dernierRapport.nbRemplacees ? ' · ' + pluriel(dernierRapport.nbRemplacees, "affectation non épinglée remplacée", "affectations non épinglées remplacées") : "")
       + (r.nbEchanges ? ' · ' + pluriel(r.nbEchanges, "créneau repris ou échangé", "créneaux repris ou échangés") + ' entre AESH pour limiter à ' + P.POIDS.maxAeshParEleve + ' le nombre d\'AESH par élève' : "")
       + (r.nbEchangesTrous ? ' · ' + pluriel(r.nbEchangesTrous, "créneau repris ou échangé", "créneaux repris ou échangés") + ' pour réduire les trous des journées' : "") + '.</p>';
+    if (r.ordres && r.ordres.nb > 1) {
+      var q0 = r.ordres.essais[0].qualite, q = r.qualite;
+      var resume = function (x) { return heures(x.couvert) + " couvertes, " + pluriel(x.elevesPlusDe3, "élève", "élèves") + " à plus de " + P.POIDS.maxAeshParEleve + " AESH, " + pluriel(x.trous, "trou") + ", " + pluriel(x.courtes, "journée courte", "journées courtes"); };
+      h += '<p class="aide">Meilleur résultat parmi ' + r.ordres.nb + ' ordres de départage des AESH (ordre n° ' + (r.ordres.retenu + 1) + ' retenu) : '
+        + ech(resume(q)) + (r.ordres.retenu ? ' ; avec le premier ordre : ' + ech(resume(q0)) : "") + '.</p>';
+    }
     if (r.violations.length) h += '<p class="note alerte">⚠ ' + pluriel(r.violations.length, "contrainte non respectée", "contraintes non respectées") + ' par la proposition : signalez-le.</p>';
     h += '<div class="mc-section"><h4>Heures</h4><div class="tableau-conteneur"><table class="tableau"><thead><tr><th></th><th>Demandées</th><th>Couvertes</th><th>Taux</th></tr></thead><tbody>'
       + ligneHeures("Individuel", x.individuel) + ligneHeures("Mutualisé", x.mutualise)

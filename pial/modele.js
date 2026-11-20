@@ -42,6 +42,7 @@ var PialModele = (function () {
     seuilSousUtilisation: 0.9,   // §4.3
     ecartMax: 120,               // §5.3.5 écart maximal entre deux accompagnements (minutes)
     journeeMin: 120,             // §5.3.5 journée courte : moins de 2 h de présence
+    nbOrdres: 12,                // §16 ordres de départage essayés par « Proposer »
     joursAlerteNotification: 30  // §6
   };
 

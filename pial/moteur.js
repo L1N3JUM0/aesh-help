@@ -37,11 +37,14 @@ var PialMoteur = (function () {
     experienceMax: 15,
     formation: 10,             // phase 4 (table formation → besoins à valider, §7.3)
     equilibrageMax: 15,        // proportionnel à la part de quotité restante
-    isole: -10,
+    trou: -30,                 // par trou de plus de reglages.ecartMax créé (bonus s'il en comble un)
+    journeeCourte: -10,        // par journée de moins de reglages.journeeMin créée (bonus si complétée)
+    isole: -10,                // ancien critère « créneau isolé » (OPTIONS.trous = false, mesures seulement)
     tropAesh: -25,             // par AESH au-delà du seuil, cumulable (4e : -25, 5e : -50…)
     ecartColleMin: 15,         // « collé » : au plus 15 min d'écart
     trouIsoleMin: 120,         // « isolé » : plus de 2 h jusqu'au créneau le plus proche
-    maxAeshParEleve: 3
+    maxAeshParEleve: 3,
+    nouvelleAeshEchange: 40    // passe sur les trous : coût d'une AESH de plus pour un élève (= continuité)
   };
 
   // variantes de l'algorithme (spec §14), activables pour les mesures
@@ -51,7 +54,19 @@ var PialMoteur = (function () {
     // (303 h → 269,5 h sur les exemples) : les AESH de plusieurs
     // établissements restent là où elles ont commencé (notes de la phase 2)
     aeshConnue: false,
-    echanges: true     // passe d'échanges après le glouton
+    echanges: true,    // passe d'échanges après le glouton
+    // score des trous et journées courtes (écart compté) ; false = ancien
+    // critère « créneau isolé » (−10 au-delà de 2 h), pour les mesures
+    trous: true,
+    // à jour égal, préférer un créneau collé (≤ ecartColleMin) à un
+    // créneau d'une AESH qui accompagne déjà l'élève. Désactivé : sur 12
+    // permutations des AESH, la couverture moyenne baisse en pénurie
+    // (301,3 h → 297 h) pour un gain sur les trous que la passe d'échanges
+    // obtient sans perte (notes de travail, phase 2 bis)
+    colleConnue: false,
+    // passe d'échanges sur les trous et journées courtes, après la passe
+    // sur le nombre d'AESH par élève
+    echangesTrous: true
   };
 
   // §5.3.2.3 : lien besoin → matières. Aucune table n'est définie (spec
@@ -216,7 +231,10 @@ var PialMoteur = (function () {
       if (af <= deb && (!prec || af > prec.fin)) prec = { fin: af, etab: a.creneau.etab };
       if (ad >= fin && (!suiv || ad < suiv.debut)) suiv = { debut: ad, etab: a.creneau.etab };
     });
-    if ((prec && prec.etab === c.etab) || (suiv && suiv.etab === c.etab)) {
+    // voisin du même établissement ; avec le critère des trous, seulement à
+    // moins de ecartMax (au-delà, le voisin ne rapproche pas la journée)
+    var proche = function (ecart) { return !OPTIONS.trous || ecart <= ctx.reglages.ecartMax; };
+    if ((prec && prec.etab === c.etab && proche(deb - prec.fin)) || (suiv && suiv.etab === c.etab && proche(suiv.debut - fin))) {
       score += P.memeEtablissement; raisons.push("même établissement le " + c.jour);
     }
     var ecarts = [];
@@ -225,7 +243,20 @@ var PialMoteur = (function () {
     if (ecarts.length) {
       var mini = Math.min.apply(null, ecarts);
       if (mini <= P.ecartColleMin) { score += P.colle; raisons.push("journée compacte"); }
-      else if (mini > P.trouIsoleMin) { score += P.isole; raisons.push("créneau isolé (trou de plus de " + (P.trouIsoleMin / 60) + " h)"); }
+      else if (!OPTIONS.trous && mini > P.trouIsoleMin) { score += P.isole; raisons.push("créneau isolé (trou de plus de " + (P.trouIsoleMin / 60) + " h)"); }
+    }
+    if (OPTIONS.trous) {
+      var dj = deltaJournee(et, aesh, c, semaines);
+      if (dj.trous) {
+        score += P.trou * dj.trous;
+        raisons.push(dj.trous > 0 ? "laisse un trou de plus de " + texteMinutes(ctx.reglages.ecartMax) + " le " + c.jour
+          : "comble un trou le " + c.jour);
+      }
+      if (dj.courtes) {
+        score += P.journeeCourte * dj.courtes;
+        raisons.push(dj.courtes > 0 ? "journée de moins de " + texteMinutes(ctx.reglages.journeeMin) + " le " + c.jour
+          : "complète une journée courte le " + c.jour);
+      }
     }
     // pénalité progressive : rang qu'aurait cette AESH pour chaque élève
     u.eleves.forEach(function (id) {
@@ -244,6 +275,24 @@ var PialMoteur = (function () {
     score += P.equilibrageMax * part;
     raisons.push(Math.round(part * 100) + " % de quotité disponible");
     return { score: arrondi(score), raisons: raisons };
+  }
+
+  // « 2 h », « 1 h 30 »
+  function texteMinutes(m) { return Math.floor(m / 60) + " h" + (m % 60 ? " " + String(m % 60).padStart(2, "0") : ""); }
+  // Variation, si l'AESH prend le créneau c, du nombre de trous (écart >
+  // ecartMax) et de journées courtes (présence < journeeMin) de sa journée,
+  // en moyenne sur les semaines du créneau : +1 crée, −1 supprime.
+  function deltaJournee(et, aesh, c, semaines) {
+    var ctx = et.ctx, r = ctx.reglages, nouveau = [mn(c.debut), mn(c.fin)], dT = 0, dC = 0;
+    var duJour = affsDe(et, aesh.id).filter(function (a) { return a.creneau.jour === c.jour; });
+    semaines.forEach(function (s) {
+      var l = [];
+      duJour.forEach(function (a) { if (semainesCreneau(a.creneau, ctx).indexOf(s) > -1) l.push([mn(a.creneau.debut), mn(a.creneau.fin)]); });
+      var m0 = M.mesureJournee(l, r.ecartMax), m1 = M.mesureJournee(l.concat([nouveau]), r.ecartMax);
+      dT += m1.trous - m0.trous;
+      dC += (m1.presence < r.journeeMin ? 1 : 0) - (l.length && m0.presence < r.journeeMin ? 1 : 0);
+    });
+    return { trous: dT / semaines.length, courtes: dC / semaines.length };
   }
 
   // AESH possibles pour l'unité, triées par score (égalité : identifiant)
@@ -368,6 +417,22 @@ var PialMoteur = (function () {
       ids.forEach(function (id) { Object.keys(et.aeshParEleve[id] || {}).forEach(function (a) { connues[a] = true; }); });
       return Object.keys(connues).sort().some(function (a) { return ctx._aesh[a] && !obstacle(et, ctx._aesh[a], u, semaines); }) ? 0 : 1;
     }
+    // 0 si le créneau est collé (écart ≤ ecartColleMin, mêmes semaines) à
+    // un créneau d'une AESH qui accompagne déjà l'un de ces élèves
+    function colleConnue(ids, creneau, semaines) {
+      if (!OPTIONS.colleConnue) return 0;
+      var connues = {}, d = mn(creneau.debut), f = mn(creneau.fin);
+      ids.forEach(function (id) { Object.keys(et.aeshParEleve[id] || {}).forEach(function (a) { connues[a] = true; }); });
+      return Object.keys(connues).some(function (a) {
+        return affsDe(et, a).some(function (x) {
+          if (x.creneau.jour !== creneau.jour) return false;
+          var ad = mn(x.creneau.debut), af = mn(x.creneau.fin);
+          var ecart = af <= d ? d - af : (ad >= f ? ad - f : -1);
+          return ecart >= 0 && ecart <= POIDS.ecartColleMin
+            && semainesCreneau(x.creneau, ctx).some(function (s) { return semaines.indexOf(s) > -1; });
+        });
+      }) ? 0 : 1;
+    }
     function deja(cle, semaines) { return tentes[cle + "|" + semaines.join("")]; }
 
     // Meilleure unité de chaque entité (élève en individuel, groupe
@@ -403,7 +468,7 @@ var PialMoteur = (function () {
         var libres = semainesLibres(et, e.id, ca.creneau, ca.semaines);
         var m = morceau(r, duree(ca.creneau, "individuel", ctx), libres, etab);
         if (!m || deja(ca.cle, m)) return;
-        candidate([ca.prio ? 0 : 1, 0, 0, prop, e.cle, chargeJour(e, ca.creneau.jour),
+        candidate([ca.prio ? 0 : 1, 0, 0, prop, e.cle, chargeJour(e, ca.creneau.jour), colleConnue([e.id], ca.creneau, m),
           connueLibre([e.id], { creneau: ca.creneau, modalite: "individuel" }, m), -ca.lien,
           M.JOURS.indexOf(ca.creneau.jour), mn(ca.creneau.debut), ca.cle],
           { cle: ca.cle, modalite: "individuel", creneau: ca.creneau, libres: libres, morceau: m, eleves: [e.id] });
@@ -429,6 +494,7 @@ var PialMoteur = (function () {
       return { cleTri: [membres.some(function (v) { return v.prio; }) ? 0 : 1, 1,
         Math.min.apply(null, membres.map(function (v) { return proportion(v.e, "mutualise"); })), -membres.length, membres[0].e.cle,
         Math.max.apply(null, membres.map(function (v) { return chargeJour(v.e, g.creneau.jour); })),
+        colleConnue(membres.map(function (v) { return v.e.id; }), g.creneau, choix),
         connueLibre(membres.map(function (v) { return v.e.id; }), { creneau: g.creneau, modalite: "mutualise" }, choix), 0,
         M.JOURS.indexOf(g.creneau.jour), mn(g.creneau.debut), g.cle],
         u: { cle: g.cle, modalite: "mutualise", creneau: g.creneau, libres: libresGroupe, morceau: choix,
@@ -440,7 +506,7 @@ var PialMoteur = (function () {
       if (!membres.length) return null;
       var eleves = membres.map(function (mb) { return ctx._eleves[mb.eleveId]; });
       return { cleTri: [membres.some(function (mb) { return mb.prio; }) ? 0 : 1, 2, -membres.length,
-        Math.min.apply(null, eleves.map(function (e) { return proportion(e, "periscolaire"); })), eleves[0].cle, 0, 0, 0,
+        Math.min.apply(null, eleves.map(function (e) { return proportion(e, "periscolaire"); })), eleves[0].cle, 0, 0, 0, 0,
         M.JOURS.indexOf(g.creneau.jour), mn(g.creneau.debut), g.cle],
         u: { cle: g.cle, modalite: "periscolaire", periscolaire: g.periscolaire, creneau: g.creneau, libres: g.semaines,
           morceau: g.semaines, eleves: membres.map(function (mb) { return mb.eleveId; }) } };
@@ -495,7 +561,9 @@ var PialMoteur = (function () {
       var avant = nouvelles.length;
       tenter(u);
       invalider(u.eleves);
-      if (OPTIONS.aeshConnue) {
+      // la préférence d'un élève dépend des créneaux de ses AESH : on la
+      // recalcule pour les élèves qui ont une AESH qui vient d'être prise
+      if (OPTIONS.aeshConnue || OPTIONS.colleConnue) {
         var prises = {};
         nouvelles.slice(avant).forEach(function (a) { prises[a.aeshId] = true; });
         if (Object.keys(prises).length) invalider(ctx.eleves.filter(function (e) {
@@ -505,9 +573,14 @@ var PialMoteur = (function () {
     }
 
     var nbEchanges = OPTIONS.echanges ? ameliorer(et, nouvelles) : 0;
+    var nbEchangesTrous = OPTIONS.echangesTrous ? ameliorerTrous(et, nouvelles) : 0;
+    // la passe sur les trous peut libérer des créneaux : nouvelle tentative
+    // sur le nombre d'AESH par élève (elle ne crée jamais d'excès)
+    if (OPTIONS.echangesTrous && OPTIONS.echanges) nbEchanges += ameliorer(et, nouvelles);
     var finales = epinglees.concat(nouvelles);
     var r = rapport(donnees, finales, nouvelles, epinglees, motifs, motifsPeri, dem);
     r.nbEchanges = nbEchanges;
+    r.nbEchangesTrous = nbEchangesTrous;
     return { affectations: finales, rapport: r };
   }
 
@@ -605,6 +678,99 @@ var PialMoteur = (function () {
     return nbMouvements;
   }
 
+  /* =============== passe d'échanges : trous (spec §16) =============== */
+  // Après la passe sur le nombre d'AESH par élève : pour chaque affectation
+  // proposée (ordre fixe), on essaie de la donner à une autre AESH, telle
+  // quelle ou contre un créneau de même durée, le même jour et les mêmes
+  // semaines. Le mouvement n'est gardé que si le coût des journées des deux
+  // AESH ce jour-là baisse (|POIDS.trou| par trou de plus de ecartMax,
+  // |POIDS.journeeCourte| par journée courte), sans contrainte dure
+  // enfreinte, sans AESH de plus pour aucun des élèves concernés (ni en
+  // tout, ni au-delà du seuil). Couverture et créneaux couverts inchangés.
+  function ameliorerTrous(et, nouvelles) {
+    var ctx = et.ctx, r = ctx.reglages, seuil = POIDS.maxAeshParEleve, nbMouvements = 0, notes = [];
+    function semainesDe(a) { return semainesCreneau(a.creneau, ctx); }
+    function unite(a) { return { creneau: a.creneau, modalite: a.modalite, periscolaire: a.periscolaire, eleves: a.eleves }; }
+    function cout(aeshId, jour) {
+      var t = 0, duJour = affsDe(et, aeshId).filter(function (a) { return a.creneau.jour === jour; });
+      ["A", "B"].forEach(function (s) {
+        var l = [];
+        duJour.forEach(function (a) { if (semainesDe(a).indexOf(s) > -1) l.push([mn(a.creneau.debut), mn(a.creneau.fin)]); });
+        if (!l.length) return;
+        var m = M.mesureJournee(l, r.ecartMax);
+        t += -POIDS.trou * m.trous + (m.presence < r.journeeMin ? -POIDS.journeeCourte : 0);
+      });
+      return t;
+    }
+    // AESH différentes par élève : total et excès au-delà du seuil
+    function compte(ids) {
+      var total = 0, exces = 0;
+      ids.forEach(function (id) { var n = Object.keys(et.aeshParEleve[id] || {}).length; total += n; exces += Math.max(0, n - seuil); });
+      return { total: total, exces: exces };
+    }
+    function changer(a, aeshId) { retirer(et, a); a.aeshId = aeshId; ajouter(et, a); }
+    // gain (baisse du coût) si X passe à b (et Y de b à l'AESH de X), ou
+    // null si c'est impossible ou sans gain. L'état est toujours remis tel quel.
+    function gain(X, b, Y) {
+      var a = X.aeshId, jour = X.creneau.jour, ids = X.eleves.concat(Y ? Y.eleves : []);
+      var avant = cout(a, jour) + cout(b, jour), c0 = compte(ids);
+      retirer(et, X); if (Y) retirer(et, Y);
+      var ok = !obstacle(et, ctx._aesh[b], unite(X), semainesDe(X));
+      if (ok) {
+        X.aeshId = b; ajouter(et, X);
+        if (Y) {
+          ok = !obstacle(et, ctx._aesh[a], unite(Y), semainesDe(Y));
+          if (ok) { Y.aeshId = a; ajouter(et, Y); } else { retirer(et, X); X.aeshId = a; }
+        }
+      }
+      if (!ok) { ajouter(et, X); if (Y) ajouter(et, Y); return null; }
+      var c1 = compte(ids);
+      var g = avant - (cout(a, jour) + cout(b, jour) + POIDS.nouvelleAeshEchange * (c1.total - c0.total));
+      changer(X, a); if (Y) changer(Y, b);
+      return c1.exces <= c0.exces && g > EPS ? g : null;
+    }
+    var aeshIds = et.aeshTriees.map(function (x) { return x.id; });
+    // affectations déplaçables (proposées), par identifiant : les
+    // identifiants ne changent qu'à la fin de la passe
+    var deplacable = {};
+    nouvelles.forEach(function (x) { deplacable[x.id] = true; });
+    for (var passe = 0; passe < 3; passe++) {
+      var progres = false;
+      nouvelles.slice().sort(function (p, q) { return cmp(p.creneauCle, q.creneauCle) || cmp(p.aeshId, q.aeshId); }).forEach(function (X) {
+        if (cout(X.aeshId, X.creneau.jour) <= EPS) return;   // journée sans trou ni journée courte : rien à gagner
+        // meilleur mouvement pour X (à gain égal, le premier dans l'ordre fixe)
+        var a = X.aeshId, semX = semainesDe(X).join(), dX = duree(X.creneau, X.modalite, ctx), meilleur = null;
+        function noter(b, Y) { var g = gain(X, b, Y); if (g !== null && (!meilleur || g > meilleur.g + EPS)) meilleur = { g: g, b: b, Y: Y }; }
+        for (var i = 0; i < aeshIds.length; i++) {
+          var b = aeshIds[i];
+          if (b === a) continue;
+          // obstacle de b pour X sans rien retirer (X n'est pas à b) : un
+          // autre établissement ou une indisponibilité excluent aussi l'échange
+          var o = obstacle(et, ctx._aesh[b], unite(X), semainesDe(X));
+          if (o === "etablissement" || o === "indisponibilite") continue;
+          if (!o) noter(b, null);
+          affsDe(et, b).filter(function (Y) {
+            return deplacable[Y.id] && Y.creneau.jour === X.creneau.jour && duree(Y.creneau, Y.modalite, ctx) === dX && semainesDe(Y).join() === semX;
+          }).sort(function (p, q) { return cmp(p.creneauCle, q.creneauCle) || cmp(p.id, q.id); }).forEach(function (Y) { noter(b, Y); });
+        }
+        if (!meilleur) return;
+        changer(X, meilleur.b);
+        if (meilleur.Y) changer(meilleur.Y, a);
+        notes.push({ X: X, Y: meilleur.Y, de: a });
+        nbMouvements += meilleur.Y ? 2 : 1;
+        progres = true;
+      });
+      if (!progres) break;
+    }
+    function nom(id) { var x = ctx._aesh[id]; return x ? x.prenom + " " + x.nom : id; }
+    notes.forEach(function (n) {
+      n.X.raisons = [(n.Y ? "échangé avec " + nom(n.de) : "repris à " + nom(n.de)) + " pour réduire les trous des journées"];
+      if (n.Y) n.Y.raisons = ["échangé avec " + nom(n.X.aeshId) + " pour réduire les trous des journées"];
+      [n.X, n.Y].forEach(function (a) { if (a) { a.id = "mo|" + a.aeshId + "|" + a.creneauCle; a.score = null; } });
+    });
+    return nbMouvements;
+  }
+
   // passe d'échanges seule, sur un brouillon (affectations non épinglées
   // déplaçables) : sert aux tests. Ne modifie pas donnees.
   function ameliorerAffectations(donnees) {
@@ -615,6 +781,16 @@ var PialMoteur = (function () {
     ctx.affectations.slice().sort(parId).forEach(function (a) { ajouter(et, a); });
     var n = ameliorer(et, ctx.affectations.filter(function (a) { return !a.epinglee; }));
     return { affectations: affs, nbEchanges: n };
+  }
+  // idem pour la passe sur les trous
+  function ameliorerTrousAffectations(donnees) {
+    var affs = JSON.parse(JSON.stringify(donnees.affectations || []));
+    var ctx = M.contexte({ etablissements: donnees.etablissements, eleves: donnees.eleves, aesh: donnees.aesh,
+      cours: donnees.cours, affectations: affs, reglages: donnees.reglages });
+    var et = creerEtat(ctx);
+    ctx.affectations.slice().sort(parId).forEach(function (a) { ajouter(et, a); });
+    var n = ameliorerTrous(et, ctx.affectations.filter(function (a) { return !a.epinglee; }));
+    return { affectations: affs, nbMouvements: n };
   }
 
   /* =============== rapport de fin (§5.3.7) =============== */
@@ -669,9 +845,15 @@ var PialMoteur = (function () {
     r.heures.periscolaire.couvert = arrondi(r.heures.periscolaire.couvert);
     ctx.aesh.slice().sort(parId).forEach(function (a) {
       var ch = M.chargeAesh(a, ctx);
+      var j = M.journeesAesh(a, ctx);
       r.aesh.push({ aeshId: a.id, nom: a.prenom + " " + a.nom, quotite: ch.quotite, A: arrondi(ch.A), B: arrondi(ch.B),
-        etat: ch.etat, restantA: arrondi(ch.quotite - ch.A), restantB: arrondi(ch.quotite - ch.B) });
+        etat: ch.etat, restantA: arrondi(ch.quotite - ch.A), restantB: arrondi(ch.quotite - ch.B),
+        trousA: j.A.trous, trousB: j.B.trous, courtesA: j.A.courtes, courtesB: j.B.courtes });
     });
+    // trous (écart > ecartMax) et journées courtes, toutes AESH, par semaine
+    r.trous = { A: 0, B: 0 }; r.courtes = { A: 0, B: 0 };
+    r.aesh.forEach(function (x) { r.trous.A += x.trousA; r.trous.B += x.trousB; r.courtes.A += x.courtesA; r.courtes.B += x.courtesB; });
+    r.ecartMax = ctx.reglages.ecartMax; r.journeeMin = ctx.reglages.journeeMin;
     r.aeshSousUtilisees = r.aesh.filter(function (a) { return a.etat === "sous"; });
     // contrôle : le moteur ne doit jamais enfreindre une contrainte dure
     nouvelles.forEach(function (a) {
@@ -710,7 +892,8 @@ var PialMoteur = (function () {
 
   return {
     POIDS: POIDS, OPTIONS: OPTIONS, BESOINS_MATIERES: BESOINS_MATIERES, LIBELLE_MOTIF: LIBELLE_MOTIF,
-    proposer: proposer, classerAesh: classerAesh, morceau: morceau, ameliorerAffectations: ameliorerAffectations
+    proposer: proposer, classerAesh: classerAesh, morceau: morceau, ameliorerAffectations: ameliorerAffectations,
+    ameliorerTrousAffectations: ameliorerTrousAffectations
   };
 })();
 

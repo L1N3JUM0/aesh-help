@@ -40,6 +40,8 @@ var PialModele = (function () {
     seuilJourneePause: 360,      // journée de plus de 6 h de présence
     deplacementMin: 60,          // §4.4 contrainte 4
     seuilSousUtilisation: 0.9,   // §4.3
+    ecartMax: 120,               // §5.3.5 écart maximal entre deux accompagnements (minutes)
+    journeeMin: 120,             // §5.3.5 journée courte : moins de 2 h de présence
     joursAlerteNotification: 30  // §6
   };
 
@@ -246,6 +248,47 @@ var PialModele = (function () {
       B += dureeAffectation(aff, "B", ctx);
     });
     return { A: A, B: B, moy: (A + B) / 2, quotite: aesh.quotite || 0, etat: etatCharge(A, B, aesh.quotite || 0, ctx.reglages) };
+  }
+
+  /* =============== trous et journées courtes (§5.3.5) =============== */
+  // intervalles : [[début, fin]] en minutes, pour une journée et une
+  // semaine. Renvoie la présence (minutes, chevauchements fusionnés), les
+  // écarts entre deux accompagnements et le nombre de trous (écart >
+  // ecartMax). Une journée sans créneau n'a ni trou ni présence.
+  function mesureJournee(intervalles, ecartMax) {
+    var l = intervalles.slice().sort(function (a, b) { return a[0] - b[0] || a[1] - b[1]; });
+    var presence = 0, ecarts = [], fin = null, debut = null;
+    l.forEach(function (x) {
+      if (fin === null) { debut = x[0]; fin = x[1]; return; }
+      if (x[0] > fin) { presence += fin - debut; ecarts.push(x[0] - fin); debut = x[0]; fin = x[1]; }
+      else fin = Math.max(fin, x[1]);
+    });
+    if (fin !== null) presence += fin - debut;
+    var trous = ecarts.filter(function (e) { return e > ecartMax; }).length;
+    return { presence: presence, ecarts: ecarts, trous: trous };
+  }
+  // par semaine (A, B) : jours de présence, trous > ecartMax et journées
+  // courtes (présence < journeeMin), avec le détail par jour
+  function journeesAesh(aesh, ctx) {
+    var r = ctx.reglages, out = {};
+    ["A", "B"].forEach(function (s) {
+      var parJour = {};
+      (ctx._affParAesh[aesh.id] || []).forEach(function (aff) {
+        if (semainesDe(aff.creneau.semaine, ctx.etablissements[aff.creneau.etab]).indexOf(s) < 0) return;
+        (parJour[aff.creneau.jour] = parJour[aff.creneau.jour] || []).push([minutes(aff.creneau.debut), minutes(aff.creneau.fin)]);
+      });
+      var res = { jours: {}, trous: 0, courtes: 0 };
+      JOURS.forEach(function (j) {
+        if (!parJour[j]) return;
+        var m = mesureJournee(parJour[j], r.ecartMax);
+        m.courte = m.presence < r.journeeMin;
+        res.jours[j] = m;
+        res.trous += m.trous;
+        if (m.courte) res.courtes++;
+      });
+      out[s] = res;
+    });
+    return out;
   }
 
   /* =============== §4.4 contraintes dures =============== */
@@ -641,7 +684,7 @@ var PialModele = (function () {
     creneauCle: creneauCle, chevauchent: chevauchent,
     contexte: contexte, dureeAffectation: dureeAffectation,
     etatCouverture: etatCouverture, couvertureEleve: couvertureEleve,
-    etatCharge: etatCharge, chargeAesh: chargeAesh,
+    etatCharge: etatCharge, chargeAesh: chargeAesh, mesureJournee: mesureJournee, journeesAesh: journeesAesh,
     memeCours: memeCours, peutMutualiser: peutMutualiser, coursSurCreneau: coursSurCreneau,
     indisponibilite: indisponibilite, verifierPauseRepas: verifierPauseRepas, verifierAffectation: verifierAffectation,
     motifsIndisponibilite: motifsIndisponibilite, cleEtatPeriscolaire: cleEtatPeriscolaire,

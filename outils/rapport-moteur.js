@@ -30,6 +30,7 @@ var env = {
 function h(x) { return (Math.round(x * 100) / 100).toString().replace(".", ",") + " h"; }
 function pct(a, b) { return b ? Math.round(100 * a / b) + " %" : "—"; }
 function chrono(fn) { var t0 = process.hrtime.bigint(); var r = fn(); return { r: r, ms: Number(process.hrtime.bigint() - t0) / 1e6 }; }
+var NB_PERMUTATIONS = 12;
 function ms(x) { return Math.round(x) + " ms"; }
 // nombre d'AESH différentes par élève : {0: n, 1: n, …} et élèves à 4 ou plus
 function aeshParEleve(d, affs) {
@@ -99,12 +100,13 @@ Promise.all([T.chargerExemples(env), T.chargerExemples(env, { renfort: true })])
   l.push("");
   l.push("### AESH");
   l.push("");
-  l.push("| AESH | Quotité | Charge A | Charge B | État | Établissements possibles |");
-  l.push("|---|---|---|---|---|---|");
+  l.push("| AESH | Quotité | Charge A | Charge B | État | Trous A / B | Journées courtes A / B | Établissements possibles |");
+  l.push("|---|---|---|---|---|---|---|---|");
   r.aesh.forEach(function (a) {
     var src = d.aesh.filter(function (x) { return x.id === a.aeshId; })[0];
     var etabs = src.etablissements.length ? src.etablissements.map(function (id) { return nomEtab[id] || id; }).join(", ") : "tous";
     l.push("| " + a.nom + " | " + h(a.quotite) + " | " + h(a.A) + " | " + h(a.B) + " | " + { sous: "sous-utilisée", complete: "complète", depassement: "dépassement" }[a.etat]
+      + " | " + a.trousA + " / " + a.trousB + " | " + a.courtesA + " / " + a.courtesB
       + " | " + etabs + (src.indisponibilites.length ? " ; indisponible " + src.indisponibilites.join(", ") : "") + " |");
   });
   l.push("");
@@ -152,5 +154,56 @@ Promise.all([T.chargerExemples(env), T.chargerExemples(env, { renfort: true })])
     }).join(" | ") + " |");
   });
   P.OPTIONS.aeshConnue = retenu.aeshConnue; P.OPTIONS.echanges = retenu.echanges;
+  l.push("");
+  l.push("### Trous et journées courtes : avant / après");
+  l.push("");
+  l.push("Par jeu : heures notifiées couvertes · trous de plus de " + (r.ecartMax / 60) + " h (A + B, toutes AESH) · journées de moins de "
+    + (r.journeeMin / 60) + " h de présence (A + B) · élèves à 4 AESH ou plus. « Avant » = phase 2 (critère « créneau isolé » −10, sans passe sur les trous).");
+  l.push("Le glouton est sensible à l'ordre de départage des AESH (identifiants) : la seconde table donne la moyenne sur " + NB_PERMUTATIONS
+    + " permutations des identifiants des AESH, plus représentative qu'un seul jeu.");
+  var poidsCourte = P.POIDS.journeeCourte, opt = JSON.parse(JSON.stringify(P.OPTIONS));
+  var variantes = [
+    ["avant (phase 2)", { trous: false, colleConnue: false, echangesTrous: false }, 0],
+    ["passe sur les trous seule", { trous: false, colleConnue: false, echangesTrous: true }, poidsCourte],
+    ["score : trou −30", { trous: true, colleConnue: false, echangesTrous: false }, 0],
+    ["score : trou −30, journée courte −10", { trous: true, colleConnue: false, echangesTrous: false }, poidsCourte],
+    ["score trou + journée courte, passe sur les trous", { trous: true, colleConnue: false, echangesTrous: true }, poidsCourte],
+    ["idem + créneau collé à une AESH connue", { trous: true, colleConnue: true, echangesTrous: true }, poidsCourte]
+  ];
+  function regler(v) { Object.keys(v[1]).forEach(function (k) { P.OPTIONS[k] = v[1][k]; }); P.POIDS.journeeCourte = v[2]; }
+  function mesure(x) {
+    var res = P.proposer(x), rr = res.rapport;
+    return { couvert: rr.heures.individuel.couvert + rr.heures.mutualise.couvert, trous: rr.trous.A + rr.trous.B,
+      courtes: rr.courtes.A + rr.courtes.B, plus: aeshParEleve(x, res.affectations).plus.length, violations: rr.violations.length };
+  }
+  function cellule(m, dec) {
+    function f(x) { return dec ? x.toFixed(1).replace(".", ",") : String(x); }
+    return h(m.couvert) + " · " + f(m.trous) + " trous · " + f(m.courtes) + " courtes · " + f(m.plus) + (m.violations ? " · **" + m.violations + " violation(s)**" : "");
+  }
+  // permutation k des identifiants des AESH (noms inchangés)
+  function permuter(x, k) {
+    var o = copie(x, {});
+    o.aesh = x.aesh.map(function (a, i) { var c = JSON.parse(JSON.stringify(a)); c.id = String.fromCharCode(97 + ((i * 7 + k * 5) % 26)) + ((i * 13 + k * 11) % 97) + "|" + a.id; return c; });
+    return o;
+  }
+  [["Exemples tels quels", false], ["Moyenne sur " + NB_PERMUTATIONS + " permutations", true]].forEach(function (t) {
+    l.push("");
+    l.push("**" + t[0] + "**");
+    l.push("");
+    l.push("| Variante | Exemples (pénurie) | Exemples + renfort | AESH doublées |");
+    l.push("|---|---|---|---|");
+    variantes.forEach(function (v) {
+      regler(v);
+      l.push("| " + v[0] + (JSON.stringify(v[1]) === JSON.stringify({ trous: opt.trous, colleConnue: opt.colleConnue, echangesTrous: opt.echangesTrous }) ? " (retenu)" : "") + " | "
+        + [d, jeux[1], doublees].map(function (x) {
+          if (!t[1]) return cellule(mesure(x), false);
+          var s = { couvert: 0, trous: 0, courtes: 0, plus: 0, violations: 0 };
+          for (var k = 0; k < NB_PERMUTATIONS; k++) { var m = mesure(permuter(x, k)); Object.keys(s).forEach(function (c) { s[c] += m[c]; }); }
+          Object.keys(s).forEach(function (c) { if (c !== "violations") s[c] /= NB_PERMUTATIONS; });
+          return cellule(s, true);
+        }).join(" | ") + " |");
+    });
+  });
+  P.POIDS.journeeCourte = poidsCourte; Object.keys(opt).forEach(function (k) { P.OPTIONS[k] = opt[k]; });
   console.log(l.join("\n"));
 }).catch(function (err) { console.error(err); process.exitCode = 1; });

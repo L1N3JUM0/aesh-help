@@ -453,6 +453,22 @@ var PialTests = (function () {
       egal(al[0].niveau, "erreur", "erreurs en tête");
       egal(JSON.stringify(M.alertes(f.ctx(l), "2026-11-19")), JSON.stringify(al), "deux calculs identiques");
     });
+    t("trous et journées courtes d'une AESH", function () {
+      var m = M.mesureJournee([[480, 535], [700, 755], [540, 600]], 120);
+      egal([m.presence, m.ecarts, m.trous], [170, [5, 100], 0], "trié, écarts de 5 et 100 min");
+      egal(M.mesureJournee([[480, 535], [700, 755], [540, 600]], 60).trous, 1, "écart max 1 h : un trou");
+      egal(M.mesureJournee([[480, 600], [540, 660]], 120), { presence: 180, ecarts: [], trous: 0 }, "chevauchement fusionné");
+      egal(M.mesureJournee([], 120), { presence: 0, ecarts: [], trous: 0 });
+      var f = fixture(M), e = f.e;
+      var l = [aff("aesh|x", f.cA, "lundi", "08:00", "08:55", "individuel", [e.ind]),
+        aff("aesh|x", f.cA, "lundi", "11:00", "11:55", "individuel", [e.ind]),
+        aff("aesh|x", f.cA, "mardi", "08:00", "08:55", "individuel", [e.ind], "A")];
+      var j = M.journeesAesh(f.aesh[0], f.ctx(l));
+      egal([j.A.trous, j.A.courtes, j.B.trous, j.B.courtes], [1, 2, 1, 1], "lundi : 2 h 05 d'écart et 1 h 50 de présence ; mardi en A seulement");
+      egal(j.A.jours.lundi.ecarts, [125]);
+      var j2 = M.journeesAesh(f.aesh[0], f.ctx(l, { ecartMax: 150, journeeMin: 60 }));
+      egal([j2.A.trous, j2.A.courtes], [0, 1], "réglages : écart max 2 h 30, journée courte sous 1 h");
+    });
     t("synthèse du bandeau", function () {
       var f = fixture(M), e = f.e;
       var s = M.synthese(f.ctx([aff("aesh|x", f.cA, "lundi", "08:00", "08:55", "mutualise", [e.mut1, e.mut2])]));
@@ -995,6 +1011,63 @@ var PialTests = (function () {
       egal([res.nbEchanges, aeshDe(L)], [1, ["a", "c", "d"]]);
       vrai(res.affectations.some(function (x) { return x.aeshId === "a" && x.creneau.debut === "09:00" && x.raisons[0] === "repris à Test b pour limiter Lucas T. à 3 AESH"; }), "raison de la réattribution");
     });
+    t("moteur : score des trous et des journées courtes", function () {
+      var m = mini(), e = m.eleve("Lucas", 1), autre = m.eleve("Emma", 2);
+      m.cours(e, "lundi", "14:00", "14:55");
+      function classer(pins, debut) {
+        var l = P.classerAesh(m.donnees([aeshMini("a", 24), aeshMini("b", 24)], pins), { creneau: { etab: m.etab.id, jour: "lundi",
+          debut: debut, fin: debut.replace(":00", ":55"), semaine: "toutes" }, modalite: "individuel", eleves: [e.id] });
+        var o = {}; l.forEach(function (x) { o[x.aeshId] = x; });
+        return o;
+      }
+      // « a » accompagne Emma à 08:00 : prendre 14:00 laisse un trou de 5 h
+      var c = classer([aff("a", m.etab, "lundi", "08:00", "08:55", "individuel", [autre])], "14:00");
+      vrai(c.a.raisons.indexOf("laisse un trou de plus de 2 h le lundi") > -1, c.a.raisons.join(" ; "));
+      vrai(c.b.raisons.indexOf("journée de moins de 2 h le lundi") > -1, c.b.raisons.join(" ; "));
+      vrai(Math.abs(c.b.score - c.a.score - (30 - 10 + 15 / 24)) < 0.01, "trou −30 contre journée courte −10 (et 1 h d'équilibrage) : " + (c.b.score - c.a.score));
+      vrai(c.a.raisons.indexOf("même établissement le lundi") < 0, "voisin à 5 h : pas de bonus « même établissement »");
+      vrai(c.b.score > c.a.score, "b d'abord");
+      // « a » à 08:00 et 12:00 : 10:00 comble le trou
+      var c2 = classer([aff("a", m.etab, "lundi", "08:00", "08:55", "individuel", [autre]), aff("a", m.etab, "lundi", "12:00", "12:55", "individuel", [autre])], "10:00");
+      vrai(c2.a.raisons.indexOf("comble un trou le lundi") > -1, c2.a.raisons.join(" ; "));
+      vrai(c2.a.raisons.indexOf("journée de moins de 2 h le lundi") < 0 && c2.a.raisons.indexOf("complète une journée courte le lundi") > -1, c2.a.raisons.join(" ; "));
+      vrai(c2.a.score > c2.b.score, "a d'abord");
+      // ancien critère, pour les mesures
+      var avant = P.OPTIONS.trous;
+      try {
+        P.OPTIONS.trous = false;
+        var c3 = classer([aff("a", m.etab, "lundi", "08:00", "08:55", "individuel", [autre])], "14:00");
+        vrai(c3.a.raisons.some(function (r) { return /^créneau isolé/.test(r); }) && !c3.b.raisons.some(function (r) { return /journée/.test(r); }), c3.a.raisons.join(" ; "));
+      } finally { P.OPTIONS.trous = avant; }
+    });
+    t("moteur : passe d'échanges sur les trous", function () {
+      var m = mini(), L = m.eleve("Lucas", 1), R = m.eleve("Rose", 1), S = m.eleve("Sami", 1), T2 = m.eleve("Tom", 1);
+      m.cours(L, "lundi", "08:00", "08:55"); m.cours(R, "lundi", "14:00", "14:55");
+      m.cours(S, "lundi", "09:00", "09:55"); m.cours(T2, "lundi", "15:00", "15:55");
+      function prop(aeshId, h, eleve) {
+        var x = aff(aeshId, m.etab, "lundi", h, h.replace(":00", ":55"), "individuel", [eleve]);
+        x.epinglee = false; x.origine = "moteur";
+        return x;
+      }
+      // a : 08:00 et 14:00 ; b : 09:00 et 15:00 — un trou chacune
+      var d = m.donnees([aeshMini("a", 24), aeshMini("b", 24)], [prop("a", "08:00", L), prop("a", "14:00", R), prop("b", "09:00", S), prop("b", "15:00", T2)]);
+      function trous(affs) {
+        var ctx = M.contexte(avecAffectations(d, affs)), n = 0;
+        d.aesh.forEach(function (a) { var j = M.journeesAesh(a, ctx); n += j.A.trous + j.B.trous; });
+        return n;
+      }
+      var res = P.ameliorerTrousAffectations(d);
+      egal(trous(d.affectations), 4);
+      egal(trous(res.affectations), 0, "les deux journées regroupées");
+      vrai(res.nbMouvements > 0);
+      egal(violationsMoteur(M, d, res), [], "aucune contrainte dure enfreinte");
+      [L, R, S, T2].forEach(function (e) { proche(heures(M, d, res, e).ind.moy, 1, "couverture inchangée"); });
+      vrai(res.affectations.some(function (x) { return /pour réduire les trous des journées$/.test(x.raisons[0]); }), "raison");
+      egal(JSON.stringify(P.ameliorerTrousAffectations(d)), JSON.stringify(res), "déterministe");
+      // épinglées : rien ne bouge
+      var pins = d.affectations.map(function (x) { var c = JSON.parse(JSON.stringify(x)); c.epinglee = true; return c; });
+      egal(P.ameliorerTrousAffectations(m.donnees(d.aesh, pins)).nbMouvements, 0);
+    });
     t("moteur : entre groupes mutualisés, le moins couvert d'abord", function () {
       var m = mini(), a = m.eleve("Ana", 0, 2), b = m.eleve("Bea", 0, 2), c = m.eleve("Cyr", 0, 1);
       [a, b].forEach(function (e) { m.cours(e, "lundi", "08:00", "08:55"); m.cours(e, "lundi", "09:00", "09:55"); });
@@ -1041,6 +1114,19 @@ var PialTests = (function () {
         var m = {};
         Object.keys(x.d).forEach(function (k) { m[k] = Array.isArray(x.d[k]) ? melanger(x.d[k]) : x.d[k]; });
         egal(JSON.stringify(P.proposer(m).affectations), JSON.stringify(x.res.affectations), "ordre des données sans effet");
+      });
+    });
+    t("moteur (exemples) : la passe sur les trous ne change pas la couverture", function () {
+      return charger().then(function (x) {
+        var avant = P.OPTIONS.echangesTrous, sans;
+        try { P.OPTIONS.echangesTrous = false; sans = P.proposer(x.d); } finally { P.OPTIONS.echangesTrous = avant; }
+        function couv(res) {
+          var ctx = M.contexte(avecAffectations(x.d, res.affectations));
+          return x.d.eleves.map(function (e) { var c = M.couvertureEleve(e, ctx); return [c.ind.A, c.ind.B, c.mut.A, c.mut.B, c.peri.A, c.peri.B].join(); });
+        }
+        egal(couv(x.res), couv(sans), "couverture A/B de chaque élève identique");
+        vrai(x.res.rapport.trous.A + x.res.rapport.trous.B <= sans.rapport.trous.A + sans.rapport.trous.B, "pas plus de trous");
+        vrai(x.res.rapport.aesh.every(function (a) { return typeof a.trousA === "number" && typeof a.courtesB === "number"; }), "trous par AESH dans le rapport");
       });
     });
     t("moteur (exemples) : aucune des 7 contraintes dures n'est violée", function () {

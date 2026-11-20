@@ -24,6 +24,8 @@ var PialAffectations = (function () {
   // séparateur lu à la copie (et par les lecteurs d'écran) mais invisible :
   // entre éléments flex, un simple espace disparaît (« 44 hMutualisé »)
   function sep(t) { return '<span class="sep-copie">' + t + '</span>'; }
+  // minutes -> « 2 h », « 1 h 30 »
+  function texteDuree(m) { return Math.floor(m / 60) + " h" + (m % 60 ? " " + String(m % 60).padStart(2, "0") : ""); }
   function heures(x) { return (Math.round(x * 100) / 100).toString().replace(".", ",") + " h"; }
 
   /* =============== état en mémoire =============== */
@@ -360,16 +362,20 @@ var PialAffectations = (function () {
     $("reg-indispos").checked = !!r.respecterIndispos;
     $("reg-periscolaire").checked = !!r.gererPeriscolaire;
     $("reg-pause").value = r.pauseRepasMin;
+    $("reg-ecart").value = r.ecartMax / 60;
   }
   $("reg-enregistrer-regles").addEventListener("click", function () {
     var pause = parseInt($("reg-pause").value, 10);
     if (isNaN(pause) || pause < 0 || pause > 120) { ui.toast("Durée de pause invalide (0 à 120 minutes)."); return; }
+    var ecart = Math.round(parseFloat(String($("reg-ecart").value).replace(",", ".")) * 60);
+    if (isNaN(ecart) || ecart < 30 || ecart > 480) { ui.toast("Écart maximal invalide (de 0,5 à 8 heures)."); return; }
     var valeur = {};
     Object.keys(etat.reglages).forEach(function (k) { valeur[k] = etat.reglages[k]; });
     valeur.dureeReelle = $("reg-duree-reelle").checked;
     valeur.respecterIndispos = $("reg-indispos").checked;
     valeur.gererPeriscolaire = $("reg-periscolaire").checked;
     valeur.pauseRepasMin = pause;
+    valeur.ecartMax = ecart;
     PialDB.appliquer([{ magasin: "parametres", enregistrer: [{ cle: "reglages", valeur: valeur }] }]).then(recharger).then(function () {
       ui.toast("Règles de calcul enregistrées.");
       if (typeof PialAffectations.surChangement === "function") PialAffectations.surChangement();
@@ -499,7 +505,8 @@ var PialAffectations = (function () {
     var h = '<p class="aide">Calculée en ' + Math.round(dernierRapport.ms) + ' ms · ' + pluriel(r.nbProposees, "affectation proposée", "affectations proposées")
       + ' · ' + pluriel(r.nbEpinglees, "affectation épinglée conservée", "affectations épinglées conservées")
       + (dernierRapport.nbRemplacees ? ' · ' + pluriel(dernierRapport.nbRemplacees, "affectation non épinglée remplacée", "affectations non épinglées remplacées") : "")
-      + (r.nbEchanges ? ' · ' + pluriel(r.nbEchanges, "créneau repris ou échangé", "créneaux repris ou échangés") + ' entre AESH pour limiter à ' + P.POIDS.maxAeshParEleve + ' le nombre d\'AESH par élève' : "") + '.</p>';
+      + (r.nbEchanges ? ' · ' + pluriel(r.nbEchanges, "créneau repris ou échangé", "créneaux repris ou échangés") + ' entre AESH pour limiter à ' + P.POIDS.maxAeshParEleve + ' le nombre d\'AESH par élève' : "")
+      + (r.nbEchangesTrous ? ' · ' + pluriel(r.nbEchangesTrous, "créneau repris ou échangé", "créneaux repris ou échangés") + ' pour réduire les trous des journées' : "") + '.</p>';
     if (r.violations.length) h += '<p class="note alerte">⚠ ' + pluriel(r.violations.length, "contrainte non respectée", "contraintes non respectées") + ' par la proposition : signalez-le.</p>';
     h += '<div class="mc-section"><h4>Heures</h4><div class="tableau-conteneur"><table class="tableau"><thead><tr><th></th><th>Demandées</th><th>Couvertes</th><th>Taux</th></tr></thead><tbody>'
       + ligneHeures("Individuel", x.individuel) + ligneHeures("Mutualisé", x.mutualise)
@@ -542,10 +549,24 @@ var PialAffectations = (function () {
       return '<li>' + ech(a.nom) + ' : reste ' + heures(a.restantA) + (a.restantA !== a.restantB ? ' en semaine A, ' + heures(a.restantB) + ' en semaine B' : '') + ' sur ' + heures(a.quotite) + '</li>';
     }).join("") + '</ul>' : '<p class="aide">Aucune.</p>';
     h += '</div>';
+    // journées des AESH : trous et journées courtes, par semaine
+    var avecTrous = r.aesh.filter(function (a) { return a.trousA || a.trousB || a.courtesA || a.courtesB; });
+    function ab(a, b) { return a === b ? String(a) : a + " (A) / " + b + " (B)"; }
+    h += '<div class="mc-section"><h4>Journées des AESH</h4><p class="aide">Trous de plus de ' + ech(texteDuree(r.ecartMax))
+      + ' entre deux accompagnements : ' + ab(r.trous.A, r.trous.B) + ' · journées de moins de ' + ech(texteDuree(r.journeeMin)) + ' de présence : '
+      + ab(r.courtes.A, r.courtes.B) + '. Le détail se lit dans la grille de chaque AESH.</p>';
+    h += avecTrous.length ? '<div class="tableau-conteneur"><table class="tableau"><thead><tr><th>AESH</th><th>Trous</th><th>Journées courtes</th></tr></thead><tbody>'
+      + avecTrous.map(function (a) {
+        return '<tr><td><button type="button" class="btn-lien" data-rapport-aesh="' + ech(a.aeshId) + '">' + ech(a.nom) + '</button></td><td>' + ab(a.trousA, a.trousB) + '</td><td>' + ab(a.courtesA, a.courtesB) + '</td></tr>';
+      }).join("") + '</tbody></table></div>' : "";
+    h += '</div>';
     h += '<p class="aide">Chaque affectation proposée garde ses raisons : ouvrez un créneau pour les voir. Épinglez ce que vous voulez garder, puis relancez « Proposer ».</p>';
     $("rp-corps").innerHTML = h;
     Array.prototype.forEach.call($("rp-corps").querySelectorAll("[data-rapport-eleve]"), function (b) {
       b.addEventListener("click", function () { fermerRapport(); ouvrirGrilleEleve(this.dataset.rapportEleve); });
+    });
+    Array.prototype.forEach.call($("rp-corps").querySelectorAll("[data-rapport-aesh]"), function (b) {
+      b.addEventListener("click", function () { fermerRapport(); $("af-aesh").value = this.dataset.rapportAesh; rendreAffectations(); });
     });
     $("voile-rapport").hidden = false;
     $("rp-fermer").focus();

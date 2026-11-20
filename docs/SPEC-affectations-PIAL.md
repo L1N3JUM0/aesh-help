@@ -218,14 +218,15 @@ Fichier `pial/moteur.js`. L'algorithme est **glouton, déterministe et explicabl
 | Expérience correspondant aux besoins de l'élève (§7.2) | +5 par besoin correspondant, plafonné à +15 |
 | Formation déclarée correspondant aux besoins (§7.3) | +10 |
 | Équilibrage : part de quotité restante | +0 à +15, proportionnel |
-| Créneau isolé (laisse un trou de plus de 2 h dans sa journée) | −10 |
+| Trou : le créneau laisse un écart de plus de l'écart maximal (2 h, réglable) entre deux accompagnements de l'AESH ce jour-là | −30 par trou créé, +30 par trou comblé |
+| Journée courte : la journée de l'AESH ferait moins de 2 h de présence | −10 par journée courte créée, +10 si le créneau la complète |
 | Nombre d'AESH différentes pour l'élève dépasse 3 | −25 par AESH au-delà de 3, cumulable |
 
 Les poids sont regroupés dans **un seul objet de configuration** (`POIDS` dans `moteur.js`) pour pouvoir les ajuster. Lecture retenue :
 - continuité : l'AESH accompagne déjà au moins un élève de l'unité (affectations épinglées comprises) ;
-- même établissement : le créneau précédent ou suivant de l'AESH ce jour-là est dans le même établissement ;
+- même établissement : le créneau précédent ou suivant de l'AESH ce jour-là est dans le même établissement, à moins de l'écart maximal (un voisin à 5 h ne rapproche pas la journée) ;
 - créneau collé : écart d'au plus 15 min avec un autre créneau de l'AESH (intercours, récréation) ;
-- créneau isolé : l'AESH a d'autres créneaux ce jour-là et le plus proche est à plus de 2 h (un créneau seul dans la journée ne crée pas de trou) ;
+- trou et journée courte : variation du nombre de trous (écart > `ecartMax`, Réglages → Règles de calcul, 2 h par défaut) et de journées courtes (présence < 2 h) de la journée de l'AESH, calculée semaine par semaine puis moyennée sur les semaines du créneau ; présence = union des créneaux (périscolaire compris). Ce ne sont pas des contraintes : une AESH qui laisserait un trou reste choisie si elle est la seule possible. Remplace le critère « créneau isolé » (−10) de la phase 2 ;
 - équilibrage : 15 × quotité restante ÷ quotité, dans la semaine la plus chargée parmi celles du créneau ;
 - plus de 3 AESH : pour chaque élève de l'unité qui n'a pas encore cette AESH, rang qu'elle aurait parmi ses AESH différentes ; −25 pour la 4e, −50 pour la 5e, etc., cumulé sur les élèves de l'unité ;
 - expérience et formation : poids présents, mais **sans effet jusqu'à la phase 4** (l'expérience dépend du rapprochement des rapports ; une table formation → besoins est un choix de conformité à valider, §7.3) ;
@@ -234,6 +235,8 @@ Les poids sont regroupés dans **un seul objet de configuration** (`POIDS` dans 
 Les affectations proposées ont un identifiant déterministe (`mo|aeshId|creneauCle`) : deux exécutions sur les mêmes données donnent un résultat identique.
 
    Après le glouton, une **passe d'échanges** limite le nombre d'AESH par élève : pour chaque élève qui en a plus de 3 (le plus d'AESH d'abord), le moteur essaie de retirer son AESH la plus rare en donnant chacun de ses créneaux avec elle à une AESH qu'il a déjà, telle quelle (« repris à … ») ou contre un créneau de même durée, le même jour et les mêmes semaines, qu'elle tient avec d'autres élèves (« échangé avec … »). Le lot n'est gardé que si l'excès total (Σ max(0, nb AESH − 3)) baisse, sans contrainte dure enfreinte ; seules les affectations proposées bougent, les élèves et créneaux couverts ne changent pas ; au plus 3 passes, ordre fixe (déterministe). Le rapport de fin donne le nombre de créneaux repris ou échangés.
+
+   Puis une **passe sur les trous** : pour chaque affectation proposée d'une journée qui a un trou ou qui est courte (ordre fixe), le moteur cherche le meilleur mouvement : la donner à une autre AESH telle quelle, ou contre un créneau de même durée, le même jour et les mêmes semaines. Coût d'une journée = 30 par trou + 10 si elle est courte, par semaine ; une AESH de plus pour un élève coûte 40 (`POIDS.nouvelleAeshEchange`, le poids de la continuité) ; le mouvement est gardé si le coût total des deux journées baisse, sans contrainte dure enfreinte et sans excès d'AESH supplémentaire pour les élèves concernés. Couverture et créneaux couverts inchangés ; au plus 3 passes. La passe sur le nombre d'AESH par élève est ensuite relancée une fois. Le rapport de fin donne, par AESH et par semaine, le nombre de trous et de journées courtes.
 
 6. Pour chaque affectation proposée, enregistrer les **raisons** : critères retenus et nombre d'AESH écartées par contrainte. Exemple : « Sophie D. : déjà avec Lucas, même établissement le lundi ».
 7. Produire un rapport de fin : heures couvertes / heures demandées, élèves sous-couverts, AESH sous-utilisées, et pour chaque heure non couverte la contrainte qui a bloqué (quotités épuisées, AESH déjà occupées, déplacement impossible…). Le motif d'un élève sous-couvert est le **motif principal** : la contrainte qui a écarté le plus d'AESH sur ses créneaux tentés (d'autres AESH ont pu être écartées pour un autre motif) ; « pas assez de cours » si ses cours non exclus ne suffisent pas. Les AESH qui n'interviennent pas dans l'établissement ne sont comptées ni dans ce motif ni dans les raisons (« 3 AESH écartées (2 quotité, 1 indisponible) ») : elles n'auraient jamais pu prendre le créneau. Le motif « aucune AESH n'intervient dans l'établissement » n'apparaît que si c'est le seul obstacle.
@@ -593,6 +596,16 @@ Interface du moteur (commit 4) :
 16. Fiche de l'AESH sélectionnée (filtre AESH ou clic dans la vue d'ensemble) : quotité, charge A/B, élèves, établissements, indisponibilités, formations, et l'interrupteur « Ignorer ses indisponibilités et ses établissements possibles » (annulable ; sans effet si le réglage global est décoché). Une AESH concernée porte la mention « indispos ignorées » dans la liste.
 17. Versions : « Valider la version » (date d'effet, commentaire) copie le brouillon dans le magasin `affectations` avec `version` = numéro et l'identifiant `v<numéro>|<id>` ; l'enregistrement `versions` garde compteurs et libellés. « Historique » : liste, consultation en lecture seule, comparatif entre deux versions ou avec le brouillon, restauration comme brouillon (versions de l'année en cours ; annulable ; les affectations dont l'AESH ou tous les élèves ont été supprimés depuis sont écartées, avec le nombre dans la confirmation).
 18. Nombre d'AESH par élève (revue après la phase 2) : deux leviers codés et mesurés sur trois jeux (pénurie, renfort, AESH doublées). Retenu : la **passe d'échanges** (§5.3.5), qui ramène les élèves à 4 AESH ou plus de 6 / 5 / 2 à 1 / 1 / 0 sans changer la couverture. Écarté (présent dans `moteur.js`, désactivé : `OPTIONS.aeshConnue`) : préférer, à jour égal, un créneau où une AESH de l'élève est libre ; il réduit davantage le nombre d'élèves à 4 AESH ou plus, mais fait baisser la couverture (303 h → 269,5 h en pénurie, 327,5 h → 321,5 h avec le renfort).
+
+## 16. Décisions du 20/11/2026 (retours de test des phases 1 et 2)
+
+Ordre de traitement : A (corrections), B (trous), E (grille AESH), puis C (fiche élève), D (fiche AESH), F (glisser-déposer).
+
+1. Bandeau : capacité (quotités totales, affectées, libres) et écart théorique besoins − capacité ; blocs séparés par un texte lisible à la copie (§7.1).
+2. Stockage : nombres au format français, bouton « Demander la conservation des données », explication en cas de refus ; espace PIAL installable à part (`pial/manifest.webmanifest`, icône verte) (§9.1).
+3. Trous : réglage « écart maximal entre deux accompagnements » (2 h) ; score −30 par trou, −10 par journée de moins de 2 h (non bloquants) ; « même établissement » limité aux voisins à moins de l'écart maximal ; passe sur les trous après la passe sur le nombre d'AESH par élève ; rapport par AESH (§5.3.5, §5.3.7).
+4. Préférence « à jour égal, créneau collé à celui d'une AESH qui accompagne déjà l'élève » : codée (`OPTIONS.colleConnue`), mesurée, **désactivée** : elle fait baisser la couverture en pénurie (moyenne sur 12 permutations des AESH : 303,96 h → 301,42 h ; 280 h sur les exemples tels quels) pour un gain sur les trous que la passe obtient sans perte.
+5. Mesures : `outils/rapport-moteur.js`, section « Trous et journées courtes », sur les exemples tels quels et en moyenne sur 12 permutations des identifiants des AESH (le glouton est sensible à l'ordre de départage).
 
 ## 15. Sujets ouverts
 

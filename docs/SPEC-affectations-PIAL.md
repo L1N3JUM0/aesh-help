@@ -163,6 +163,7 @@ Le moteur ne les enfreint jamais. Une saisie manuelle peut les enfreindre, mais 
 5. **Quotité** : elle n'est jamais dépassée, ni en semaine A ni en semaine B.
 6. **Pause repas de l'AESH** : sur une journée de plus de 6 h de **présence** (somme des créneaux, trajets exclus), l'AESH garde une plage libre continue d'au moins 45 min dans la plage de pause repas. La durée est réglable. La plage (11 h 30 – 14 h par défaut) est réglable **par établissement** (§2.5) ; pour une journée sur plusieurs établissements, on retient la plage de l'établissement du premier créneau de la journée. Si l'AESH est affectée à la pause méridienne d'un élève ce jour-là, sa pause peut se situer en dehors de la plage : on vérifie alors seulement qu'il existe 45 min libres continues dans la journée, et le cas est **signalé** (information) sans être bloqué.
 7. **Indisponibilités et établissements possibles** : respectés si le réglage « Respecter les indisponibilités » est activé (activé par défaut). Ce réglage se désactive globalement, et aussi AESH par AESH.
+8. **Élèves à ne pas affecter** (fiche AESH, §7.2) : une AESH n'est jamais proposée pour un élève de sa liste d'exclusion, quel que soit le réglage des indisponibilités ; aucun motif n'est demandé. Une saisie manuelle reste possible et est signalée (code `exclusion`).
 
 ### 4.5 Ce qui n'est pas une contrainte
 
@@ -218,7 +219,8 @@ Fichier `pial/moteur.js`. L'algorithme est **glouton, déterministe et explicabl
 | Même établissement que ses créneaux adjacents du jour | +20 |
 | Créneau collé à un autre créneau déjà affecté (journée compacte) | +10 |
 | Expérience correspondant aux besoins de l'élève (§7.2) | +5 par besoin correspondant, plafonné à +15 |
-| Formation déclarée correspondant aux besoins (§7.3) | +10 |
+| Formation : part des besoins de l'élève couverts par les spécialités de l'AESH (§7.3, table de Réglages) | +0 à +10, proportionnel |
+| Vœu de l'AESH touché (journée, demi-journée ou plage horaire à éviter, §7.2) | −20 par vœu |
 | Équilibrage : part de quotité restante | +0 à +15, proportionnel |
 | Trou : le créneau laisse un écart de plus de l'écart maximal (2 h, réglable) entre deux accompagnements de l'AESH ce jour-là | −30 par trou créé, +30 par trou comblé |
 | Journée courte : la journée de l'AESH ferait moins de 2 h de présence | −10 par journée courte créée, +10 si le créneau la complète |
@@ -231,7 +233,9 @@ Les poids sont regroupés dans **un seul objet de configuration** (`POIDS` dans 
 - trou et journée courte : variation du nombre de trous (écart > `ecartMax`, Réglages → Règles de calcul, 2 h par défaut) et de journées courtes (présence < 2 h) de la journée de l'AESH, calculée semaine par semaine puis moyennée sur les semaines du créneau ; présence = union des créneaux (périscolaire compris). Ce ne sont pas des contraintes : une AESH qui laisserait un trou reste choisie si elle est la seule possible. Remplace le critère « créneau isolé » (−10) de la phase 2 ;
 - équilibrage : 15 × quotité restante ÷ quotité, dans la semaine la plus chargée parmi celles du créneau ;
 - plus de 3 AESH : pour chaque élève de l'unité qui n'a pas encore cette AESH, rang qu'elle aurait parmi ses AESH différentes ; −25 pour la 4e, −50 pour la 5e, etc., cumulé sur les élèves de l'unité ;
-- expérience et formation : poids présents, mais **sans effet jusqu'à la phase 4** (l'expérience dépend du rapprochement des rapports ; une table formation → besoins est un choix de conformité à valider, §7.3) ;
+- expérience : poids présent, **sans effet jusqu'à la phase 4** (rapprochement des rapports) ;
+- formation (activée le 20/11/2026) : besoins couverts = union des besoins des spécialités de l'AESH (table spécialité → besoins de Réglages ; une spécialité hors table est sans effet) ; pour chaque élève de l'unité qui a des besoins, part = besoins couverts / besoins de l'élève ; score = 10 × la meilleure part ; raison « formation : 2 besoins sur 4 de Lucas M. » ;
+- vœux : non bloquants, ils comptent aussi dans le coût de la passe sur les trous ;
 - égalité de score : identifiant de l'AESH, ordre alphabétique.
 
 Les affectations proposées ont un identifiant déterministe (`mo|aeshId|creneauCle`) : deux exécutions sur les mêmes données donnent un résultat identique.
@@ -324,7 +328,7 @@ Onglets existants : Importer, Rapports, Indicateurs, Statistiques, Réglages. Aj
 
 Liste des AESH, puis une fiche par AESH :
 
-- **Identité et paramètres** : quotité, e-mail, établissements possibles, indisponibilités, interrupteur « ignorer les indisponibilités » pour cette AESH.
+- **Identité et paramètres** : quotité, e-mail, établissements possibles, indisponibilités, interrupteur « ignorer les indisponibilités » pour cette AESH. **Livré le 20/11/2026 dans la grille de l'AESH** (fiche repliable, enregistrement annulable), avec : vœux (journées ou demi-journées et plages horaires à éviter, pénalités du score, hachurés dans la grille), élèves à ne pas affecter (exclusion dure, sans motif), spécialités (cases de la table de Réglages ; valeurs importées hors table gardées, marquées « hors table »). Quotité, établissements, indisponibilités et spécialités modifiés dans la fiche sont marqués « modifié » et protégés au réimport du fichier des AESH (même choix global que pour les élèves) ; vœux et exclusions ne sont jamais touchés par l'import.
 - **Affectation actuelle** : élèves, heures par établissement, mini-grille.
 - **Expérience tirée des rapports importés** :
   - **types d'accompagnement réalisés**, avec leur fréquence (champ `accomp` des rapports, qui reprend la liste ACCOMP de l'application AESH : « Secrétaire, scripteur », « Aide aux déplacements », etc.) ;
@@ -338,6 +342,8 @@ Liste des AESH, puis une fiche par AESH :
 
 - L'expérience est décrite par des **besoins fonctionnels** (liste ACCOMP), pas par des diagnostics d'élèves. On n'infère jamais « a accompagné un élève TSA » à partir des données des élèves : ce serait une donnée de santé de l'élève reportée dans le profil de l'AESH.
 - Les **formations ou compétences déclarées** (TSA, LSF, braille…) sont saisies par le coordonnateur sur la fiche AESH, ou importées par la colonne `Formations`. C'est une information sur l'AESH, pas sur un élève.
+- **Table spécialité → besoins** (Réglages → « Spécialités des AESH », modifiable, « Rétablir la table par défaut ») : par défaut TSA, Troubles visuels, Braille, Fauteuil / mobilité, LSF, Troubles auditifs, Troubles des apprentissages (dys), Attention, concentration, Gestion des comportements (contenu : `SPECIALITES_DEFAUT` dans `modele.js`). La colonne `Formations` du fichier des AESH est rapprochée de cette table (casse et accents ignorés) ; une valeur inconnue est gardée avec un avertissement, sans effet sur le score.
+- **Liste ACCOMP** complétée le 20/11/2026 (fin de liste, dans l'application AESH et dans `pial/import-fichiers.js`) : adaptation des supports visuels, description orale des documents, aide à l'utilisation des outils numériques, communication en LSF ou LfPC, accès aux informations orales, structuration par supports visuels (pictogrammes, emploi du temps imagé), préparation des transitions et des changements, aide à l'installation et aux transferts, gestion de la fatigue et des pauses.
 - La colonne `Besoins` des élèves utilise la même liste ACCOMP. Le moteur peut ainsi rapprocher besoins et expérience sans manipuler de diagnostic.
 - Point à présenter au DPO avant toute utilisation réelle.
 
@@ -627,6 +633,7 @@ Ordre de traitement : A (corrections), B (trous), E (grille AESH), puis C (fiche
 7. Variantes écartées supprimées du code (« AESH connue libre », « créneau collé à une AESH connue », ancien critère « créneau isolé ») ; pénalité « journée courte » gardée telle quelle (périscolaire compris). Les périscolaires prioritaires (pause méridienne de Louis I.) restent couverts sur les 3 jeux, avec 1 ou 12 ordres (test).
 8. Plusieurs ordres de départage des AESH, meilleur résultat gardé selon 6 critères ordonnés ; N réglable (12 par défaut) ; progression au-delà de 1,5 s (§5.3.5).
 9. Fiche élève (§7.1) : notification et besoins modifiables, état par matière, commentaire non exporté. Réimport des élèves : l'aperçu liste les élèves dont une valeur modifiée dans l'application (notification, besoins) serait écrasée, avec un choix global « garder la valeur de l'application » / « prendre celle du fichier » (par défaut : garder). Réimport de l'EDT : un cours « normal » dans le fichier garde l'état déjà choisi pour ce cours, sinon prend celui de sa matière.
+10. Fiche AESH avancée de la phase 4 (§7.2) : quotité, établissements, indisponibilités, vœux (−20 par vœu touché), élèves à ne pas affecter (contrainte dure n° 8, §4.4), spécialités reliées à des besoins fonctionnels (table de Réglages, §7.3) ; poids « formation » activé (+0 à +10, proportionnel). Besoins ajoutés à ACCOMP en fin de liste, dans les deux applications.
 
 ## 15. Sujets ouverts
 

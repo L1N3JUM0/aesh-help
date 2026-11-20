@@ -274,6 +274,8 @@ button.puce-aesh:hover,button.puce-aesh:focus-visible{outline:2px solid var(--en
 .ga-indispo{position:absolute;left:0;right:0;background:repeating-linear-gradient(45deg,#ECECEC 0 6px,#DADADA 6px 12px);color:#666;font-size:10.5px}
 .ga-indispo.ignoree{opacity:.45}
 .ga-indispo span{position:absolute;left:4px;bottom:3px;background:rgba(255,255,255,.85);padding:0 4px;border-radius:4px}
+.ga-voeu{position:absolute;left:0;right:0;background:repeating-linear-gradient(-45deg,rgba(201,130,43,.10) 0 6px,rgba(201,130,43,.22) 6px 12px);color:#8A5A12;font-size:10.5px}
+.ga-voeu span{position:absolute;right:4px;top:2px;background:rgba(255,255,255,.85);padding:0 4px;border-radius:4px}
 .ga-trou{position:absolute;left:3px;right:3px;border:1.5px dashed var(--sous);border-radius:6px;background:rgba(176,71,60,.05);display:flex;align-items:center;justify-content:center}
 .ga-trou span{color:var(--sous);font-size:10.5px;font-weight:600;background:#fff;padding:0 4px;border-radius:4px}
 .ga-bloc{position:absolute;box-sizing:border-box;border:1px solid #CBD3E1;border-left:5px solid;border-radius:6px;background:#F6F8FC;padding:2px 5px;overflow:hidden;line-height:1.3;z-index:1}
@@ -295,6 +297,7 @@ button.ga-eleve:hover,button.ga-eleve:focus-visible{text-decoration-color:var(--
 .ga-legende i{display:inline-block;width:18px;height:12px;border-radius:3px;border:1px solid #CBD3E1}
 .ga-legende .lg-libre{background:#fff}
 .ga-legende .lg-indispo{background:repeating-linear-gradient(45deg,#ECECEC 0 3px,#DADADA 3px 6px)}
+.ga-legende .lg-voeu{background:repeating-linear-gradient(-45deg,rgba(201,130,43,.15) 0 3px,rgba(201,130,43,.35) 3px 6px)}
 .ga-legende .lg-trou{border:1.5px dashed var(--sous);background:rgba(176,71,60,.05)}
 .modale-large{max-width:620px;max-height:90vh;overflow:auto}
 .modale-rapport{max-width:780px}
@@ -327,6 +330,21 @@ button.ga-eleve:hover,button.ga-eleve:focus-visible{text-decoration-color:var(--
 .btn-etat[aria-pressed=true].e-prioritaire{background:#FFF4E0;color:#8A5A12;border-color:#E0B36A;font-weight:700}
 .btn-etat[aria-pressed=true].e-normal{background:var(--encre);color:#fff;border-color:var(--encre);font-weight:700}
 .btn-etat[aria-pressed=true].e-exclu{background:#E6E6E6;color:#444;border-color:#BBB;font-weight:700}
+.reg-spec{border:1px solid var(--seyes);border-radius:8px;margin:0 0 8px;background:#fff}
+.reg-spec summary{cursor:pointer;padding:8px 12px;font-weight:600;color:var(--encre)}
+.reg-spec-corps{padding:0 12px 12px;display:flex;flex-direction:column;gap:8px}
+.reg-spec-corps label input[type=text]{font:inherit;padding:5px 8px;border:1px solid var(--seyes);border-radius:6px;margin-left:6px}
+.reg-spec-corps .btn-lien{align-self:flex-start}
+.fa-demi{border-collapse:collapse;font-size:12px;margin:2px 0 6px}
+.fa-demi th{font-weight:600;color:var(--gris);padding:2px 6px;text-align:left}
+.fa-demi td{text-align:center;padding:2px 6px}
+.fa-plage{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:4px 0;font-size:12.5px}
+.fa-plage select,.fa-plage input,.fa-ajout-exclu select{font:inherit;padding:4px 6px;border:1px solid var(--seyes);border-radius:6px;background:#fff}
+.fa-plage input{width:64px}
+.fa-ajout-exclu{display:flex;gap:8px;align-items:center;margin:6px 0}
+.fa-ajout-exclu select{max-width:100%;flex:1}
+.fa-exclu{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:14px;background:#FBEDEB;border:1px solid #E7B9B3;font-size:12.5px}
+.pastille-case.hors-table{border-style:dashed;color:var(--gris)}
 .choix-conflits{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:6px}
 .mc-aesh{list-style:none;margin:0;padding:0;max-height:300px;overflow:auto;border:1px solid #E4E8F0;border-radius:8px}
 .mc-aesh li{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 10px;border-bottom:1px solid #EEF1F5;font-size:13.5px}
@@ -703,6 +721,7 @@ button.ga-eleve:hover,button.ga-eleve:focus-visible{text-decoration-color:var(--
             <h2 id="ga-titre"></h2>
             <p class="chapeau" id="ga-sous-titre"></p>
             <div id="ga-resume"></div>
+            <div id="ga-fiche"></div>
             <div id="ga-grille"></div>
             <p class="aide">Cliquez sur un créneau pour le modifier (même menu que dans la grille de l'élève) ; sur le nom d'un élève pour ouvrir sa grille. Impression : une page A4 paysage par AESH, deux si les semaines A et B diffèrent ; choisissez « Enregistrer au format PDF » dans la fenêtre d'impression.</p>
           </div>
@@ -937,6 +956,17 @@ button.ga-eleve:hover,button.ga-eleve:focus-visible{text-decoration-color:var(--
       <div class="champ" style="max-width:420px"><label for="reg-ordres">Nombre d'ordres de départage essayés par « Proposer »</label><input type="number" id="reg-ordres" min="1" max="50" step="1">
         <p class="aide">Le moteur départage les AESH à égalité dans un certain ordre ; il essaie plusieurs ordres et garde le meilleur résultat (heures couvertes d'abord). 12 par défaut ; 1 = plus rapide. Le résultat est le même à chaque relance.</p></div>
       <div class="actions"><button type="button" class="btn btn-vide" id="reg-enregistrer-regles">Enregistrer</button></div>
+    </div>
+
+    <div class="carte">
+      <h2>Spécialités des AESH</h2>
+      <p class="chapeau">Chaque spécialité (formation déclarée d'une AESH) couvre des besoins fonctionnels. Le moteur rapproche ces besoins de ceux des élèves : aucun diagnostic n'est enregistré côté élève. Point à présenter au DPO avant toute utilisation réelle.</p>
+      <div id="reg-specialites"></div>
+      <div class="actions">
+        <button type="button" class="btn btn-vide" id="reg-ajouter-specialite">Ajouter une spécialité</button>
+        <button type="button" class="btn btn-vide" id="reg-specialites-defaut">Rétablir la table par défaut</button>
+        <button type="button" class="btn btn-plein" id="reg-enregistrer-specialites">Enregistrer les spécialités</button>
+      </div>
     </div>
 
     <div class="carte">

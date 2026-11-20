@@ -32,6 +32,28 @@ var PialModele = (function () {
   var JOURS = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"];
   var ABREV_JOURS = { lun: "lundi", mar: "mardi", mer: "mercredi", jeu: "jeudi", ven: "vendredi", sam: "samedi" };
 
+  // Spécialités des AESH (formations déclarées, §7.3) et besoins
+  // fonctionnels qu'elles couvrent. Table modifiable dans Réglages. Pas de
+  // diagnostic côté élève : le moteur rapproche ces besoins de ceux des
+  // élèves (liste ACCOMP).
+  var SPECIALITES_DEFAUT = [
+    { nom: "TSA", besoins: ["Structuration par supports visuels (pictogrammes, emploi du temps imagé)", "Préparation des transitions et des changements",
+      "Gestion des émotions", "Recentrage sur la tâche", "Relations avec les autres élèves", "Reformulation des consignes"] },
+    { nom: "Troubles visuels", besoins: ["Adaptation des supports visuels", "Description orale des documents", "Lecture à voix haute",
+      "Aide à l'utilisation des outils numériques", "Aide aux déplacements", "Prise de notes"] },
+    { nom: "Braille", besoins: ["Adaptation des supports visuels", "Aide à l'utilisation des outils numériques", "Aménagement des évaluations"] },
+    { nom: "Fauteuil / mobilité", besoins: ["Aide aux déplacements", "Aide à l'installation et aux transferts", "Gestes du quotidien",
+      "Aide à la manipulation", "Aide à la mise en place du matériel", "Secrétaire, scripteur"] },
+    { nom: "LSF", besoins: ["Communication en LSF ou LfPC", "Accès aux informations orales", "Prise de notes", "Reformulation des consignes"] },
+    { nom: "Troubles auditifs", besoins: ["Accès aux informations orales", "Prise de notes", "Reformulation des consignes", "Médiation avec l'enseignant"] },
+    { nom: "Troubles des apprentissages (dys)", besoins: ["Lecture à voix haute", "Secrétaire, scripteur", "Prise de notes", "Aménagement des évaluations",
+      "Adaptation des supports visuels", "Aide à l'utilisation des outils numériques", "Aide à l'organisation"] },
+    { nom: "Attention, concentration", besoins: ["Recentrage sur la tâche", "Aide à l'organisation", "Gestion de la fatigue et des pauses",
+      "Mise en confiance, encouragement"] },
+    { nom: "Gestion des comportements", besoins: ["Gestion des émotions", "Médiation avec l'enseignant", "Relations avec les autres élèves",
+      "Mise en confiance, encouragement"] }
+  ];
+
   var REGLAGES_DEFAUT = {
     dureeReelle: false,          // §4.1 « Compter la durée réelle »
     respecterIndispos: true,     // §4.4 contrainte 7
@@ -43,6 +65,7 @@ var PialModele = (function () {
     ecartMax: 120,               // §5.3.5 écart maximal entre deux accompagnements (minutes)
     journeeMin: 120,             // §5.3.5 journée courte : moins de 2 h de présence
     nbOrdres: 12,                // §16 ordres de départage essayés par « Proposer »
+    specialites: SPECIALITES_DEFAUT, // §16 table spécialité → besoins fonctionnels
     joursAlerteNotification: 30  // §6
   };
 
@@ -255,22 +278,26 @@ var PialModele = (function () {
   // Champs de notification modifiables dans la fiche ; une modification est
   // notée dans eleve.modifiesAppli[champ] pour être protégée au réimport.
   var CHAMPS_NOTIFICATION = ["heuresInd", "heuresMut", "debutNotif", "finNotif", "besoins"];
+  // même mécanisme pour la fiche AESH (§16) : champs aussi présents dans le
+  // fichier des AESH, et champs propres à l'application
+  var CHAMPS_FICHE_AESH = ["quotite", "etablissements", "indisponibilites", "formations"];
+  var PROPRES = { eleves: ["commentaire", "etatsMatieres"], aesh: ["voeux", "elevesExclus", "ignorerIndispos", "alias"] };
   // champs modifiés dans l'application dont la valeur du fichier diffère
   function conflitsReimport(existant, nouveau) {
     var m = (existant && existant.modifiesAppli) || {};
-    return CHAMPS_NOTIFICATION.filter(function (k) {
+    return CHAMPS_NOTIFICATION.concat(CHAMPS_FICHE_AESH).filter(function (k) {
       return m[k] && k in nouveau && JSON.stringify(existant[k]) !== JSON.stringify(nouveau[k]);
     });
   }
-  // Élève réimporté : valeurs du fichier, sauf les champs propres à
-  // l'application (commentaire, états par matière) et, si garderAppli, les
-  // champs de notification modifiés dans l'application (sinon le fichier
-  // l'emporte et la marque « modifié » tombe).
-  function fusionEleve(existant, nouveau, garderAppli) {
+  // Élève (ou AESH, type "aesh") réimporté : valeurs du fichier, sauf les
+  // champs propres à l'application (commentaire, états par matière ; vœux,
+  // élèves exclus…) et, si garderAppli, les champs modifiés dans
+  // l'application (sinon le fichier l'emporte et la marque « modifié » tombe).
+  function fusionEleve(existant, nouveau, garderAppli, type) {
     var o = {};
     Object.keys(nouveau).forEach(function (k) { o[k] = nouveau[k]; });
     if (!existant) return o;
-    ["commentaire", "etatsMatieres"].forEach(function (k) { if (k in existant) o[k] = existant[k]; });
+    PROPRES[type || "eleves"].forEach(function (k) { if (k in existant) o[k] = existant[k]; });
     var m = existant.modifiesAppli || {}, garde = {};
     Object.keys(m).forEach(function (k) {
       if (!m[k]) return;
@@ -389,6 +416,47 @@ var PialModele = (function () {
       if (!p[1] || demiJourneeTouchee(c, p[1])) return liste[i];
     }
     return "";
+  }
+
+  /* =============== fiche AESH : exclusions, vœux, spécialités (§16) =============== */
+  // élèves de l'affectation que cette AESH ne doit pas accompagner
+  function elevesExclusDe(aesh, eleveIds) {
+    var ex = (aesh && aesh.elevesExclus) || [];
+    return (eleveIds || []).filter(function (id) { return ex.indexOf(id) > -1; });
+  }
+  // vœux touchés par un créneau : demi-journées ou journées à éviter
+  // (même codes que les indisponibilités : « mer », « ven-pm ») et plages
+  // horaires à éviter ({jour: "" = tous les jours, debut, fin}).
+  // Renvoie les libellés (« mercredi après-midi », « 12:00–14:00 »).
+  function voeuxTouches(aesh, c) {
+    var v = (aesh && aesh.voeux) || {}, out = [];
+    (v.demiJournees || []).forEach(function (code) {
+      var p = normaliser(code).split("-");
+      if (jourNormalise(p[0]) !== c.jour) return;
+      if (!p[1] || demiJourneeTouchee(c, p[1])) out.push(c.jour + (p[1] === "am" ? " matin" : (p[1] === "pm" ? " après-midi" : "")));
+    });
+    var d = minutes(c.debut), f = minutes(c.fin);
+    (v.plages || []).forEach(function (pl) {
+      if (pl.jour && pl.jour !== c.jour) return;
+      if (minutes(pl.debut) < f && d < minutes(pl.fin)) out.push((pl.jour ? pl.jour + " " : "") + pl.debut + "–" + pl.fin);
+    });
+    return out;
+  }
+  // besoins fonctionnels couverts par les spécialités d'une AESH (champ
+  // formations), selon la table ; les spécialités hors table sont sans effet
+  function besoinsCouverts(aesh, table) {
+    var parNom = {}, out = {};
+    (table || []).forEach(function (s) { parNom[normaliser(s.nom)] = s; });
+    ((aesh && aesh.formations) || []).forEach(function (f) {
+      var s = parNom[normaliser(f)];
+      if (s) (s.besoins || []).forEach(function (b) { out[b] = true; });
+    });
+    return out;
+  }
+  // spécialités d'une AESH absentes de la table
+  function specialitesInconnues(aesh, table) {
+    var noms = (table || []).map(function (s) { return normaliser(s.nom); });
+    return ((aesh && aesh.formations) || []).filter(function (f) { return noms.indexOf(normaliser(f)) < 0; });
   }
 
   // vérifie la pause repas d'une AESH pour un jour et une semaine donnés,
@@ -517,6 +585,15 @@ var PialModele = (function () {
         }
       });
 
+      // élèves à ne pas affecter à cette AESH : toujours appliqué
+      elevesExclusDe(aesh, aff.eleves).forEach(function (id) {
+        var e = ctx._eleves[id];
+        out.push(violation("exclusion", "Ne pas affecter à " + (e ? e.nomCourt : id) + " (fiche de l'AESH)."));
+      });
+      // vœux : simple information (pénalité dans le score)
+      var vx = voeuxTouches(aesh, c);
+      if (vx.length) out.push({ code: "voeu", niveau: "info", message: "Vœu de l'AESH non respecté : éviter " + vx.join(", ") + "." });
+
       // 7. indisponibilités et établissements possibles
       if (ctx.reglages.respecterIndispos && !aesh.ignorerIndispos) {
         var ind = indisponibilite(aesh, c);
@@ -547,7 +624,7 @@ var PialModele = (function () {
       eleves: ctx.eleves, aesh: ctx.aesh, cours: ctx.cours, affectations: affs, reglages: ctx.reglages
     });
     return verifierAffectation(simulee, ctx2).filter(function (v) {
-      return v.niveau === "erreur" && ["chevauchement", "deplacement", "quotite", "pause", "indisponibilite", "etablissement"].indexOf(v.code) > -1;
+      return v.niveau === "erreur" && ["exclusion", "chevauchement", "deplacement", "quotite", "pause", "indisponibilite", "etablissement"].indexOf(v.code) > -1;
     });
   }
 
@@ -743,7 +820,9 @@ var PialModele = (function () {
     contexte: contexte, dureeAffectation: dureeAffectation,
     etatCouverture: etatCouverture, couvertureEleve: couvertureEleve,
     etatCharge: etatCharge, chargeAesh: chargeAesh, mesureJournee: mesureJournee, journeesAesh: journeesAesh,
-    CHAMPS_NOTIFICATION: CHAMPS_NOTIFICATION, conflitsReimport: conflitsReimport, fusionEleve: fusionEleve,
+    SPECIALITES_DEFAUT: SPECIALITES_DEFAUT, elevesExclusDe: elevesExclusDe, voeuxTouches: voeuxTouches,
+    besoinsCouverts: besoinsCouverts, specialitesInconnues: specialitesInconnues,
+    CHAMPS_NOTIFICATION: CHAMPS_NOTIFICATION, CHAMPS_FICHE_AESH: CHAMPS_FICHE_AESH, conflitsReimport: conflitsReimport, fusionEleve: fusionEleve,
     cleMatiere: cleMatiere, etatCoursImporte: etatCoursImporte, matieresEleve: matieresEleve,
     memeCours: memeCours, peutMutualiser: peutMutualiser, coursSurCreneau: coursSurCreneau,
     indisponibilite: indisponibilite, verifierPauseRepas: verifierPauseRepas, verifierAffectation: verifierAffectation,

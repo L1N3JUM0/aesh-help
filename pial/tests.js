@@ -495,6 +495,37 @@ var PialTests = (function () {
       var m = M.matieresEleve(el, cours);
       egal(m.map(function (x) { return [x.libelle, x.nb, x.etatMatiere, x.uniforme]; }), [["EPS", 1, "exclu", "exclu"], ["Mathématiques", 2, "prioritaire", null]]);
     });
+    t("fiche AESH : élèves exclus, vœux, spécialités", function () {
+      var f = fixture(M), e = f.e;
+      var x = JSON.parse(JSON.stringify(f.aesh[0]));
+      x.elevesExclus = [e.ind.id]; x.ignorerIndispos = true;
+      x.voeux = { demiJournees: ["lun-pm", "mer"], plages: [{ jour: "", debut: "11:30", fin: "12:30" }, { jour: "mardi", debut: "08:00", fin: "09:00" }] };
+      var ctx = M.contexte({ etablissements: [f.cA, f.cB, f.ec], eleves: Object.keys(e).map(function (k) { return e[k]; }), aesh: [x, f.aesh[1]],
+        cours: f.cours, affectations: [], reglages: { gererPeriscolaire: true } });
+      var a1 = aff("aesh|x", f.cA, "lundi", "08:00", "08:55", "individuel", [e.ind]);
+      var v = M.verifierAffectation(a1, ctx);
+      vrai(v.some(function (y) { return y.code === "exclusion" && y.niveau === "erreur" && /Lucas M\./.test(y.message); }), "exclusion : erreur, même avec « ignorer les indisponibilités »");
+      egal(M.voeuxTouches(x, { jour: "lundi", debut: "13:45", fin: "14:40" }), ["lundi après-midi"]);
+      egal(M.voeuxTouches(x, { jour: "lundi", debut: "11:55", fin: "12:50" }), ["lundi après-midi", "11:30–12:30"]);
+      egal(M.voeuxTouches(x, { jour: "mardi", debut: "08:55", fin: "09:50" }), ["mardi 08:00–09:00"]);
+      egal(M.voeuxTouches(x, { jour: "mercredi", debut: "08:00", fin: "08:55" }), ["mercredi"]);
+      egal(M.voeuxTouches(x, { jour: "jeudi", debut: "08:00", fin: "08:55" }), []);
+      var a2 = aff("aesh|x", f.cA, "lundi", "13:45", "14:40", "individuel", [e.mut1]);
+      vrai(M.verifierAffectation(a2, ctx).some(function (y) { return y.code === "voeu" && y.niveau === "info"; }), "vœu : simple information");
+      x.formations = ["TSA", "lsf", "Ski alpin"];
+      var cv = M.besoinsCouverts(x, M.SPECIALITES_DEFAUT);
+      vrai(cv["Gestion des émotions"] && cv["Communication en LSF ou LfPC"] && !cv["Gestes du quotidien"], "TSA et LSF (casse ignorée)");
+      egal(M.specialitesInconnues(x, M.SPECIALITES_DEFAUT), ["Ski alpin"]);
+      egal(M.motifsIndisponibilite("aesh|x", { creneau: a1.creneau, modalite: "individuel", eleves: [e.ind.id] }, ctx).map(function (y) { return y.code; }), ["exclusion"]);
+      // réimport des AESH : quotité modifiée dans l'appli, vœux et exclusions conservés
+      var existant = { id: "a", quotite: 20, etablissements: [], indisponibilites: [], formations: [], voeux: { demiJournees: ["mer"] },
+        elevesExclus: ["x"], ignorerIndispos: true, alias: [], modifiesAppli: { quotite: true } };
+      var fichier = { id: "a", quotite: 24, etablissements: [], indisponibilites: ["ven"], formations: ["TSA"] };
+      egal(M.conflitsReimport(existant, fichier), ["quotite"]);
+      var g = M.fusionEleve(existant, fichier, true, "aesh");
+      egal([g.quotite, g.indisponibilites, g.voeux, g.elevesExclus, g.ignorerIndispos], [20, ["ven"], { demiJournees: ["mer"] }, ["x"], true]);
+      egal(M.fusionEleve(existant, fichier, false, "aesh").quotite, 24);
+    });
     t("synthèse du bandeau", function () {
       var f = fixture(M), e = f.e;
       var s = M.synthese(f.ctx([aff("aesh|x", f.cA, "lundi", "08:00", "08:55", "mutualise", [e.mut1, e.mut2])]));
@@ -688,6 +719,17 @@ var PialTests = (function () {
       egal(ap.erreurs.map(function (e) { return e.ligne; }), [3, 4]);
       egal(ap.erreurs[1].motifs.length, 2, "e-mail et indisponibilité");
       egal(ap.etablissements, ["Collège Alpha", "École Bêta"]);
+      // spécialités : libellé de la table, valeur inconnue gardée avec un avertissement
+      var ap2 = I.apercu("aesh", [["Durand", "Sophie", "24", "", "", "", "tsa | Ski alpin | troubles VISUELS"]], I.correspondanceAuto("aesh", entetes), { annee: AN });
+      egal(ap2.valides[0].formations, ["TSA", "Ski alpin", "Troubles visuels"]);
+      egal(ap2.avertissements.map(function (x) { return x.motif; }), ["spécialité hors de la table de Réglages, sans effet sur la proposition : « Ski alpin »"]);
+      var ap3 = I.apercu("aesh", [["Durand", "Sophie", "24", "", "", "", "Ski alpin"]], I.correspondanceAuto("aesh", entetes),
+        { annee: AN, specialites: [{ nom: "Ski alpin", besoins: [] }] });
+      egal([ap3.valides[0].formations, ap3.avertissements.length], [["Ski alpin"], 0], "table modifiée dans Réglages");
+      egal(I.ACCOMP.length, 25, "16 besoins + 9 ajoutés en fin de liste");
+      M.SPECIALITES_DEFAUT.forEach(function (s) {
+        s.besoins.forEach(function (b) { vrai(I.ACCOMP.indexOf(b) > -1, s.nom + " : besoin hors liste ACCOMP « " + b + " »"); });
+      });
     });
     t("aperçu emplois du temps : élève connu, nom complet réduit, semaines, priorités", function () {
       var connus = {}; connus["lucas m.|5b|college alpha"] = true;
@@ -1042,6 +1084,33 @@ var PialTests = (function () {
       vrai(c2.a.raisons.indexOf("comble un trou le lundi") > -1, c2.a.raisons.join(" ; "));
       vrai(c2.a.raisons.indexOf("journée de moins de 2 h le lundi") < 0 && c2.a.raisons.indexOf("complète une journée courte le lundi") > -1, c2.a.raisons.join(" ; "));
       vrai(c2.a.score > c2.b.score, "a d'abord");
+    });
+    t("moteur : élèves exclus, vœux et formation", function () {
+      var m = mini(), e = m.eleve("Lucas", 1, 0, { besoins: ["Gestion des émotions", "Recentrage sur la tâche", "Prise de notes", "Aide aux déplacements"] });
+      m.cours(e, "mercredi", "10:00", "10:55");
+      function classer(aesh) {
+        var l = P.classerAesh(m.donnees(aesh), { creneau: { etab: m.etab.id, jour: "mercredi", debut: "10:00", fin: "10:55", semaine: "toutes" },
+          modalite: "individuel", eleves: [e.id] });
+        var o = {}; l.forEach(function (x) { o[x.aeshId] = x; });
+        return o;
+      }
+      var c = classer([aeshMini("a", 24, { elevesExclus: [e.id], ignorerIndispos: true }), aeshMini("b", 24)]);
+      egal([c.a.possible, c.a.motif], [false, "exclusion"], "exclusion : contrainte dure, même indisponibilités ignorées");
+      var d = m.donnees([aeshMini("a", 24, { elevesExclus: [e.id] })]);
+      d.reglages.respecterIndispos = false;
+      egal(proposees(P.proposer(d)).length, 0, "jamais proposée, même réglage global décoché");
+      egal(P.proposer(d).rapport.sousCouverts[0].motif, "exclusion");
+      // vœu : −20 par vœu touché, avec la raison
+      c = classer([aeshMini("a", 24, { voeux: { demiJournees: ["mer-am"], plages: [] } }), aeshMini("b", 24)]);
+      vrai(Math.abs(c.b.score - c.a.score - 20) < 0.01 && c.a.raisons.indexOf("vœu : éviter mercredi matin") > -1, c.a.raisons.join(" ; "));
+      // formation : 10 × part des besoins couverts (TSA couvre 2 besoins sur 4)
+      c = classer([aeshMini("a", 24, { formations: ["TSA"] }), aeshMini("b", 24)]);
+      vrai(Math.abs(c.a.score - c.b.score - 5) < 0.01, "formation proportionnelle : " + (c.a.score - c.b.score));
+      vrai(c.a.raisons.indexOf("formation : 2 besoins sur 4 de Lucas T.") > -1, c.a.raisons.join(" ; "));
+      c = classer([aeshMini("a", 24, { formations: ["TSA", "Fauteuil / mobilité", "Troubles visuels"] }), aeshMini("b", 24)]);
+      vrai(Math.abs(c.a.score - c.b.score - 10) < 0.01, "4 besoins sur 4 : +10");
+      c = classer([aeshMini("a", 24, { formations: ["Ski alpin"] }), aeshMini("b", 24)]);
+      vrai(Math.abs(c.a.score - c.b.score) < 0.01, "spécialité hors table : sans effet");
     });
     t("moteur : passe d'échanges sur les trous", function () {
       var m = mini(), L = m.eleve("Lucas", 1), R = m.eleve("Rose", 1), S = m.eleve("Sami", 1), T2 = m.eleve("Tom", 1);

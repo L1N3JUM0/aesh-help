@@ -185,8 +185,7 @@ var PialAffectations = (function () {
       return c;
     }
     if (!existant) return nouveau;
-    var o = type === "eleves" ? M.fusionEleve(existant, nouveau, garderAppli) : {};
-    if (type !== "eleves") Object.keys(nouveau).forEach(function (k) { o[k] = nouveau[k]; });
+    var o = M.fusionEleve(existant, nouveau, garderAppli, type);
     if (type === "aesh") { o.ignorerIndispos = !!existant.ignorerIndispos; o.alias = existant.alias || []; }
     // temps périscolaires non gérés à l'import : on garde ce qui est en base
     if (type === "eleves") ["recreation", "meridienne"].forEach(function (k) { if (!(k in nouveau) && k in existant) o[k] = existant[k]; });
@@ -205,16 +204,16 @@ var PialAffectations = (function () {
     var manquants = I.champsManquants(imp.type, imp.correspondance);
     if (manquants.length) { ui.toast("Colonne(s) obligatoire(s) non choisie(s) : " + manquants.join(", ") + "."); return; }
     imp.apercu = I.apercu(imp.type, imp.lignes.slice(1), imp.correspondance, { annee: anneeCourante(), elevesConnus: elevesConnus(),
-      gererPeriscolaire: !!etat.reglages.gererPeriscolaire });
+      gererPeriscolaire: !!etat.reglages.gererPeriscolaire, specialites: M.contexte({ reglages: etat.reglages }).reglages.specialites });
     var cleId = "id";
     imp.planMaj = I.planFusion(existantsDuType(imp.type), imp.apercu.valides, cleId, "maj");
     imp.planRemplacer = I.planFusion(existantsDuType(imp.type), imp.apercu.valides, cleId, "remplacer");
     // élèves : valeurs modifiées dans l'application que le fichier écraserait
     imp.conflits = [];
     imp.garderAppli = true;
-    if (imp.type === "eleves") {
+    if (imp.type === "eleves" || imp.type === "aesh") {
       var parId = {};
-      etat.eleves.forEach(function (e) { parId[e.id] = e; });
+      existantsDuType(imp.type).forEach(function (e) { parId[e.id] = e; });
       imp.planMaj.modifies.forEach(function (n) {
         var champs = M.conflitsReimport(parId[n.id], n);
         if (champs.length) imp.conflits.push({ existant: parId[n.id], nouveau: n, champs: champs });
@@ -255,23 +254,29 @@ var PialAffectations = (function () {
         + '). Pour les prendre en compte, cochez « Gérer les temps périscolaires » dans Réglages, puis importez à nouveau ce fichier.</p>';
     }
     if (imp.conflits && imp.conflits.length) {
-      var LIB_CHAMP = { heuresInd: "heures individuelles", heuresMut: "heures mutualisées", debutNotif: "début de notification", finNotif: "fin de notification", besoins: "besoins" };
+      var LIB_CHAMP = { heuresInd: "heures individuelles", heuresMut: "heures mutualisées", debutNotif: "début de notification", finNotif: "fin de notification", besoins: "besoins",
+        quotite: "quotité", etablissements: "établissements possibles", indisponibilites: "indisponibilités", formations: "spécialités" };
       var valeur = function (k, v) {
-        if (k === "besoins") return (v || []).length ? v.join(", ") : "aucun";
-        if (k === "heuresInd" || k === "heuresMut") return heures(v || 0);
+        if (k === "besoins" || k === "formations") return (v || []).length ? v.join(", ") : "aucun";
+        if (k === "heuresInd" || k === "heuresMut" || k === "quotite") return heures(v || 0);
+        if (k === "etablissements") return (v || []).length ? v.map(nomEtablissement).join(", ") : "tous";
+        if (k === "indisponibilites") return (v || []).length ? v.map(texteIndispo).join(", ") : "aucune";
         return v ? v.split("-").reverse().join("/") : "—";
       };
-      h += '<div class="note alerte"><p style="margin:0 0 6px"><strong>' + pluriel(imp.conflits.length, "élève a", "élèves ont")
+      var aeshImp = imp.type === "aesh";
+      h += '<div class="note alerte"><p style="margin:0 0 6px"><strong>' + pluriel(imp.conflits.length, aeshImp ? "AESH a" : "élève a", aeshImp ? "AESH ont" : "élèves ont")
         + ' des valeurs modifiées dans l\'application que ce fichier remplacerait :</strong></p><ul class="liste-motifs">'
         + imp.conflits.map(function (cf) {
-          return '<li>' + ech(cf.existant.nomCourt) + ' (' + ech(cf.existant.classe) + ') : ' + cf.champs.map(function (k) {
+          return '<li>' + (aeshImp ? ech(nomAesh(cf.existant)) : ech(cf.existant.nomCourt) + ' (' + ech(cf.existant.classe) + ')') + ' : ' + cf.champs.map(function (k) {
             return LIB_CHAMP[k] + ' ' + ech(valeur(k, cf.existant[k])) + ' dans l\'application, ' + ech(valeur(k, cf.nouveau[k])) + ' dans le fichier';
           }).join(" ; ") + '</li>';
         }).join("") + '</ul>'
         + '<div class="choix-conflits" role="radiogroup" aria-label="Valeurs à garder">'
         + '<label class="case"><input type="radio" name="imp-conflits" value="appli" checked> Garder les valeurs de l\'application</label>'
         + '<label class="case"><input type="radio" name="imp-conflits" value="fichier"> Prendre celles du fichier</label></div>'
-        + '<p class="aide" style="margin:6px 0 0">Le choix s\'applique à tous ces élèves. Les autres colonnes sont mises à jour dans les deux cas ; le commentaire et les états par matière de la fiche ne sont jamais touchés par l\'import.</p></div>';
+        + '<p class="aide" style="margin:6px 0 0">' + (aeshImp
+          ? "Le choix s'applique à toutes ces AESH. Les autres colonnes sont mises à jour dans les deux cas ; les vœux et les élèves à ne pas affecter de la fiche ne sont jamais touchés par l'import."
+          : "Le choix s'applique à tous ces élèves. Les autres colonnes sont mises à jour dans les deux cas ; le commentaire et les états par matière de la fiche ne sont jamais touchés par l'import.") + '</p></div>';
     }
     if (ap.exemples.length) h += '<p class="aide">Lignes d\'exemple du gabarit ignorées : ' + ap.exemples.join(", ") + '.</p>';
     if (ap.doublons.length) h += '<p class="aide">Doublons ignorés (lignes identiques à une ligne précédente) : ' + ap.doublons.map(function (d) { return d.ligne; }).join(", ") + '.</p>';
@@ -404,6 +409,7 @@ var PialAffectations = (function () {
     $("reg-pause").value = r.pauseRepasMin;
     $("reg-ecart").value = r.ecartMax / 60;
     $("reg-ordres").value = r.nbOrdres;
+    rendreSpecialites();
   }
   $("reg-enregistrer-regles").addEventListener("click", function () {
     var pause = parseInt($("reg-pause").value, 10);
@@ -422,6 +428,56 @@ var PialAffectations = (function () {
     valeur.nbOrdres = ordres;
     PialDB.appliquer([{ magasin: "parametres", enregistrer: [{ cle: "reglages", valeur: valeur }] }]).then(recharger).then(function () {
       ui.toast("Règles de calcul enregistrées.");
+      if (typeof PialAffectations.surChangement === "function") PialAffectations.surChangement();
+    });
+  });
+
+  /* =============== réglages : spécialités des AESH (§16) =============== */
+  function blocSpecialite(s, i) {
+    return '<details class="reg-spec" data-spec="' + i + '"><summary><span class="reg-spec-nom">' + ech(s.nom || "Nouvelle spécialité") + '</span>'
+      + ' <span class="aide">— ' + pluriel((s.besoins || []).length, "besoin") + '</span></summary>'
+      + '<div class="reg-spec-corps"><label>Nom <input type="text" data-spec-nom value="' + ech(s.nom || "") + '" maxlength="60"></label>'
+      + '<div class="fe-besoins">' + I.ACCOMP.map(function (b, k) {
+        return '<label class="pastille-case"><input type="checkbox" data-spec-besoin="' + k + '"' + ((s.besoins || []).indexOf(b) > -1 ? " checked" : "") + '> ' + ech(b) + '</label>';
+      }).join("") + '</div><button type="button" class="btn-lien" data-retirer-spec>Supprimer cette spécialité</button></div></details>';
+  }
+  function rendreSpecialites(table) {
+    table = table || M.contexte({ reglages: etat.reglages }).reglages.specialites || [];
+    $("reg-specialites").innerHTML = table.map(blocSpecialite).join("");
+  }
+  $("reg-specialites").addEventListener("click", function (ev) {
+    if (ev.target.hasAttribute("data-retirer-spec")) ev.target.closest(".reg-spec").remove();
+  });
+  $("reg-specialites").addEventListener("input", function (ev) {
+    if (ev.target.hasAttribute("data-spec-nom")) ev.target.closest(".reg-spec").querySelector(".reg-spec-nom").textContent = ev.target.value || "Nouvelle spécialité";
+  });
+  $("reg-ajouter-specialite").addEventListener("click", function () {
+    $("reg-specialites").insertAdjacentHTML("beforeend", blocSpecialite({ nom: "", besoins: [] }, Date.now()));
+    var d = $("reg-specialites").lastElementChild;
+    d.open = true;
+    d.querySelector("[data-spec-nom]").focus();
+  });
+  $("reg-specialites-defaut").addEventListener("click", function () {
+    rendreSpecialites(M.SPECIALITES_DEFAUT);
+    ui.toast("Table par défaut affichée : enregistrez pour l'appliquer.");
+  });
+  $("reg-enregistrer-specialites").addEventListener("click", function () {
+    var table = [], vus = {}, erreur = "";
+    Array.prototype.forEach.call($("reg-specialites").querySelectorAll(".reg-spec"), function (d) {
+      var nom = d.querySelector("[data-spec-nom]").value.replace(/\s+/g, " ").trim();
+      if (!nom) { erreur = "Chaque spécialité doit avoir un nom."; return; }
+      if (vus[M.normaliser(nom)]) { erreur = "Deux spécialités portent le nom « " + nom + " »."; return; }
+      vus[M.normaliser(nom)] = true;
+      table.push({ nom: nom, besoins: Array.prototype.filter.call(d.querySelectorAll("[data-spec-besoin]"), function (c) { return c.checked; })
+        .map(function (c) { return I.ACCOMP[parseInt(c.dataset.specBesoin, 10)]; }) });
+    });
+    if (erreur) { ui.toast(erreur); return; }
+    var valeur = {};
+    Object.keys(etat.reglages).forEach(function (k) { valeur[k] = etat.reglages[k]; });
+    valeur.specialites = table;
+    PialDB.appliquer([{ magasin: "parametres", enregistrer: [{ cle: "reglages", valeur: valeur }] }]).then(recharger).then(function () {
+      rendreSpecialites();
+      ui.toast("Spécialités enregistrées (" + table.length + ").");
       if (typeof PialAffectations.surChangement === "function") PialAffectations.surChangement();
     });
   });
@@ -759,8 +815,11 @@ var PialAffectations = (function () {
       + '<dt>Élèves</dt><dd>' + Object.keys(nbEleves).length + '</dd>'
       + '<dt>Établissements</dt><dd>' + ((a.etablissements || []).length ? ech(a.etablissements.map(nomEtablissement).join(", ")) : "tous") + '</dd>'
       + '<dt>Indisponibilités</dt><dd>' + ((a.indisponibilites || []).length ? ech(a.indisponibilites.map(texteIndispo).join(", ")) : "aucune") + '</dd>'
-      + ((a.formations || []).length ? '<dt>Formations</dt><dd>' + ech(a.formations.join(", ")) + '</dd>' : "")
+      + ((a.formations || []).length ? '<dt>Spécialités</dt><dd>' + ech(a.formations.join(", ")) + '</dd>' : "")
       + '</dl>'
+      + ((a.voeux && ((a.voeux.demiJournees || []).length || (a.voeux.plages || []).length)) ? '<dt>Vœux</dt><dd>' + ech((a.voeux.demiJournees || []).map(texteIndispo)
+        .concat((a.voeux.plages || []).map(function (pl) { return (pl.jour ? pl.jour + " " : "") + pl.debut + "–" + pl.fin; })).join(", ")) + '</dd>' : "")
+      + ((a.elevesExclus || []).length ? '<dt>Ne pas affecter à</dt><dd>' + ech(a.elevesExclus.map(function (id) { var e = eleveParId(id); return e ? e.nomCourt : id; }).join(", ")) + '</dd>' : "")
       + '<label class="case"><input type="checkbox" id="fa-ignorer"' + (a.ignorerIndispos ? " checked" : "") + (global ? "" : " disabled") + '> Ignorer ses indisponibilités et ses établissements possibles</label>'
       + '<p class="aide">' + (global
         ? "Pour cette AESH seulement : le moteur et le menu des créneaux pourront la placer sur ses demi-journées indisponibles et dans tous les établissements. À réserver à un arrangement ponctuel."
@@ -990,6 +1049,151 @@ var PialAffectations = (function () {
       "l'état de la matière " + libelle + " pour " + e.nomCourt);
   }
 
+  /* =============== fiche de l'AESH (spec §16) =============== */
+  // Quotité, établissements, indisponibilités (contrainte dure, débrayable),
+  // vœux (pénalités), élèves à ne pas affecter (exclusion dure, sans motif)
+  // et spécialités. Les champs aussi présents dans le fichier des AESH sont
+  // marqués « modifié » et protégés au réimport, comme pour les élèves.
+  var ficheAeshOuverte = false;
+  var ABREV = { lundi: "lun", mardi: "mar", mercredi: "mer", jeudi: "jeu", vendredi: "ven", samedi: "sam" };
+  function joursClasse() {
+    var vus = {};
+    etat.etablissements.forEach(function (e) { (e.joursOuvres && e.joursOuvres.length ? e.joursOuvres : M.JOURS.slice(0, 5)).forEach(function (j) { vus[j] = true; }); });
+    var j = M.JOURS.filter(function (x) { return vus[x]; });
+    return j.length ? j : M.JOURS.slice(0, 5);
+  }
+  // grille jours × (matin, après-midi) ; codes « mer » (journée), « ven-pm »
+  function grilleDemiJournees(nom, codes) {
+    var coche = {};
+    (codes || []).forEach(function (c) {
+      var p = M.normaliser(c).split("-"), j = (M.jourNormalise(p[0]) || "").slice(0, 3);
+      if (!p[1] || p[1] === "am") coche[j + "-am"] = true;
+      if (!p[1] || p[1] === "pm") coche[j + "-pm"] = true;
+    });
+    return '<table class="fa-demi"><thead><tr><th></th>' + joursClasse().map(function (j) { return '<th>' + j.slice(0, 3) + '.</th>'; }).join("") + '</tr></thead><tbody>'
+      + [["am", "Matin"], ["pm", "Après-midi"]].map(function (d) {
+        return '<tr><th>' + d[1] + '</th>' + joursClasse().map(function (j) {
+          var k = ABREV[j] + "-" + d[0];
+          return '<td><input type="checkbox" data-' + nom + '="' + k + '" aria-label="' + j + ' ' + d[1].toLowerCase() + '"' + (coche[k] ? " checked" : "") + '></td>';
+        }).join("") + '</tr>';
+      }).join("") + '</tbody></table>';
+  }
+  function lireDemiJournees(nom) {
+    var coche = {};
+    Array.prototype.forEach.call($("ga-fiche").querySelectorAll("[data-" + nom + "]"), function (c) { if (c.checked) coche[c.getAttribute("data-" + nom)] = true; });
+    var out = [];
+    joursClasse().forEach(function (j) {
+      var a = coche[ABREV[j] + "-am"], p = coche[ABREV[j] + "-pm"];
+      if (a && p) out.push(ABREV[j]); else if (a) out.push(ABREV[j] + "-am"); else if (p) out.push(ABREV[j] + "-pm");
+    });
+    return out;
+  }
+  function lignePlage(pl) {
+    pl = pl || { jour: "", debut: "", fin: "" };
+    return '<div class="fa-plage"><select data-plage-jour aria-label="Jour"><option value="">tous les jours</option>'
+      + joursClasse().map(function (j) { return '<option value="' + j + '"' + (pl.jour === j ? " selected" : "") + '>' + j + '</option>'; }).join("") + '</select>'
+      + ' de <input type="text" data-plage-debut placeholder="hh:mm" inputmode="numeric" value="' + ech(pl.debut) + '" aria-label="Début">'
+      + ' à <input type="text" data-plage-fin placeholder="hh:mm" inputmode="numeric" value="' + ech(pl.fin) + '" aria-label="Fin">'
+      + ' <button type="button" class="btn-lien" data-retirer-plage>retirer</button></div>';
+  }
+  function puceExclu(e) {
+    return '<span class="fa-exclu" data-exclu="' + ech(e.id) + '">' + ech(e.nomCourt) + ' (' + ech(e.classe) + ')'
+      + ' <button type="button" class="btn-lien" data-retirer-exclu aria-label="Retirer ' + ech(e.nomCourt) + '">×</button></span>';
+  }
+  function rendreFicheAeshComplete(a) {
+    var hote = $("ga-fiche"), m = a.modifiesAppli || {}, table = ctxCourant.reglages.specialites || [], v = a.voeux || {};
+    function marque(k) { return m[k] ? ' <span class="fe-modifie" title="Modifié dans l\'application : protégé au prochain import (vous choisirez quelle valeur garder)">modifié</span>' : ""; }
+    var inconnues = M.specialitesInconnues(a, table);
+    var exclus = (a.elevesExclus || []).map(eleveParId).filter(Boolean);
+    var autres = etat.eleves.filter(function (e) { return (a.elevesExclus || []).indexOf(e.id) < 0; })
+      .sort(function (p, q) { return p.nomCourt.localeCompare(q.nomCourt, "fr") || txt(p.classe).localeCompare(txt(q.classe), "fr"); });
+    var global = ctxCourant.reglages.respecterIndispos;
+    var h = '<details class="fiche-eleve" id="fa-details"' + (ficheAeshOuverte ? " open" : "") + '><summary>Fiche de l\'AESH'
+      + '<span class="aide"> — quotité, établissements, indisponibilités, vœux, élèves à ne pas affecter, spécialités</span></summary>'
+      + '<div class="fe-corps"><div class="fe-colonne"><h4>Paramètres</h4><div class="fe-champs">'
+      + '<label>Quotité hebdomadaire (h)' + marque("quotite") + '<input type="text" inputmode="decimal" id="fa-quotite" value="' + ech(String(a.quotite || 0).replace(".", ",")) + '"></label></div>'
+      + '<h4>Établissements possibles' + marque("etablissements") + '</h4><div class="fe-besoins">'
+      + etat.etablissements.slice().sort(function (p, q) { return p.nom.localeCompare(q.nom, "fr"); }).map(function (e) {
+        return '<label class="pastille-case"><input type="checkbox" data-fa-etab="' + ech(e.id) + '"' + ((a.etablissements || []).indexOf(e.id) > -1 ? " checked" : "") + '> ' + ech(e.nom) + '</label>';
+      }).join("") + '</div><p class="aide">Aucun coché = tous les établissements.</p>'
+      + '<h4>Indisponibilités' + marque("indisponibilites") + '</h4>' + grilleDemiJournees("fa-indispo", a.indisponibilites)
+      + '<label class="case"><input type="checkbox" id="fa-ignorer2"' + (a.ignorerIndispos ? " checked" : "") + (global ? "" : " disabled") + '> Ignorer ses indisponibilités et ses établissements possibles</label>'
+      + '<p class="aide">' + (global ? "Contrainte dure : le moteur ne place jamais l'AESH sur une demi-journée indisponible, sauf si cette case est cochée (arrangement ponctuel)."
+        : "Sans effet : le réglage global « Respecter les indisponibilités » est décoché (Réglages).") + '</p>'
+      + '<h4>Spécialités' + marque("formations") + '</h4><div class="fe-besoins">'
+      + table.map(function (s) {
+        var c = (a.formations || []).some(function (f) { return M.normaliser(f) === M.normaliser(s.nom); });
+        return '<label class="pastille-case" title="' + ech(s.besoins.join(" · ")) + '"><input type="checkbox" data-fa-spec="' + ech(s.nom) + '"' + (c ? " checked" : "") + '> ' + ech(s.nom) + '</label>';
+      }).join("")
+      + inconnues.map(function (f) {
+        return '<label class="pastille-case hors-table" title="Hors de la table de Réglages : sans effet sur la proposition"><input type="checkbox" data-fa-spec="' + ech(f) + '" checked> ' + ech(f) + ' (hors table)</label>';
+      }).join("") + '</div><p class="aide">Chaque spécialité couvre des besoins fonctionnels (table modifiable dans Réglages, survol pour la voir). Le moteur ajoute jusqu\'à +' + P.POIDS.formation + ' selon la part des besoins de l\'élève couverts.</p>'
+      + '</div><div class="fe-colonne"><h4>Vœux (évités si possible, pas des contraintes)</h4>'
+      + '<p class="aide">Journées ou demi-journées à éviter :</p>' + grilleDemiJournees("fa-voeu", v.demiJournees)
+      + '<p class="aide">Plages horaires à éviter :</p><div id="fa-plages">' + (v.plages || []).map(lignePlage).join("") + '</div>'
+      + '<button type="button" class="btn-lien" id="fa-ajouter-plage">+ Ajouter une plage</button>'
+      + '<p class="aide">Chaque vœu touché coûte ' + (-P.POIDS.voeu) + ' points au score de l\'AESH sur ce créneau.</p>'
+      + '<h4>Élèves à ne pas affecter à cette AESH</h4><div class="fe-besoins" id="fa-exclus">' + exclus.map(puceExclu).join("") + '</div>'
+      + '<div class="fa-ajout-exclu"><select id="fa-choix-exclu" aria-label="Élève à exclure"><option value="">Choisir un élève…</option>'
+      + autres.map(function (e) { return '<option value="' + ech(e.id) + '">' + ech(e.nomCourt) + ' (' + ech(e.classe) + ', ' + ech(nomEtablissement(e.etablissement)) + ')</option>'; }).join("")
+      + '</select> <button type="button" class="btn btn-vide" id="fa-ajouter-exclu">Ajouter</button></div>'
+      + '<p class="aide">Exclusion dure, sans motif à indiquer : ni le moteur ni le menu ne proposeront cette AESH à ces élèves ; une saisie manuelle reste possible, signalée dans les alertes.</p>'
+      + '<div class="actions"><button type="button" class="btn btn-plein" id="fa-enregistrer">Enregistrer la fiche</button></div>'
+      + '</div></div></details>';
+    hote.innerHTML = h;
+    $("fa-details").addEventListener("toggle", function () { ficheAeshOuverte = this.open; });
+    $("fa-ajouter-plage").addEventListener("click", function () { $("fa-plages").insertAdjacentHTML("beforeend", lignePlage()); });
+    $("fa-plages").addEventListener("click", function (ev) { if (ev.target.hasAttribute("data-retirer-plage")) ev.target.parentNode.remove(); });
+    $("fa-exclus").addEventListener("click", function (ev) {
+      if (!ev.target.hasAttribute("data-retirer-exclu")) return;
+      var puce = ev.target.parentNode, e = eleveParId(puce.dataset.exclu);
+      puce.remove();
+      if (e) $("fa-choix-exclu").insertAdjacentHTML("beforeend", '<option value="' + ech(e.id) + '">' + ech(e.nomCourt) + ' (' + ech(e.classe) + ')</option>');
+    });
+    $("fa-ajouter-exclu").addEventListener("click", function () {
+      var sel = $("fa-choix-exclu"), e = eleveParId(sel.value);
+      if (!e) return;
+      $("fa-exclus").insertAdjacentHTML("beforeend", puceExclu(e));
+      sel.remove(sel.selectedIndex);
+      sel.value = "";
+    });
+    $("fa-enregistrer").addEventListener("click", function () { enregistrerFicheAesh(a); });
+  }
+  function enregistrerFicheAesh(a) {
+    var hote = $("ga-fiche");
+    var q = nombreSaisi($("fa-quotite").value);
+    if (isNaN(q) || !(q > 0) || q > 45) { ui.toast("Quotité invalide (de 0,5 à 45 heures)."); return; }
+    var plages = [], erreur = "";
+    Array.prototype.forEach.call(hote.querySelectorAll(".fa-plage"), function (l) {
+      var d = M.heureNormalisee(l.querySelector("[data-plage-debut]").value), f = M.heureNormalisee(l.querySelector("[data-plage-fin]").value);
+      if (!d && !f) return;
+      if (!d || !f || M.minutes(f) <= M.minutes(d)) { erreur = "Plage horaire invalide (heures hh:mm, fin après le début)."; return; }
+      plages.push({ jour: l.querySelector("[data-plage-jour]").value, debut: d, fin: f });
+    });
+    if (erreur) { ui.toast(erreur); return; }
+    var b = JSON.parse(JSON.stringify(a));
+    var nouveau = {
+      quotite: q,
+      etablissements: Array.prototype.filter.call(hote.querySelectorAll("[data-fa-etab]"), function (c) { return c.checked; }).map(function (c) { return c.dataset.faEtab; }),
+      indisponibilites: lireDemiJournees("fa-indispo"),
+      formations: Array.prototype.filter.call(hote.querySelectorAll("[data-fa-spec]"), function (c) { return c.checked; }).map(function (c) { return c.dataset.faSpec; })
+    };
+    b.modifiesAppli = b.modifiesAppli || {};
+    M.CHAMPS_FICHE_AESH.forEach(function (k) {
+      var avant = k === "quotite" ? (a.quotite || 0) : (a[k] || []);
+      if (JSON.stringify(avant) !== JSON.stringify(nouveau[k])) { b[k] = nouveau[k]; b.modifiesAppli[k] = true; }
+    });
+    if (!Object.keys(b.modifiesAppli).length) delete b.modifiesAppli;
+    b.etablissementsNoms = (b.etablissements || []).map(nomEtablissement);
+    b.ignorerIndispos = $("fa-ignorer2").checked;
+    var voeux = { demiJournees: lireDemiJournees("fa-voeu"), plages: plages };
+    if (voeux.demiJournees.length || voeux.plages.length) b.voeux = voeux; else delete b.voeux;
+    var exclus = Array.prototype.map.call(hote.querySelectorAll("[data-exclu]"), function (x) { return x.dataset.exclu; });
+    if (exclus.length) b.elevesExclus = exclus; else delete b.elevesExclus;
+    if (JSON.stringify(b) === JSON.stringify(a)) { ui.toast("Aucune modification."); return; }
+    enregistrerPuisRendre([{ magasin: "aesh", enregistrer: [b] }], "Fiche de " + nomAesh(a) + " enregistrée.", "la fiche de " + nomAesh(a));
+  }
+
   /* =============== grille AESH (§7.1, vue 3) =============== */
   // Semaine de l'AESH à l'échelle du temps : les trous et les changements
   // d'établissement se voient d'un coup d'œil. Fond blanc = libre, hachures
@@ -1061,6 +1265,20 @@ var PialAffectations = (function () {
         h += '<div class="ga-indispo' + (ignorees ? " ignoree" : "") + '" style="top:' + y(d) + 'px;height:' + haut(d, f) + 'px" title="Indisponible : '
           + ech(texteIndispo(code)) + (ignorees ? " (ignorée)" : "") + '"><span>Indisponible' + (ignorees ? " (ignorée)" : "") + '</span></div>';
       });
+      // vœux : demi-journées et plages à éviter (hachures orangées)
+      var v = a.voeux || {};
+      (v.demiJournees || []).forEach(function (code) {
+        var p = M.normaliser(code).split("-");
+        if (M.jourNormalise(p[0]) !== j) return;
+        var d = p[1] === "pm" ? 12 * 60 : b.t0, f = p[1] === "am" ? 12 * 60 : b.t1;
+        h += '<div class="ga-voeu" style="top:' + y(d) + 'px;height:' + haut(d, f) + 'px" title="Vœu : éviter ' + ech(texteIndispo(code)) + '"><span>vœu</span></div>';
+      });
+      (v.plages || []).forEach(function (pl) {
+        if (pl.jour && pl.jour !== j) return;
+        var d = Math.max(b.t0, M.minutes(pl.debut)), f = Math.min(b.t1, M.minutes(pl.fin));
+        if (f <= d) return;
+        h += '<div class="ga-voeu" style="top:' + y(d) + 'px;height:' + haut(d, f) + 'px" title="Vœu : éviter ' + ech(pl.debut + "–" + pl.fin) + '"><span>vœu</span></div>';
+      });
       var duJour = affs.filter(function (x) { return x.creneau.jour === j; });
       // trous : écarts de plus de ecartMax entre deux périodes de présence
       var blocs = [];
@@ -1113,7 +1331,7 @@ var PialAffectations = (function () {
     return h + '</div>';
   }
   function legendeGrilleAesh() {
-    return '<div class="ga-legende"><span><i class="lg-libre"></i>libre</span><span><i class="lg-indispo"></i>indisponible</span>'
+    return '<div class="ga-legende"><span><i class="lg-libre"></i>libre</span><span><i class="lg-indispo"></i>indisponible</span><span><i class="lg-voeu"></i>vœu (à éviter)</span>'
       + '<span><i class="lg-trou"></i>trou de plus de ' + ech(texteDuree(ctxCourant.reglages.ecartMax)) + '</span>'
       + '<span>↪ changement d\'établissement</span><span>bord coloré = établissement</span><span>🔒 épinglée · ⚠ contrainte non respectée</span></div>';
   }
@@ -1147,6 +1365,7 @@ var PialAffectations = (function () {
       + '<dt>Élèves (' + liste.length + ')</dt><dd>' + (liste.length ? liste.map(function (e) {
         return '<button type="button" class="btn-lien" data-grille-eleve="' + ech(e.id) + '">' + ech(e.nomCourt) + '</button> <span class="aide">(' + ech(e.classe) + ')</span>';
       }).join(", ") : "aucun") + '</dd></dl>';
+    rendreFicheAeshComplete(a);
     $("ga-grille").innerHTML = '<div class="tableau-conteneur">' + grilleAeshHtml(a, semaineAffichee) + '</div>' + legendeGrilleAesh();
     Array.prototype.forEach.call($("aff-grille-aesh").querySelectorAll("[data-grille-eleve]"), function (bt) {
       bt.addEventListener("click", function (ev) { ev.stopPropagation(); ouvrirGrilleEleve(this.dataset.grilleEleve); });

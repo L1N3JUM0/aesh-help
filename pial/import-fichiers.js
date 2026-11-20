@@ -32,7 +32,13 @@ var PialImport = (function () {
     "Recentrage sur la tâche", "Aide à l'organisation", "Prise de notes", "Lecture à voix haute",
     "Aide à la manipulation", "Mise en confiance, encouragement", "Gestion des émotions",
     "Médiation avec l'enseignant", "Relations avec les autres élèves", "Aménagement des évaluations",
-    "Aide aux déplacements", "Gestes du quotidien", "Mise en mots, verbalisation"];
+    "Aide aux déplacements", "Gestes du quotidien", "Mise en mots, verbalisation",
+    // ajoutés le 20/11/2026, en fin de liste comme dans l'application AESH
+    "Adaptation des supports visuels", "Description orale des documents",
+    "Aide à l'utilisation des outils numériques", "Communication en LSF ou LfPC",
+    "Accès aux informations orales", "Structuration par supports visuels (pictogrammes, emploi du temps imagé)",
+    "Préparation des transitions et des changements", "Aide à l'installation et aux transferts",
+    "Gestion de la fatigue et des pauses"];
 
   /* =============== décodage du texte =============== */
   // octets : Uint8Array -> {texte, encodage}
@@ -427,6 +433,15 @@ var PialImport = (function () {
     indispos.forEach(function (s) { if (!indisponibiliteValide(s)) erreurs.push("indisponibilité illisible : « " + s + " » (ex. : mer, ven-pm)"); });
     if (erreurs.length) return { erreurs: erreurs };
     var etabs = liste(v.etablissements);
+    // spécialités (colonne Formations) : libellé de la table de Réglages si
+    // reconnu ; sinon conservé tel quel, sans effet sur le score
+    var table = options.specialites || M.SPECIALITES_DEFAUT, formations = [];
+    liste(v.formations).forEach(function (f) {
+      var s = table.filter(function (x) { return M.normaliser(x.nom) === M.normaliser(f); })[0];
+      if (!s) avert.push("spécialité hors de la table de Réglages, sans effet sur la proposition : « " + f + " »");
+      var nom = s ? s.nom : f;
+      if (formations.indexOf(nom) < 0) formations.push(nom);
+    });
     return {
       avertissements: avert,
       objet: {
@@ -434,7 +449,7 @@ var PialImport = (function () {
         quotite: q, email: v.email,
         etablissements: etabs.map(M.idEtablissement), etablissementsNoms: etabs,
         indisponibilites: indispos.map(function (s) { var p = M.normaliser(s).split("-"); return M.jourNormalise(p[0]).slice(0, 3) + (p[1] ? "-" + p[1] : ""); }),
-        formations: liste(v.formations), ignorerIndispos: false, alias: []
+        formations: formations, ignorerIndispos: false, alias: []
       }
     };
   }

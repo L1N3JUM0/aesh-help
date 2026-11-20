@@ -37,6 +37,7 @@ var PialMoteur = (function () {
     experienceMax: 15,
     formation: 10,             // phase 4 (table formation → besoins à valider, §7.3)
     equilibrageMax: 15,        // proportionnel à la part de quotité restante
+    voeu: -20,                 // par vœu de l'AESH touché (journée, demi-journée ou plage à éviter)
     trou: -30,                 // par trou de plus de reglages.ecartMax créé (bonus s'il en comble un)
     journeeCourte: -10,        // par journée de moins de reglages.journeeMin créée (bonus si complétée)
     tropAesh: -25,             // par AESH au-delà du seuil, cumulable (4e : -25, 5e : -50…)
@@ -60,19 +61,36 @@ var PialMoteur = (function () {
   // Forme attendue : { "Aide à la manipulation": ["SVT", "Technologie"] }
   var BESOINS_MATIERES = {};
 
-  // critères d'expérience et de formation : sans effet jusqu'à la phase 4
+  // critère d'expérience : sans effet jusqu'à la phase 4 (rapprochement
+  // des rapports)
   function scoreExperience() { return 0; }
-  function scoreFormation() { return 0; }
+  // Formation (§7.3, §16) : part des besoins de l'élève couverts par les
+  // spécialités de l'AESH (table de Réglages), la meilleure parmi les
+  // élèves de l'unité, × POIDS.formation. Renvoie {score, raison}.
+  function scoreFormation(aesh, u, ctx) {
+    if (!(aesh.formations || []).length) return { score: 0 };
+    var couverts = M.besoinsCouverts(aesh, ctx.reglages.specialites), meilleur = null;
+    u.eleves.forEach(function (id) {
+      var e = ctx._eleves[id], b = (e && e.besoins) || [];
+      if (!b.length) return;
+      var n = b.filter(function (x) { return couverts[x]; }).length;
+      if (n && (!meilleur || n / b.length > meilleur.part)) meilleur = { part: n / b.length, n: n, total: b.length, e: e };
+    });
+    if (!meilleur) return { score: 0 };
+    return { score: POIDS.formation * meilleur.part,
+      raison: "formation : " + meilleur.n + " besoin" + (meilleur.n > 1 ? "s" : "") + " sur " + meilleur.total + " de " + meilleur.e.nomCourt };
+  }
 
   // motifs d'écartement d'une AESH, dans l'ordre où ils sont testés
-  var ORDRE_MOTIFS = ["etablissement", "indisponibilite", "quotite", "chevauchement", "deplacement", "pause"];
+  var ORDRE_MOTIFS = ["exclusion", "etablissement", "indisponibilite", "quotite", "chevauchement", "deplacement", "pause"];
   var LIBELLE_ECARTEE = {
-    etablissement: "autre établissement", indisponibilite: "indisponible", quotite: "quotité",
+    exclusion: "élève à ne pas lui affecter", etablissement: "autre établissement", indisponibilite: "indisponible", quotite: "quotité",
     chevauchement: "déjà occupée", deplacement: "déplacement", pause: "pause repas"
   };
   // motif d'une heure non couverte (rapport de fin, §5.3.7)
   var LIBELLE_MOTIF = {
     quotite: "quotités épuisées",
+    exclusion: "AESH à ne pas affecter à cet élève (fiche AESH)",
     chevauchement: "AESH déjà occupées sur ces créneaux",
     indisponibilite: "AESH indisponibles sur ces créneaux",
     etablissement: "aucune AESH n'intervient dans l'établissement",
@@ -181,6 +199,7 @@ var PialMoteur = (function () {
   // la construction des unités.
   function obstacle(et, aesh, u, semaines) {
     var ctx = et.ctx, r = ctx.reglages, c = u.creneau;
+    if (M.elevesExclusDe(aesh, u.eleves).length) return "exclusion";
     if (r.respecterIndispos && !aesh.ignorerIndispos) {
       if ((aesh.etablissements || []).length && aesh.etablissements.indexOf(c.etab) < 0) return "etablissement";
       if (M.indisponibilite(aesh, c)) return "indisponibilite";
@@ -263,7 +282,12 @@ var PialMoteur = (function () {
       score += P.tropAesh * (rang - P.maxAeshParEleve);
       raisons.push(rang + "e AESH pour " + nomsEleves(ctx, [id]));
     });
-    score += scoreExperience(aesh, u, ctx) + scoreFormation(aesh, u, ctx);
+    score += scoreExperience(aesh, u, ctx);
+    var fo = scoreFormation(aesh, u, ctx);
+    if (fo.score) { score += fo.score; raisons.push(fo.raison); }
+    // vœux de l'AESH (pas des contraintes)
+    var vx = M.voeuxTouches(aesh, c);
+    if (vx.length) { score += P.voeu * vx.length; raisons.push("vœu : éviter " + vx.join(", ")); }
     // équilibrage : part de quotité restante, dans la semaine la plus chargée
     var q = aesh.quotite || 0, ch = chargeDe(et, aesh.id), part = 1;
     semaines.forEach(function (s) { part = Math.min(part, q > 0 ? (q - ch[s]) / q : 0); });
@@ -652,14 +676,20 @@ var PialMoteur = (function () {
     var ctx = et.ctx, r = ctx.reglages, seuil = POIDS.maxAeshParEleve, nbMouvements = 0, notes = [];
     function semainesDe(a) { return semainesCreneau(a.creneau, ctx); }
     function unite(a) { return { creneau: a.creneau, modalite: a.modalite, periscolaire: a.periscolaire, eleves: a.eleves }; }
+    // coût d'une journée : trous, journée courte, et vœux de l'AESH touchés
+    // (même poids que dans le score), par semaine
     function cout(aeshId, jour) {
-      var t = 0, duJour = affsDe(et, aeshId).filter(function (a) { return a.creneau.jour === jour; });
+      var t = 0, aesh = ctx._aesh[aeshId], duJour = affsDe(et, aeshId).filter(function (a) { return a.creneau.jour === jour; });
       ["A", "B"].forEach(function (s) {
-        var l = [];
-        duJour.forEach(function (a) { if (semainesDe(a).indexOf(s) > -1) l.push([mn(a.creneau.debut), mn(a.creneau.fin)]); });
+        var l = [], voeux = 0;
+        duJour.forEach(function (a) {
+          if (semainesDe(a).indexOf(s) < 0) return;
+          l.push([mn(a.creneau.debut), mn(a.creneau.fin)]);
+          voeux += M.voeuxTouches(aesh, a.creneau).length;
+        });
         if (!l.length) return;
         var m = M.mesureJournee(l, r.ecartMax);
-        t += -POIDS.trou * m.trous + (m.presence < r.journeeMin ? -POIDS.journeeCourte : 0);
+        t += -POIDS.trou * m.trous + (m.presence < r.journeeMin ? -POIDS.journeeCourte : 0) - POIDS.voeu * voeux;
       });
       return t;
     }
@@ -708,7 +738,7 @@ var PialMoteur = (function () {
           // obstacle de b pour X sans rien retirer (X n'est pas à b) : un
           // autre établissement ou une indisponibilité excluent aussi l'échange
           var o = obstacle(et, ctx._aesh[b], unite(X), semainesDe(X));
-          if (o === "etablissement" || o === "indisponibilite") continue;
+          if (o === "exclusion" || o === "etablissement" || o === "indisponibilite") continue;
           if (!o) noter(b, null);
           affsDe(et, b).filter(function (Y) {
             return deplacable[Y.id] && Y.creneau.jour === X.creneau.jour && duree(Y.creneau, Y.modalite, ctx) === dX && semainesDe(Y).join() === semX;

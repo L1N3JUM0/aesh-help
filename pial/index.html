@@ -57,6 +57,8 @@ body{
   background:none;border:none;border-bottom:3px solid transparent;
   padding:13px 14px;cursor:pointer;
 }
+.barre-nav{overflow-x:auto;scrollbar-width:thin}
+.barre-nav button{flex:none;white-space:nowrap}
 .barre-nav button[aria-current=true]{color:var(--encre);border-bottom-color:var(--encre)}
 .barre-nav button:hover{color:var(--encre)}
 
@@ -326,6 +328,45 @@ button.ga-eleve:hover,button.ga-eleve:focus-visible{text-decoration-color:var(--
 .mc-boutons{display:flex;flex-wrap:wrap;gap:6px}
 .mc-boutons button[aria-pressed=true]{background:var(--encre);color:#fff;border-color:var(--encre)}
 
+/* onglets Élèves et AESH (liste + fiche dans un panneau) */
+.profils{display:grid;grid-template-columns:minmax(0,1fr);gap:18px;align-items:start}
+.profils.avec-fiche{grid-template-columns:minmax(0,1fr) minmax(360px,540px)}
+.profils-barre{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin:0 0 12px}
+.profils-barre h2{margin:0}
+.profils-barre .actions{margin:0}
+.profils-compte{font-family:var(--sans);font-size:13px;font-weight:400;color:var(--gris);margin-left:6px}
+.ligne-filtres .champ.champ-recherche{min-width:220px;flex:2}
+input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--texte);background:#FBFCFD;border:1px solid var(--seyes);border-radius:7px;padding:9px 10px}
+.profils-panneau{position:sticky;top:120px;max-height:calc(100vh - 140px);overflow:auto}
+.profils-panneau[hidden]{display:none}
+.pp-tete h3{font-family:var(--serif);font-size:19px;color:var(--encre);margin:8px 0 2px}
+.pp-tete h3:focus{outline:none}
+.pp-jauges{margin:6px 0 10px}
+.pp-tete .actions{margin:8px 0 0}
+.tableau-profils th{cursor:default}
+.tableau-profils th button.tri{font:inherit;color:inherit;text-transform:inherit;letter-spacing:inherit;background:none;border:none;padding:4px 0;cursor:pointer}
+.tableau-profils th button.tri:focus-visible{outline:2px solid var(--encre-clair);outline-offset:2px}
+.tableau-profils tbody tr[tabindex]{cursor:pointer}
+.tableau-profils tbody tr td{padding-top:11px;padding-bottom:11px}
+.tableau-profils tbody tr.actif{background:#EAF0F9}
+.tableau-profils tbody tr:focus{outline:2px solid var(--encre-clair);outline-offset:-2px}
+.tableau-profils td.col-jauges{white-space:normal;min-width:210px}
+.tableau-profils td.col-jauges .jauge{margin:3px 0 0}
+.formulaire-fiche{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+.formulaire-fiche .champ[hidden]{display:none}
+.formulaire-pleine{grid-column:1 / -1;margin:0 0 12px}
+.formulaire-pleine[hidden]{display:none}
+.formulaire-pleine summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--encre)}
+.ne-apercu{min-height:1.4em;font-size:14px;margin:6px 0 8px}
+@media (max-width:980px){
+  .profils.avec-fiche{grid-template-columns:1fr}
+  .profils.avec-fiche .profils-liste{display:none}
+  .profils-panneau{position:static;max-height:none}
+}
+.profils.avec-fiche .tableau-profils .col-secondaire{display:none}
+@media (max-width:800px){.tableau-profils .col-secondaire{display:none}.contenu{padding:16px 16px 80px}}
+@media (max-width:560px){.formulaire-fiche{grid-template-columns:1fr}}
+
 /* fiche de l'élève (grille élève) */
 .fiche-eleve{border:1px solid var(--seyes);border-radius:var(--rayon);margin:12px 0;background:#FAFBFD}
 .fiche-eleve summary{cursor:pointer;padding:10px 14px;font-weight:700;color:var(--encre)}
@@ -584,6 +625,7 @@ button.ga-eleve:hover,button.ga-eleve:focus-visible{text-decoration-color:var(--
 
 <nav class="barre-nav" id="nav">
   <button type="button" data-vue="vue-import" aria-current="true">Importer</button>
+  <button type="button" data-vue="vue-eleves">Élèves</button>
   <button type="button" data-vue="vue-affectations">Affectations</button>
   <button type="button" data-vue="vue-rapports">Rapports</button>
   <button type="button" data-vue="vue-indicateurs">Indicateurs</button>
@@ -670,6 +712,46 @@ button.ga-eleve:hover,button.ga-eleve:focus-visible{text-decoration-color:var(--
   </section>
 
   <!-- ============ VUE : AFFECTATIONS ============ -->
+  <section id="vue-eleves" class="masque">
+    <div class="profils" id="pe-disposition">
+      <div class="carte profils-liste">
+        <div class="profils-barre">
+          <h2>Élèves <span class="profils-compte" id="pe-compte"></span></h2>
+          <div class="actions">
+            <button type="button" class="btn btn-vide" id="pe-annuler" disabled>↶ Annuler</button>
+            <button type="button" class="btn btn-plein" id="pe-nouveau">+ Nouvel élève</button>
+          </div>
+        </div>
+        <div class="ligne-filtres">
+          <div class="champ champ-recherche"><label for="pe-recherche">Rechercher</label><input type="search" id="pe-recherche" placeholder="Prénom, classe, établissement…" autocomplete="off"></div>
+          <div class="champ"><label for="pe-etab">Établissement</label><select id="pe-etab"></select></div>
+          <div class="champ etroit"><label for="pe-classe">Classe</label><select id="pe-classe"></select></div>
+          <div class="champ etroit"><label for="pe-niveau">Niveau</label><select id="pe-niveau"></select></div>
+          <div class="champ"><label for="pe-modalite">Modalité</label><select id="pe-modalite">
+            <option value="">Toutes</option><option value="ind">Individuel</option><option value="mut">Mutualisé</option><option value="deux">Individuel et mutualisé</option>
+          </select></div>
+          <div class="champ"><label for="pe-couverture">Couverture</label><select id="pe-couverture">
+            <option value="">Tous les états</option><option value="sous">Sous-couverts</option><option value="partiel">Partiellement couverts</option>
+            <option value="couvert">Couverts</option><option value="sur">Sur-couverts</option>
+          </select></div>
+          <div class="champ" style="flex:none;align-self:center"><button type="button" class="btn btn-vide" id="pe-reinitialiser">Réinitialiser</button></div>
+        </div>
+        <div class="tableau-conteneur"><table class="tableau tableau-profils" id="pe-table"></table></div>
+        <p class="aide" style="margin-top:10px">Cliquez sur une ligne (ou Entrée) pour ouvrir la fiche ; flèches haut et bas pour passer d'un élève à l'autre.</p>
+      </div>
+      <aside class="carte profils-panneau" id="pe-panneau" hidden aria-labelledby="pe-titre">
+        <div class="pp-tete">
+          <button type="button" class="btn-lien" id="pe-fermer">← Retour à la liste</button>
+          <h3 id="pe-titre" tabindex="-1"></h3>
+          <p class="aide" id="pe-sous-titre"></p>
+          <div id="pe-jauges" class="pp-jauges"></div>
+          <div class="actions"><button type="button" class="btn btn-vide" id="pe-edt">Voir l'emploi du temps</button></div>
+        </div>
+        <div id="pe-fiche"></div>
+      </aside>
+    </div>
+  </section>
+
   <section id="vue-affectations" class="masque">
     <div class="bandeau-synthese" id="aff-synthese"></div>
     <div class="progression-moteur carte" id="aff-progression" hidden>
@@ -1034,6 +1116,38 @@ button.ga-eleve:hover,button.ga-eleve:focus-visible{text-decoration-color:var(--
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
+<div class="voile" id="voile-nouvel-eleve" hidden>
+  <div class="modale modale-large" role="dialog" aria-modal="true" aria-labelledby="ne-titre">
+    <h3 id="ne-titre">Nouvel élève</h3>
+    <div class="formulaire-fiche">
+      <div class="champ"><label for="ne-etab">Établissement *</label><select id="ne-etab"></select></div>
+      <div class="champ" id="ne-etab-autre-champ" hidden><label for="ne-etab-autre">Nom du nouvel établissement *</label><input type="text" id="ne-etab-autre" autocomplete="off"></div>
+      <div class="champ"><label for="ne-classe">Classe *</label><select id="ne-classe"></select></div>
+      <div class="champ" id="ne-classe-autre-champ" hidden><label for="ne-classe-autre">Nouvelle classe *</label><input type="text" id="ne-classe-autre" autocomplete="off" placeholder="Ex. : 5B"></div>
+      <div class="champ"><label for="ne-prenom">Prénom *</label><input type="text" id="ne-prenom" autocomplete="off"></div>
+      <div class="champ"><label for="ne-nom">Nom *</label><input type="text" id="ne-nom" autocomplete="off" aria-describedby="ne-nom-aide">
+        <p class="aide" id="ne-nom-aide" style="margin:4px 0 0">Seule l'initiale est conservée (Martin → M.). Pour départager deux homonymes de la même classe, écrivez une abréviation terminée par un point (Ma., Mo.).</p></div>
+      <div class="champ"><label for="ne-ind">Heures individuelles</label><input type="text" id="ne-ind" inputmode="decimal" placeholder="0"></div>
+      <div class="champ"><label for="ne-mut">Heures mutualisées</label><input type="text" id="ne-mut" inputmode="decimal" placeholder="0"></div>
+      <div class="champ"><label for="ne-debut">Début de notification</label><input type="date" id="ne-debut"></div>
+      <div class="champ"><label for="ne-fin">Fin de notification</label><input type="date" id="ne-fin"></div>
+      <div class="formulaire-pleine" id="ne-peri" hidden>
+        <div class="formulaire-fiche">
+          <div class="champ"><label for="ne-recre">Récréations</label><select id="ne-recre"><option value="non">Non</option><option value="oui">Oui</option><option value="prioritaire">Prioritaire</option></select></div>
+          <div class="champ"><label for="ne-merid">Pause méridienne</label><select id="ne-merid"><option value="non">Non</option><option value="oui">Oui</option><option value="prioritaire">Prioritaire</option></select></div>
+        </div>
+      </div>
+      <details class="formulaire-pleine" id="ne-besoins-details"><summary>Besoins (facultatif)</summary><div class="fe-besoins" id="ne-besoins" style="margin-top:8px"></div></details>
+    </div>
+    <p class="ne-apercu" id="ne-apercu" aria-live="polite"></p>
+    <div class="note alerte" id="ne-erreurs" hidden tabindex="-1" aria-live="polite"></div>
+    <p class="aide">Au moins une heure notifiée (individuelle ou mutualisée). Mêmes contrôles que l'import du fichier des élèves. Entrée : créer ; Ctrl+Entrée : créer et en ajouter un autre.</p>
+    <div class="actions"><button type="button" class="btn btn-plein" id="ne-creer">Créer</button>
+      <button type="button" class="btn btn-vide" id="ne-creer-autre">Créer et en ajouter un autre</button>
+      <button type="button" class="btn btn-vide" id="ne-annuler">Annuler</button></div>
+  </div>
+</div>
+
 <div class="voile" id="voile-valider" hidden>
   <div class="modale" role="dialog" aria-modal="true" aria-labelledby="vv-titre">
     <h3 id="vv-titre">Valider la version</h3>
@@ -1136,6 +1250,7 @@ button.ga-eleve:hover,button.ga-eleve:focus-visible{text-decoration-color:var(--
 <script src="zip.js"></script>
 <script src="import-fichiers.js"></script>
 <script src="affectations.js"></script>
+<script src="profils.js"></script>
 <script src="app.js"></script>
 <script>
 /* Service worker commun à toute l'application (portée : dossier racine),

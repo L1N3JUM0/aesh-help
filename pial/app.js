@@ -77,22 +77,35 @@ function rafraichirCache() { return PialDB.tousLesRapports().then(function (r) {
 function rafraichirImports() { return PialDB.tousLesImports().then(function (r) { importsCache = r; return importsCache; }); }
 
 /* =============== navigation =============== */
-var VUES = ["vue-import", "vue-affectations", "vue-rapports", "vue-detail-rapport", "vue-fiche-eleve", "vue-indicateurs", "vue-stats", "vue-reglages"];
+var VUES = ["vue-import", "vue-eleves", "vue-affectations", "vue-rapports", "vue-detail-rapport", "vue-fiche-eleve", "vue-indicateurs", "vue-stats", "vue-reglages"];
+// dernier onglet utilisé, rouvert au prochain chargement (Élèves par défaut)
+var CLE_ONGLET = "pial-dernier-onglet";
 function vue(nom) {
   VUES.forEach(function (v) { $(v).classList.toggle("masque", v !== nom); });
+  var dansNav = false;
   Array.prototype.forEach.call(document.querySelectorAll("#nav button"), function (b) {
     b.setAttribute("aria-current", b.dataset.vue === nom ? "true" : "false");
+    if (b.dataset.vue === nom) dansNav = true;
   });
+  if (dansNav) { try { localStorage.setItem(CLE_ONGLET, nom); } catch (e) { /* stockage indisponible */ } }
   window.scrollTo(0, 0);
 }
+function ouvrirOngletNav(nom) {
+  vue(nom);
+  if (nom === "vue-reglages") { rendreStockage(); PialAffectations.rendreReglages(); }
+  if (nom === "vue-indicateurs") rendreIndicateurs();
+  if (nom === "vue-eleves") PialProfils.ouvrir("eleves");
+  if (nom === "vue-affectations") PialAffectations.ouvrirOnglet();
+  if (nom === "vue-stats") { initialiserFiltresStats(); rendreStats(); }
+}
+function rouvrirDernierOnglet() {
+  var nom = null;
+  try { nom = localStorage.getItem(CLE_ONGLET); } catch (e) { /* stockage indisponible */ }
+  if (!nom || !document.querySelector('#nav button[data-vue="' + nom + '"]')) nom = "vue-eleves";
+  ouvrirOngletNav(nom);
+}
 Array.prototype.forEach.call(document.querySelectorAll("#nav button"), function (b) {
-  b.addEventListener("click", function () {
-    vue(this.dataset.vue);
-    if (this.dataset.vue === "vue-reglages") { rendreStockage(); PialAffectations.rendreReglages(); }
-    if (this.dataset.vue === "vue-indicateurs") rendreIndicateurs();
-    if (this.dataset.vue === "vue-affectations") PialAffectations.ouvrirOnglet();
-    if (this.dataset.vue === "vue-stats") { initialiserFiltresStats(); rendreStats(); }
-  });
+  b.addEventListener("click", function () { ouvrirOngletNav(this.dataset.vue); });
 });
 
 /* =============== rendu d'un rapport (aperçu écran + impression) =============
@@ -1002,6 +1015,7 @@ function demarrer(migration) {
     rendreIndicateurs();
     initialiserFiltresStats();
     rendreStats();
+    rouvrirDernierOnglet();
     if (migration) toast("Base mise à niveau : " + PialAffectations.compteurs().eleves + " élève(s) et " + PialAffectations.compteurs().aesh + " AESH conservés.");
   }, function () {
     $("bandeau-base").textContent = "La base de données n'a pas pu être ouverte. Rechargez la page ; si le problème persiste, restaurez une sauvegarde.";

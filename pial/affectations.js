@@ -955,7 +955,8 @@ var PialAffectations = (function () {
       + (e.finNotif ? " · fin de notification le " + e.finNotif.split("-").reverse().join("/") : "")
       + (etab.alternance ? " · semaine " + semaineAffichee + " affichée" : "");
     $("ge-jauges").innerHTML = '<span class="pastille-etat e-' + cv.etat + '">' + LIB_ETAT_ELEVE[cv.etat] + '</span>' + jaugesEleve(e, cv);
-    rendreFicheEleve(e);
+    // onglet Élèves affiché : la fiche y est (la grille est masquée)
+    if (!ongletVisible("vue-eleves")) rendreFicheEleve(e);
     var cases = casesEleve(e);
     var jours = (etab.joursOuvres && etab.joursOuvres.length ? etab.joursOuvres : M.JOURS.slice(0, 5)).slice();
     cases.forEach(function (c) { if (jours.indexOf(c.jour) < 0) jours.push(c.jour); });
@@ -1320,11 +1321,26 @@ var PialAffectations = (function () {
   var ficheEleveOuverte = false;
   var LIB_ETATS = { prioritaire: "Prioritaire", normal: "Normal", exclu: "Exclu" };
   function nombreSaisi(v) { var x = parseFloat(String(v).replace(",", ".")); return isNaN(x) ? NaN : Math.round(x * 100) / 100; }
-  function rendreFicheEleve(e) {
-    var hote = $("ge-fiche"), m = e.modifiesAppli || {};
+  // la fiche (identifiants fixes : une seule à la fois dans la page) passe
+  // d'un hôte à l'autre (grille de l'élève, onglet Élèves) : la frappe en
+  // attente est enregistrée, le brouillon gardé, l'ancien hôte vidé
+  function hebergerFiche(f, hoteId) {
+    if (f.o.hote === hoteId) return;
+    if (f.minuteur) lancerAuto(f);
+    noterBrouillon(f);
+    var ancien = $(f.o.hote);
+    if (ancien) ancien.innerHTML = "";
+    f.o.hote = hoteId; f.id = null; f.base = null;
+  }
+  function ongletVisible(id) { var v = $(id); return !!v && !v.classList.contains("masque"); }
+  // opts : {hote (défaut : grille de l'élève), ouverte (fiche dépliée)}
+  function rendreFicheEleve(e, opts) {
+    opts = opts || {};
+    hebergerFiche(autoEleve, opts.hote || "ge-fiche");
+    var hote = $(autoEleve.o.hote), m = e.modifiesAppli || {};
     function marque(k) { return m[k] ? ' <span class="fe-modifie" title="Modifié dans l\'application : protégé au prochain import (vous choisirez quelle valeur garder)">modifié</span>' : ""; }
     var matieres = M.matieresEleve(e, etat.cours);
-    var h = '<details class="fiche-eleve" id="fe-details"' + (ficheEleveOuverte ? " open" : "") + '><summary>Fiche de l\'élève'
+    var h = '<details class="fiche-eleve" id="fe-details"' + (ficheEleveOuverte || opts.ouverte ? " open" : "") + '><summary>Fiche de l\'élève'
       + '<span class="aide"> — notification, besoins, état par matière, commentaire' + (e.commentaire ? " · commentaire saisi" : "") + '</span></summary>'
       + '<div class="fe-corps"><div class="fe-colonne"><h4>Notification</h4><div class="fe-champs">'
       + '<label>Heures individuelles' + marque("heuresInd") + '<input type="text" inputmode="decimal" id="fe-ind" data-champ="ind" value="' + ech(String(e.heuresInd || 0).replace(".", ",")) + '"></label>'
@@ -1353,7 +1369,7 @@ var PialAffectations = (function () {
       + '</div></div></details>';
     var av = avantRendu(autoEleve, e.id);
     hote.innerHTML = h;
-    $("fe-details").addEventListener("toggle", function () { ficheEleveOuverte = this.open; });
+    if (!opts.ouverte) $("fe-details").addEventListener("toggle", function () { ficheEleveOuverte = this.open; });
     apresRendu(autoEleve, e, av);
     Array.prototype.forEach.call(hote.querySelectorAll("[data-etat-matiere]"), function (b) {
       b.addEventListener("click", function () { changerEtatMatiere(e, this.dataset.matiere, this.dataset.etatMatiere); });
@@ -2152,7 +2168,7 @@ var PialAffectations = (function () {
   }
   document.addEventListener("keydown", function (ev) {
     if (!(ev.ctrlKey || ev.metaKey) || ev.shiftKey || ev.altKey || (ev.key !== "z" && ev.key !== "Z")) return;
-    if ($("vue-affectations").classList.contains("masque") || /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || "")) return;
+    if (!["vue-affectations", "vue-eleves", "vue-aesh"].some(ongletVisible) || /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || "")) return;
     ev.preventDefault();
     annuler();
   });
@@ -2170,6 +2186,7 @@ var PialAffectations = (function () {
     }
     return PialDB.appliquer(ops).then(recharger).then(function () {
       rendreAffectations();
+      notifierRendu();
       if (menu) {
         // l'élève et le cours ont pu être rechargés : on rafraîchit les références
         menu.eleve = eleveParId(menu.eleve.id) || menu.eleve;
@@ -2300,6 +2317,9 @@ var PialAffectations = (function () {
     if (eleveOuvert) rendreGrilleEleve(); else if (aeshOuverte) rendreGrilleAesh(); else rendreEnsemble();
   }
   function ouvrirOnglet() { remplirFiltres(); rendreAffectations(); }
+  // onglets Élèves et AESH (pial/profils.js) : redessinés après chaque écriture
+  var abonnesRendu = [];
+  function notifierRendu() { abonnesRendu.forEach(function (fn) { fn(); }); }
 
   /* =============== initialisation =============== */
   function initialiser(outils) {
@@ -2308,14 +2328,32 @@ var PialAffectations = (function () {
     rendreRegles();
     PialAffectations.surChangement = function () {
       if (!$("vue-affectations").classList.contains("masque")) ouvrirOnglet();
+      notifierRendu();
     };
   }
+  /* interface pour les onglets Élèves et AESH (pial/profils.js) : mêmes
+     données, même fiche, même pile d'annulation */
+  var interne = {
+    etat: etat, ech: ech, txt: txt, heures: heures, pluriel: pluriel, sep: sep,
+    anneeCourante: anneeCourante, aujourdhui: aujourdhui,
+    nomEtablissement: nomEtablissement, etablissementParId: etablissementParId, eleveParId: eleveParId, aeshParId: aeshParId,
+    nomAesh: nomAesh, initialesAesh: initialesAesh, couleurAesh: couleurAesh, aeshTriees: aeshTriees,
+    jauge: jauge, jaugesEleve: jaugesEleve, titreAB: titreAB, LIB_ETAT_ELEVE: LIB_ETAT_ELEVE, LIB_ETAT_AESH: LIB_ETAT_AESH,
+    contexte: function () { if (!ctxCourant) recalculer(); return ctxCourant; },
+    rendreFicheEleve: rendreFicheEleve, enregistrerPuisRendre: enregistrerPuisRendre, annuler: annuler,
+    libelleAnnulation: function () { return pileAnnulation.length ? pileAnnulation[pileAnnulation.length - 1].libelle : ""; },
+    surRendu: function (fn) { abonnesRendu.push(fn); },
+    ui: function () { return ui; },
+    // ouvre la grille dans l'onglet Affectations
+    voirGrilleEleve: function (id) { ui.vue("vue-affectations"); remplirFiltres(); ouvrirGrilleEleve(id); },
+    voirGrilleAesh: function (id) { ui.vue("vue-affectations"); remplirFiltres(); ouvrirGrilleAesh(id); }
+  };
   function rendreReglages() { rendreEtablissements(); rendreRegles(); }
 
   return {
     etat: etat, recharger: recharger, compteurs: compteurs, contexte: contexte,
     anneeCourante: anneeCourante, aujourdhui: aujourdhui, initialiser: initialiser,
     rendreReglages: rendreReglages, nomEtablissement: nomEtablissement, heures: heures, ouvrirOnglet: ouvrirOnglet, viderAnnulation: viderAnnulation,
-    surChangement: null
+    surChangement: null, interne: interne
   };
 })();

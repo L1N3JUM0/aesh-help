@@ -278,7 +278,7 @@ Les affectations proposées ont un identifiant déterministe (`mo|aeshId|creneau
 
 ## 7. Onglets
 
-Onglets existants : Importer, Rapports, Indicateurs, Statistiques, Réglages. Ajouts :
+Onglets existants : Importer, Rapports, Indicateurs, Statistiques, Réglages. Ajouts (Élèves et AESH : §7.5) :
 
 ### 7.1 Onglet « Affectations » (cœur de l'outil)
 
@@ -367,6 +367,28 @@ L'onglet existant est étendu avec une section « Affectations ».
   - évolution de la couverture d'une version à l'autre.
 - Réutiliser `graphiques.js` (SVG fait main), sans aucune bibliothèque.
 - Chaque tableau est exportable en CSV et imprimable.
+
+### 7.5 Onglets « Élèves » et « AESH » (§17)
+
+Les profils se renseignent dans l'application. L'import CSV reste disponible pour la rentrée et les gros volumes. Code : `pial/profils.js`, qui passe par `PialAffectations.interne` : mêmes données, même fiche, même pile d'annulation.
+
+- **Navigation** : Importer · Élèves · AESH · Affectations · … L'espace rouvre le dernier onglet utilisé (Élèves par défaut), mémorisé dans le navigateur.
+- **Liste des élèves** (année en cours) : tableau avec recherche (prénom et initiale, classe, établissement ; casse et accents ignorés).
+  - **Filtres** : établissement, classe (référentiel, §17), niveau, modalité (individuel, mutualisé, les deux) et état de couverture (§4.2).
+  - **Tri** : clic sur un en-tête de colonne (`aria-sort`), puis tri par établissement, classe et nom.
+  - **Colonnes** : élève, classe, établissement, heures notifiées, couverture (état et jauges de la vue d'ensemble), fin de notification (« échue », « dans N jours » sous 30 jours).
+  - **Clavier** : flèches haut et bas d'une ligne à l'autre, Entrée ou Espace pour ouvrir.
+- **Fiche** : un clic sur une ligne ouvre la fiche de l'élève dans un panneau à droite, en plein écran sous 980 px.
+  - C'est le même composant que dans la grille (§7.1), avec l'enregistrement automatique et l'annulation. Il n'y en a qu'un à la fois dans la page : il passe d'un hôte à l'autre, la frappe en attente est enregistrée et le brouillon gardé.
+  - Le bouton « Voir l'emploi du temps » ouvre la grille dans l'onglet Affectations. « ← Retour à la liste » ou Échap ferme le panneau.
+- **Annulation** : bouton « ↶ Annuler » de l'onglet et Ctrl+Z hors d'un champ. C'est la pile de l'onglet Affectations : une modification de la fiche, une création, etc.
+- **Création** (« + Nouvel élève ») :
+  - **Champs** : établissement (liste, ou « Nouvel établissement… », créé avec ses paramètres par défaut comme à l'import), classe (référentiel de l'établissement, ou « Autre classe… »), prénom, nom, heures, dates de notification, récréations et pause méridienne si elles sont gérées, besoins.
+  - **Nom** : le formulaire indique que seule l'initiale est conservée et comment départager deux homonymes.
+  - **Aperçu** : « Sera enregistré : Lucas M. — 5B — … ».
+  - **Contrôle** : une collision de clé avec un élève de la même année, archivé compris, est signalée pendant la saisie et bloque la création. Les autres contrôles sont ceux de l'import (`PialImport.validerLigne`) et s'affichent au premier essai.
+  - **Raccourcis** : Entrée crée ; « Créer et en ajouter un autre » (Ctrl+Entrée) garde l'établissement et la classe.
+  - **Annulation** : la création est annulable, établissement créé compris.
 
 ---
 

@@ -315,7 +315,7 @@ Onglets existants : Importer, Rapports, Indicateurs, Statistiques, Réglages. Aj
 - notification (heures individuelles et mutualisées, début, fin) et besoins (liste ACCOMP), modifiables ; une valeur modifiée est marquée « modifié » (`modifiesAppli`) et protégée au réimport (§2.2) ;
 - état par matière (prioritaire / normal / exclu) : appliqué à tous les créneaux de la matière, mémorisé dans `etatsMatieres` pour les cours importés plus tard ; un créneau peut ensuite être réglé seul dans la grille ;
 - commentaire libre, avec le rappel « pas d'information médicale » ; il reste dans l'espace PIAL (sauvegarde comprise) et n'est **jamais exporté vers les AESH** (§8.3) ;
-- chaque enregistrement est annulable.
+- enregistrement automatique (§16, point 12) : chaque modification est enregistrée seule et s'annule avec « ↶ Annuler ».
 
 **Panneau d'alertes** latéral et repliable : conflits, sous-couvertures, dépassements, notifications qui arrivent à échéance. Un clic sur une alerte mène au créneau concerné.
 
@@ -328,7 +328,7 @@ Onglets existants : Importer, Rapports, Indicateurs, Statistiques, Réglages. Aj
 
 Liste des AESH, puis une fiche par AESH :
 
-- **Identité et paramètres** : quotité, e-mail, établissements possibles, indisponibilités, interrupteur « ignorer les indisponibilités » pour cette AESH. **Livré le 20/11/2026 dans la grille de l'AESH** (fiche repliable, enregistrement annulable), avec : vœux (journées ou demi-journées et plages horaires à éviter, pénalités du score, hachurés dans la grille), élèves à ne pas affecter (exclusion dure, sans motif), spécialités (cases de la table de Réglages ; valeurs importées hors table gardées, marquées « hors table »). Quotité, établissements, indisponibilités et spécialités modifiés dans la fiche sont marqués « modifié » et protégés au réimport du fichier des AESH (même choix global que pour les élèves) ; vœux et exclusions ne sont jamais touchés par l'import.
+- **Identité et paramètres** : quotité, e-mail, établissements possibles, indisponibilités, interrupteur « ignorer les indisponibilités » pour cette AESH. **Livré le 20/11/2026 dans la grille de l'AESH** (fiche repliable, enregistrement automatique et annulable, §16 point 12), avec : vœux (journées ou demi-journées et plages horaires à éviter, pénalités du score, hachurés dans la grille), élèves à ne pas affecter (exclusion dure, sans motif), spécialités (cases de la table de Réglages ; valeurs importées hors table gardées, marquées « hors table »). Quotité, établissements, indisponibilités et spécialités modifiés dans la fiche sont marqués « modifié » et protégés au réimport du fichier des AESH (même choix global que pour les élèves) ; vœux et exclusions ne sont jamais touchés par l'import.
 - **Affectation actuelle** : élèves, heures par établissement, mini-grille.
 - **Expérience tirée des rapports importés** :
   - **types d'accompagnement réalisés**, avec leur fréquence (champ `accomp` des rapports, qui reprend la liste ACCOMP de l'application AESH : « Secrétaire, scripteur », « Aide aux déplacements », etc.) ;
@@ -635,6 +635,7 @@ Ordre de traitement : A (corrections), B (trous), E (grille AESH), puis C (fiche
 9. Fiche élève (§7.1) : notification et besoins modifiables, état par matière, commentaire non exporté. Réimport des élèves : l'aperçu liste les élèves dont une valeur modifiée dans l'application (notification, besoins) serait écrasée, avec un choix global « garder la valeur de l'application » / « prendre celle du fichier » (par défaut : garder). Réimport de l'EDT : un cours « normal » dans le fichier garde l'état déjà choisi pour ce cours, sinon prend celui de sa matière.
 10. Fiche AESH avancée de la phase 4 (§7.2) : quotité, établissements, indisponibilités, vœux (−20 par vœu touché), élèves à ne pas affecter (contrainte dure n° 8, §4.4), spécialités reliées à des besoins fonctionnels (table de Réglages, §7.3) ; poids « formation » activé (+0 à +10, proportionnel). Besoins ajoutés à ACCOMP en fin de liste, dans les deux applications.
 11. Glisser-déposer dans la grille élève, en plus du menu au clic (§7.1, Ergonomie). Pas encore dans la grille AESH.
+12. Fiches élève et AESH : **enregistrement automatique** (plus de bouton « Enregistrer la fiche »), retenu plutôt qu'un avertissement avant chaque action qui redessine la fiche : ces actions sont trop nombreuses (proposition, annulation, menu, glisser-déposer, état d'une matière, navigation) pour toutes les intercepter. Une case ou une liste s'enregistre au changement, un champ texte à la sortie ou après 0,8 s sans frappe. Chaque modification s'annule avec « ↶ Annuler » ; une frappe continue dans un même champ compte pour une seule action (pile de 20). Une saisie non encore enregistrée (frappe en cours, valeur invalide comme une plage horaire incomplète) est gardée à tout redessin de la fiche, y compris après un passage par une autre fiche ; une ligne d'état dit « Enregistré automatiquement à … » ou « Non enregistré : … ». Quitter la page avec une saisie en attente ou invalide déclenche l'avertissement du navigateur.
 
 ## 15. Sujets ouverts
 

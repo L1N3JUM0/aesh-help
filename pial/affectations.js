@@ -1134,6 +1134,155 @@ var PialAffectations = (function () {
       + (ailleurs.length ? '<span class="palette-sep">autres établissements :</span>' + ailleurs.map(function (a) { return puce(a, true); }).join("") : "") : "";
   }
 
+  /* =============== fiches : enregistrement automatique =============== */
+  // Une fiche (élève ou AESH) s'enregistre seule : au changement d'une case
+  // ou d'une liste, à la sortie d'un champ, ou après une pause de frappe.
+  // Chaque modification s'annule avec « ↶ Annuler » (une frappe continue dans
+  // un même champ compte pour une seule action). Une saisie pas encore
+  // enregistrée (frappe en cours, valeur invalide) survit à tout redessin de
+  // la fiche : le rendu reprend les champs changés depuis le dernier
+  // enregistrement, même après un passage par un autre élève ou une autre AESH.
+  var DELAI_FRAPPE = 800;
+  function ficheAuto(o) {
+    return { o: o, id: null, base: null, brouillons: {}, erreurs: {}, heures: {}, minuteur: null, champ: "", file: Promise.resolve(), enCours: 0 };
+  }
+  var autoEleve = ficheAuto({ hote: "ge-fiche", statut: "fe-statut", magasin: "eleves", nom: "fiche-eleve",
+    trouver: function (id) { return eleveParId(id); }, lire: function (h) { return lireFicheEleve(h); },
+    appliquer: function (e, s) { return appliquerFicheEleve(e, s); }, libelle: function (e) { return "la fiche de " + e.nomCourt; } });
+  var autoAesh = ficheAuto({ hote: "ga-fiche", statut: "fa-statut", magasin: "aesh", nom: "fiche-aesh",
+    trouver: function (id) { return aeshParId(id); }, lire: function (h) { return lireFicheAesh(h); },
+    appliquer: function (a, s) { return appliquerFicheAesh(a, s); }, libelle: function (a) { return "la fiche de " + nomAesh(a); },
+    // listes : valeur saisie (DOM) et valeur enregistrée (données), même forme
+    listes: { plages: plagesSaisies, exclus: exclusSaisis },
+    listesDonnees: function (a) {
+      return { plages: JSON.stringify(((a.voeux || {}).plages || []).map(function (p) { return [p.jour || "", p.debut || "", p.fin || ""]; })),
+        exclus: JSON.stringify(a.elevesExclus || []) };
+    } });
+  function valeursChamps(f, hote) {
+    var v = {};
+    Array.prototype.forEach.call(hote.querySelectorAll("[data-champ]"), function (c) { v[c.getAttribute("data-champ")] = c.type === "checkbox" ? (c.checked ? "1" : "") : c.value; });
+    Object.keys(f.o.listes || {}).forEach(function (k) { v[k] = f.o.listes[k](hote); });
+    return v;
+  }
+  function fichePresente(f) { var h = $(f.o.hote); return f.id && h && h.querySelector("[data-champ]") ? h : null; }
+  // champs changés depuis le dernier enregistrement (ou le dernier rendu)
+  function noterBrouillon(f) {
+    var hote = fichePresente(f);
+    if (!hote || !f.base) return;
+    var v = valeursChamps(f, hote), br = {};
+    Object.keys(v).forEach(function (k) { if (v[k] !== f.base[k]) br[k] = v[k]; });
+    if (Object.keys(br).length) f.brouillons[f.id] = br; else delete f.brouillons[f.id];
+  }
+  // appelé juste avant de remplacer le contenu de la fiche
+  function avantRendu(f, id) {
+    var hote = fichePresente(f), r = { focus: null };
+    if (hote && f.id !== id && f.minuteur) lancerAuto(f);   // on quitte la fiche : enregistrer la frappe en attente
+    noterBrouillon(f);
+    var actif = document.activeElement;
+    if (hote && f.id === id && actif && hote.contains(actif) && actif !== hote) {
+      r.focus = actif.getAttribute("data-champ") ? '[data-champ="' + actif.getAttribute("data-champ").replace(/"/g, '\\"') + '"]' : actif.id ? "#" + actif.id : null;
+      try { r.debut = actif.selectionStart; r.fin = actif.selectionEnd; } catch (x) { /* case à cocher, date */ }
+      var ligne = actif.closest && actif.closest(".fa-plage");
+      if (ligne && !r.focus) {
+        r.ligne = Array.prototype.indexOf.call(ligne.parentNode.children, ligne);
+        r.focus = ["[data-plage-jour]", "[data-plage-debut]", "[data-plage-fin]"].filter(function (q) { return actif.matches(q); })[0] || null;
+      }
+    }
+    r.brouillon = f.brouillons[id] || {};
+    return r;
+  }
+  // appelé juste après : base = valeurs enregistrées, puis brouillon, focus, écouteurs
+  function apresRendu(f, ent, r) {
+    var hote = $(f.o.hote), br = r.brouillon;
+    f.id = ent.id;
+    f.base = valeursChamps(f, hote);
+    if (f.o.listesDonnees) { var ld = f.o.listesDonnees(ent); Object.keys(ld).forEach(function (k) { f.base[k] = ld[k]; }); }
+    Object.keys(br).forEach(function (k) {
+      if ((f.o.listes || {})[k]) return;   // déjà repris à la construction
+      var c = hote.querySelector('[data-champ="' + k.replace(/"/g, '\\"') + '"]');
+      if (!c) return;
+      if (c.type === "checkbox") c.checked = br[k] === "1"; else c.value = br[k];
+    });
+    if (r.focus) {
+      var lieu = r.ligne !== undefined ? hote.querySelectorAll(".fa-plage")[r.ligne] : hote, el = lieu && lieu.querySelector(r.focus);
+      if (el) {
+        el.focus({ preventScroll: true });
+        try { if (r.debut != null) el.setSelectionRange(r.debut, r.fin); } catch (x) { /* sans sélection */ }
+      }
+    }
+    afficherStatut(f);
+    var details = hote.firstElementChild;
+    function cle(t) { return t.getAttribute("data-champ") || (t.closest(".fa-plage") ? "plages" : ""); }
+    details.addEventListener("input", function (ev) {
+      var t = ev.target;
+      if (t.hasAttribute("data-sans-auto") || !/^(text|textarea)$/.test(t.type)) return;
+      planifierAuto(f, cle(t), DELAI_FRAPPE);
+    });
+    details.addEventListener("change", function (ev) {
+      if (ev.target.hasAttribute("data-sans-auto") || !cle(ev.target)) return;
+      planifierAuto(f, cle(ev.target), 0);
+    });
+    if (Object.keys(br).length && !f.erreurs[ent.id]) planifierAuto(f, "", DELAI_FRAPPE);
+  }
+  function afficherStatut(f) {
+    var el = $(f.o.statut);
+    if (!el || !f.id) return;
+    var err = f.erreurs[f.id];
+    el.classList.toggle("erreur", !!err);
+    el.textContent = err ? "Non enregistré : " + err + " Votre saisie est gardée ; corrigez-la pour l'enregistrer."
+      : f.heures[f.id] ? "Enregistré automatiquement à " + f.heures[f.id] + ". « ↶ Annuler » revient en arrière."
+      : "Chaque modification est enregistrée automatiquement ; « ↶ Annuler » revient en arrière.";
+  }
+  function planifierAuto(f, champ, delai) {
+    if (f.minuteur) clearTimeout(f.minuteur);
+    if (champ) f.champ = champ;
+    f.minuteur = setTimeout(function () { lancerAuto(f); }, delai);
+  }
+  // lit la fiche tout de suite ; applique et écrit à la suite des écritures précédentes
+  function lancerAuto(f) {
+    if (f.minuteur) { clearTimeout(f.minuteur); f.minuteur = null; }
+    var hote = fichePresente(f);
+    if (!hote) return;
+    var id = f.id, champ = f.champ || "fiche", saisie = f.o.lire(hote), valeurs = valeursChamps(f, hote);
+    f.champ = "";
+    f.enCours++;
+    function fin() { f.enCours--; }
+    f.file = f.file.then(function () {
+      var ent = f.o.trouver(id);
+      if (!ent) return;
+      var r = f.o.appliquer(ent, saisie);
+      if (r.erreur) { f.erreurs[id] = r.erreur; afficherStatut(f); return; }
+      delete f.erreurs[id];
+      // ce qui vient d'être lu est désormais la référence : seuls les changements ultérieurs restent en brouillon
+      if (f.id === id) f.base = valeurs;
+      var br = f.brouillons[id];
+      if (br) { Object.keys(br).forEach(function (k) { if (br[k] === valeurs[k]) delete br[k]; }); if (!Object.keys(br).length) delete f.brouillons[id]; }
+      if (!r.b) { afficherStatut(f); return; }
+      var d = new Date();
+      f.heures[id] = d.getHours() + " h " + (d.getMinutes() < 10 ? "0" : "") + d.getMinutes();
+      return enregistrerPuisRendre([{ magasin: f.o.magasin, enregistrer: [r.b] }], "", f.o.libelle(ent), f.o.nom + "|" + id + "|" + champ);
+    }).then(fin, function (err) {
+      fin();
+      f.erreurs[id] = "l'écriture a échoué (" + ((err && err.message) || err) + ").";
+      afficherStatut(f);
+      ui.toast("Fiche non enregistrée : l'écriture a échoué.");
+    });
+  }
+  function saisieEnAttente() {
+    return [autoEleve, autoAesh].some(function (f) {
+      noterBrouillon(f);
+      return f.minuteur || f.enCours > 0 || Object.keys(f.brouillons).length || Object.keys(f.erreurs).length;
+    });
+  }
+  // onglet masqué ou fermé : écrire la frappe en attente sans attendre la pause
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "hidden") [autoEleve, autoAesh].forEach(function (f) { if (f.minuteur) lancerAuto(f); });
+  });
+  window.addEventListener("beforeunload", function (ev) {
+    [autoEleve, autoAesh].forEach(function (f) { if (f.minuteur) lancerAuto(f); });
+    if (saisieEnAttente()) { ev.preventDefault(); ev.returnValue = ""; }
+  });
+
   /* =============== fiche de l'élève (spec §16) =============== */
   // Notification, besoins, état par matière et commentaire, modifiables
   // avant de lancer « Proposer ». Le commentaire reste dans l'espace PIAL :
@@ -1148,17 +1297,17 @@ var PialAffectations = (function () {
     var h = '<details class="fiche-eleve" id="fe-details"' + (ficheEleveOuverte ? " open" : "") + '><summary>Fiche de l\'élève'
       + '<span class="aide"> — notification, besoins, état par matière, commentaire' + (e.commentaire ? " · commentaire saisi" : "") + '</span></summary>'
       + '<div class="fe-corps"><div class="fe-colonne"><h4>Notification</h4><div class="fe-champs">'
-      + '<label>Heures individuelles' + marque("heuresInd") + '<input type="text" inputmode="decimal" id="fe-ind" value="' + ech(String(e.heuresInd || 0).replace(".", ",")) + '"></label>'
-      + '<label>Heures mutualisées' + marque("heuresMut") + '<input type="text" inputmode="decimal" id="fe-mut" value="' + ech(String(e.heuresMut || 0).replace(".", ",")) + '"></label>'
-      + '<label>Début' + marque("debutNotif") + '<input type="date" id="fe-debut" value="' + ech(e.debutNotif || "") + '"></label>'
-      + '<label>Fin' + marque("finNotif") + '<input type="date" id="fe-fin" value="' + ech(e.finNotif || "") + '"></label></div>'
+      + '<label>Heures individuelles' + marque("heuresInd") + '<input type="text" inputmode="decimal" id="fe-ind" data-champ="ind" value="' + ech(String(e.heuresInd || 0).replace(".", ",")) + '"></label>'
+      + '<label>Heures mutualisées' + marque("heuresMut") + '<input type="text" inputmode="decimal" id="fe-mut" data-champ="mut" value="' + ech(String(e.heuresMut || 0).replace(".", ",")) + '"></label>'
+      + '<label>Début' + marque("debutNotif") + '<input type="date" id="fe-debut" data-champ="debut" value="' + ech(e.debutNotif || "") + '"></label>'
+      + '<label>Fin' + marque("finNotif") + '<input type="date" id="fe-fin" data-champ="fin" value="' + ech(e.finNotif || "") + '"></label></div>'
       + '<h4>Besoins' + marque("besoins") + '</h4><div class="fe-besoins">'
       + I.ACCOMP.map(function (b, i) {
-        return '<label class="pastille-case"><input type="checkbox" data-besoin="' + i + '"' + ((e.besoins || []).indexOf(b) > -1 ? " checked" : "") + '> ' + ech(b) + '</label>';
+        return '<label class="pastille-case"><input type="checkbox" data-besoin="' + i + '" data-champ="besoin-' + i + '"' + ((e.besoins || []).indexOf(b) > -1 ? " checked" : "") + '> ' + ech(b) + '</label>';
       }).join("") + '</div>'
-      + '<h4>Commentaire</h4><textarea id="fe-commentaire" rows="3" maxlength="1000" placeholder="Organisation, informations pratiques utiles à l\'affectation…">' + ech(e.commentaire || "") + '</textarea>'
+      + '<h4>Commentaire</h4><textarea id="fe-commentaire" data-champ="commentaire" rows="3" maxlength="1000" placeholder="Organisation, informations pratiques utiles à l\'affectation…">' + ech(e.commentaire || "") + '</textarea>'
       + '<p class="aide fe-rappel">Pas d\'information médicale (diagnostic, traitement, pathologie) : décrivez des besoins fonctionnels. Ce commentaire reste dans l\'espace PIAL ; il n\'est jamais transmis aux AESH.</p>'
-      + '<div class="actions"><button type="button" class="btn btn-plein" id="fe-enregistrer">Enregistrer la fiche</button></div>'
+      + '<p class="fe-statut" id="fe-statut" aria-live="polite"></p>'
       + (Object.keys(m).length ? '<p class="aide">Les valeurs marquées « modifié » sont protégées : au prochain import des élèves, l\'aperçu vous demandera de garder celles de l\'application ou de prendre celles du fichier.</p>' : "")
       + '</div><div class="fe-colonne"><h4>État par matière</h4>'
       + (matieres.length ? '<p class="aide">S\'applique à tous les créneaux de la matière (et aux cours importés plus tard). Un créneau peut ensuite être réglé seul dans la grille.</p>'
@@ -1172,22 +1321,30 @@ var PialAffectations = (function () {
             }).join("") + '</td></tr>';
         }).join("") + '</tbody></table>' : '<p class="aide">Aucun cours importé pour cet élève.</p>')
       + '</div></div></details>';
+    var av = avantRendu(autoEleve, e.id);
     hote.innerHTML = h;
     $("fe-details").addEventListener("toggle", function () { ficheEleveOuverte = this.open; });
-    $("fe-enregistrer").addEventListener("click", function () { enregistrerFicheEleve(e); });
+    apresRendu(autoEleve, e, av);
     Array.prototype.forEach.call(hote.querySelectorAll("[data-etat-matiere]"), function (b) {
       b.addEventListener("click", function () { changerEtatMatiere(e, this.dataset.matiere, this.dataset.etatMatiere); });
     });
   }
-  function enregistrerFicheEleve(e) {
-    var ind = nombreSaisi($("fe-ind").value), mut = nombreSaisi($("fe-mut").value);
-    if (isNaN(ind) || ind < 0 || ind > 40 || isNaN(mut) || mut < 0 || mut > 40) { ui.toast("Heures notifiées invalides (de 0 à 40)."); return; }
-    if (!(ind > 0) && !(mut > 0)) { ui.toast("Indiquez au moins une heure notifiée, individuelle ou mutualisée."); return; }
-    var debut = $("fe-debut").value, fin = $("fe-fin").value;
-    if (debut && fin && fin < debut) { ui.toast("La fin de notification précède son début."); return; }
-    var besoins = Array.prototype.filter.call($("ge-fiche").querySelectorAll("[data-besoin]"), function (c) { return c.checked; })
-      .map(function (c) { return I.ACCOMP[parseInt(c.dataset.besoin, 10)]; });
-    var b = JSON.parse(JSON.stringify(e)), nouveau = { heuresInd: ind, heuresMut: mut, debutNotif: debut, finNotif: fin, besoins: besoins };
+  // saisie lue dans la fiche (synchrone), appliquée ensuite à l'élève à jour
+  function lireFicheEleve(hote) {
+    return {
+      ind: $("fe-ind").value, mut: $("fe-mut").value, debut: $("fe-debut").value, fin: $("fe-fin").value,
+      besoins: Array.prototype.filter.call(hote.querySelectorAll("[data-besoin]"), function (c) { return c.checked; })
+        .map(function (c) { return I.ACCOMP[parseInt(c.dataset.besoin, 10)]; }),
+      commentaire: $("fe-commentaire").value
+    };
+  }
+  // { erreur } ou { b } (fiche modifiée) ou {} (aucune modification)
+  function appliquerFicheEleve(e, s) {
+    var ind = nombreSaisi(s.ind), mut = nombreSaisi(s.mut);
+    if (isNaN(ind) || ind < 0 || ind > 40 || isNaN(mut) || mut < 0 || mut > 40) return { erreur: "heures notifiées invalides (de 0 à 40)." };
+    if (!(ind > 0) && !(mut > 0)) return { erreur: "indiquez au moins une heure notifiée, individuelle ou mutualisée." };
+    if (s.debut && s.fin && s.fin < s.debut) return { erreur: "la fin de notification précède son début." };
+    var b = JSON.parse(JSON.stringify(e)), nouveau = { heuresInd: ind, heuresMut: mut, debutNotif: s.debut, finNotif: s.fin, besoins: s.besoins };
     b.modifiesAppli = b.modifiesAppli || {};
     var change = false;
     M.CHAMPS_NOTIFICATION.forEach(function (k) {
@@ -1195,10 +1352,9 @@ var PialAffectations = (function () {
       if (JSON.stringify(avant) !== JSON.stringify(nouveau[k])) { b[k] = nouveau[k]; b.modifiesAppli[k] = true; change = true; }
     });
     if (!Object.keys(b.modifiesAppli).length) delete b.modifiesAppli;
-    var commentaire = $("fe-commentaire").value.replace(/\s+$/, "");
+    var commentaire = s.commentaire.replace(/\s+$/, "");
     if (commentaire !== (e.commentaire || "")) { if (commentaire) b.commentaire = commentaire; else delete b.commentaire; change = true; }
-    if (!change) { ui.toast("Aucune modification."); return; }
-    enregistrerPuisRendre([{ magasin: "eleves", enregistrer: [b] }], "Fiche de " + e.nomCourt + " enregistrée.", "la fiche de " + e.nomCourt);
+    return change ? { b: b } : {};
   }
   function changerEtatMatiere(e, cle, nouvelEtat) {
     var b = JSON.parse(JSON.stringify(e));
@@ -1238,7 +1394,7 @@ var PialAffectations = (function () {
       + [["am", "Matin"], ["pm", "Après-midi"]].map(function (d) {
         return '<tr><th>' + d[1] + '</th>' + joursClasse().map(function (j) {
           var k = ABREV[j] + "-" + d[0];
-          return '<td><input type="checkbox" data-' + nom + '="' + k + '" aria-label="' + j + ' ' + d[1].toLowerCase() + '"' + (coche[k] ? " checked" : "") + '></td>';
+          return '<td><input type="checkbox" data-' + nom + '="' + k + '" data-champ="' + nom + '-' + k + '" aria-label="' + j + ' ' + d[1].toLowerCase() + '"' + (coche[k] ? " checked" : "") + '></td>';
         }).join("") + '</tr>';
       }).join("") + '</tbody></table>';
   }
@@ -1266,52 +1422,64 @@ var PialAffectations = (function () {
   }
   function rendreFicheAeshComplete(a) {
     var hote = $("ga-fiche"), m = a.modifiesAppli || {}, table = ctxCourant.reglages.specialites || [], v = a.voeux || {};
+    // listes en cours de saisie (plages, élèves exclus) reprises dès la construction
+    var av = avantRendu(autoAesh, a.id), br = av.brouillon;
+    var plagesVues = br.plages !== undefined ? JSON.parse(br.plages).map(function (p) { return { jour: p[0], debut: p[1], fin: p[2] }; }) : (v.plages || []);
+    var exclusIds = br.exclus !== undefined ? JSON.parse(br.exclus) : (a.elevesExclus || []);
     function marque(k) { return m[k] ? ' <span class="fe-modifie" title="Modifié dans l\'application : protégé au prochain import (vous choisirez quelle valeur garder)">modifié</span>' : ""; }
     var inconnues = M.specialitesInconnues(a, table);
-    var exclus = (a.elevesExclus || []).map(eleveParId).filter(Boolean);
-    var autres = etat.eleves.filter(function (e) { return (a.elevesExclus || []).indexOf(e.id) < 0; })
+    var exclus = exclusIds.map(eleveParId).filter(Boolean);
+    var autres = etat.eleves.filter(function (e) { return exclusIds.indexOf(e.id) < 0; })
       .sort(function (p, q) { return p.nomCourt.localeCompare(q.nomCourt, "fr") || txt(p.classe).localeCompare(txt(q.classe), "fr"); });
     var global = ctxCourant.reglages.respecterIndispos;
     var h = '<details class="fiche-eleve" id="fa-details"' + (ficheAeshOuverte ? " open" : "") + '><summary>Fiche de l\'AESH'
       + '<span class="aide"> — quotité, établissements, indisponibilités, vœux, élèves à ne pas affecter, spécialités</span></summary>'
       + '<div class="fe-corps"><div class="fe-colonne"><h4>Paramètres</h4><div class="fe-champs">'
-      + '<label>Quotité hebdomadaire (h)' + marque("quotite") + '<input type="text" inputmode="decimal" id="fa-quotite" value="' + ech(String(a.quotite || 0).replace(".", ",")) + '"></label></div>'
+      + '<label>Quotité hebdomadaire (h)' + marque("quotite") + '<input type="text" inputmode="decimal" id="fa-quotite" data-champ="quotite" value="' + ech(String(a.quotite || 0).replace(".", ",")) + '"></label></div>'
       + '<h4>Établissements possibles' + marque("etablissements") + '</h4><div class="fe-besoins">'
       + etat.etablissements.slice().sort(function (p, q) { return p.nom.localeCompare(q.nom, "fr"); }).map(function (e) {
-        return '<label class="pastille-case"><input type="checkbox" data-fa-etab="' + ech(e.id) + '"' + ((a.etablissements || []).indexOf(e.id) > -1 ? " checked" : "") + '> ' + ech(e.nom) + '</label>';
+        return '<label class="pastille-case"><input type="checkbox" data-fa-etab="' + ech(e.id) + '" data-champ="etab-' + ech(e.id) + '"' + ((a.etablissements || []).indexOf(e.id) > -1 ? " checked" : "") + '> ' + ech(e.nom) + '</label>';
       }).join("") + '</div><p class="aide">Aucun coché = tous les établissements.</p>'
       + '<h4>Indisponibilités' + marque("indisponibilites") + '</h4>' + grilleDemiJournees("fa-indispo", a.indisponibilites)
-      + '<label class="case"><input type="checkbox" id="fa-ignorer2"' + (a.ignorerIndispos ? " checked" : "") + (global ? "" : " disabled") + '> Ignorer ses indisponibilités et ses établissements possibles</label>'
+      + '<label class="case"><input type="checkbox" id="fa-ignorer2" data-champ="ignorer"' + (a.ignorerIndispos ? " checked" : "") + (global ? "" : " disabled") + '> Ignorer ses indisponibilités et ses établissements possibles</label>'
       + '<p class="aide">' + (global ? "Contrainte dure : le moteur ne place jamais l'AESH sur une demi-journée indisponible, sauf si cette case est cochée (arrangement ponctuel)."
         : "Sans effet : le réglage global « Respecter les indisponibilités » est décoché (Réglages).") + '</p>'
       + '<h4>Spécialités' + marque("formations") + '</h4><div class="fe-besoins">'
       + table.map(function (s) {
         var c = (a.formations || []).some(function (f) { return M.normaliser(f) === M.normaliser(s.nom); });
-        return '<label class="pastille-case" title="' + ech(s.besoins.join(" · ")) + '"><input type="checkbox" data-fa-spec="' + ech(s.nom) + '"' + (c ? " checked" : "") + '> ' + ech(s.nom) + '</label>';
+        return '<label class="pastille-case" title="' + ech(s.besoins.join(" · ")) + '"><input type="checkbox" data-fa-spec="' + ech(s.nom) + '" data-champ="spec-' + ech(s.nom) + '"' + (c ? " checked" : "") + '> ' + ech(s.nom) + '</label>';
       }).join("")
       + inconnues.map(function (f) {
-        return '<label class="pastille-case hors-table" title="Hors de la table de Réglages : sans effet sur la proposition"><input type="checkbox" data-fa-spec="' + ech(f) + '" checked> ' + ech(f) + ' (hors table)</label>';
+        return '<label class="pastille-case hors-table" title="Hors de la table de Réglages : sans effet sur la proposition"><input type="checkbox" data-fa-spec="' + ech(f) + '" data-champ="spec-' + ech(f) + '" checked> ' + ech(f) + ' (hors table)</label>';
       }).join("") + '</div><p class="aide">Chaque spécialité couvre des besoins fonctionnels (table modifiable dans Réglages, survol pour la voir). Le moteur ajoute jusqu\'à +' + P.POIDS.formation + ' selon la part des besoins de l\'élève couverts.</p>'
       + '</div><div class="fe-colonne"><h4>Vœux (évités si possible, pas des contraintes)</h4>'
       + '<p class="aide">Journées ou demi-journées à éviter :</p>' + grilleDemiJournees("fa-voeu", v.demiJournees)
-      + '<p class="aide">Plages horaires à éviter :</p><div id="fa-plages">' + (v.plages || []).map(lignePlage).join("") + '</div>'
+      + '<p class="aide">Plages horaires à éviter :</p><div id="fa-plages">' + plagesVues.map(lignePlage).join("") + '</div>'
       + '<button type="button" class="btn-lien" id="fa-ajouter-plage">+ Ajouter une plage</button>'
       + '<p class="aide">Chaque vœu touché coûte ' + (-P.POIDS.voeu) + ' points au score de l\'AESH sur ce créneau.</p>'
       + '<h4>Élèves à ne pas affecter à cette AESH</h4><div class="fe-besoins" id="fa-exclus">' + exclus.map(puceExclu).join("") + '</div>'
-      + '<div class="fa-ajout-exclu"><select id="fa-choix-exclu" aria-label="Élève à exclure"><option value="">Choisir un élève…</option>'
+      + '<div class="fa-ajout-exclu"><select id="fa-choix-exclu" data-sans-auto aria-label="Élève à exclure"><option value="">Choisir un élève…</option>'
       + autres.map(function (e) { return '<option value="' + ech(e.id) + '">' + ech(e.nomCourt) + ' (' + ech(e.classe) + ', ' + ech(nomEtablissement(e.etablissement)) + ')</option>'; }).join("")
       + '</select> <button type="button" class="btn btn-vide" id="fa-ajouter-exclu">Ajouter</button></div>'
       + '<p class="aide">Exclusion dure, sans motif à indiquer : ni le moteur ni le menu ne proposeront cette AESH à ces élèves ; une saisie manuelle reste possible, signalée dans les alertes.</p>'
-      + '<div class="actions"><button type="button" class="btn btn-plein" id="fa-enregistrer">Enregistrer la fiche</button></div>'
+      + '<p class="fe-statut" id="fa-statut" aria-live="polite"></p>'
       + '</div></div></details>';
     hote.innerHTML = h;
     $("fa-details").addEventListener("toggle", function () { ficheAeshOuverte = this.open; });
-    $("fa-ajouter-plage").addEventListener("click", function () { $("fa-plages").insertAdjacentHTML("beforeend", lignePlage()); });
-    $("fa-plages").addEventListener("click", function (ev) { if (ev.target.hasAttribute("data-retirer-plage")) ev.target.parentNode.remove(); });
+    $("fa-ajouter-plage").addEventListener("click", function () {
+      $("fa-plages").insertAdjacentHTML("beforeend", lignePlage());
+      $("fa-plages").lastChild.querySelector("[data-plage-debut]").focus();
+    });
+    $("fa-plages").addEventListener("click", function (ev) {
+      if (!ev.target.hasAttribute("data-retirer-plage")) return;
+      ev.target.parentNode.remove();
+      planifierAuto(autoAesh, "plages", 0);
+    });
     $("fa-exclus").addEventListener("click", function (ev) {
       if (!ev.target.hasAttribute("data-retirer-exclu")) return;
       var puce = ev.target.parentNode, e = eleveParId(puce.dataset.exclu);
       puce.remove();
+      planifierAuto(autoAesh, "exclus", 0);
       if (e) $("fa-choix-exclu").insertAdjacentHTML("beforeend", '<option value="' + ech(e.id) + '">' + ech(e.nomCourt) + ' (' + ech(e.classe) + ')</option>');
     });
     $("fa-ajouter-exclu").addEventListener("click", function () {
@@ -1320,28 +1488,42 @@ var PialAffectations = (function () {
       $("fa-exclus").insertAdjacentHTML("beforeend", puceExclu(e));
       sel.remove(sel.selectedIndex);
       sel.value = "";
+      planifierAuto(autoAesh, "exclus", 0);
     });
-    $("fa-enregistrer").addEventListener("click", function () { enregistrerFicheAesh(a); });
+    apresRendu(autoAesh, a, av);
   }
-  function enregistrerFicheAesh(a) {
-    var hote = $("ga-fiche");
-    var q = nombreSaisi($("fa-quotite").value);
-    if (isNaN(q) || !(q > 0) || q > 45) { ui.toast("Quotité invalide (de 0,5 à 45 heures)."); return; }
-    var plages = [], erreur = "";
-    Array.prototype.forEach.call(hote.querySelectorAll(".fa-plage"), function (l) {
-      var d = M.heureNormalisee(l.querySelector("[data-plage-debut]").value), f = M.heureNormalisee(l.querySelector("[data-plage-fin]").value);
-      if (!d && !f) return;
-      if (!d || !f || M.minutes(f) <= M.minutes(d)) { erreur = "Plage horaire invalide (heures hh:mm, fin après le début)."; return; }
-      plages.push({ jour: l.querySelector("[data-plage-jour]").value, debut: d, fin: f });
-    });
-    if (erreur) { ui.toast(erreur); return; }
-    var b = JSON.parse(JSON.stringify(a));
-    var nouveau = {
-      quotite: q,
+  // listes de la fiche AESH sous une forme comparable (brouillon, enregistrement)
+  function plagesSaisies(hote) {
+    return JSON.stringify(Array.prototype.map.call(hote.querySelectorAll(".fa-plage"), function (l) {
+      return [l.querySelector("[data-plage-jour]").value, l.querySelector("[data-plage-debut]").value, l.querySelector("[data-plage-fin]").value];
+    }));
+  }
+  function exclusSaisis(hote) { return JSON.stringify(Array.prototype.map.call(hote.querySelectorAll("[data-exclu]"), function (x) { return x.dataset.exclu; })); }
+  function lireFicheAesh(hote) {
+    return {
+      quotite: $("fa-quotite").value,
+      plages: JSON.parse(plagesSaisies(hote)),
       etablissements: Array.prototype.filter.call(hote.querySelectorAll("[data-fa-etab]"), function (c) { return c.checked; }).map(function (c) { return c.dataset.faEtab; }),
       indisponibilites: lireDemiJournees("fa-indispo"),
-      formations: Array.prototype.filter.call(hote.querySelectorAll("[data-fa-spec]"), function (c) { return c.checked; }).map(function (c) { return c.dataset.faSpec; })
+      formations: Array.prototype.filter.call(hote.querySelectorAll("[data-fa-spec]"), function (c) { return c.checked; }).map(function (c) { return c.dataset.faSpec; }),
+      ignorer: $("fa-ignorer2").checked,
+      voeux: lireDemiJournees("fa-voeu"),
+      exclus: JSON.parse(exclusSaisis(hote))
     };
+  }
+  function appliquerFicheAesh(a, s) {
+    var q = nombreSaisi(s.quotite);
+    if (isNaN(q) || !(q > 0) || q > 45) return { erreur: "quotité invalide (de 0,5 à 45 heures)." };
+    var plages = [], erreur = "";
+    s.plages.forEach(function (p) {
+      var d = M.heureNormalisee(p[1]), f = M.heureNormalisee(p[2]);
+      if (!String(p[1]).trim() && !String(p[2]).trim()) return;
+      if (!d || !f || M.minutes(f) <= M.minutes(d)) { erreur = "plage horaire incomplète ou invalide (heures hh:mm, fin après le début)."; return; }
+      plages.push({ jour: p[0], debut: d, fin: f });
+    });
+    if (erreur) return { erreur: erreur };
+    var b = JSON.parse(JSON.stringify(a));
+    var nouveau = { quotite: q, etablissements: s.etablissements, indisponibilites: s.indisponibilites, formations: s.formations };
     b.modifiesAppli = b.modifiesAppli || {};
     M.CHAMPS_FICHE_AESH.forEach(function (k) {
       var avant = k === "quotite" ? (a.quotite || 0) : (a[k] || []);
@@ -1349,13 +1531,11 @@ var PialAffectations = (function () {
     });
     if (!Object.keys(b.modifiesAppli).length) delete b.modifiesAppli;
     b.etablissementsNoms = (b.etablissements || []).map(nomEtablissement);
-    b.ignorerIndispos = $("fa-ignorer2").checked;
-    var voeux = { demiJournees: lireDemiJournees("fa-voeu"), plages: plages };
+    b.ignorerIndispos = s.ignorer;
+    var voeux = { demiJournees: s.voeux, plages: plages };
     if (voeux.demiJournees.length || voeux.plages.length) b.voeux = voeux; else delete b.voeux;
-    var exclus = Array.prototype.map.call(hote.querySelectorAll("[data-exclu]"), function (x) { return x.dataset.exclu; });
-    if (exclus.length) b.elevesExclus = exclus; else delete b.elevesExclus;
-    if (JSON.stringify(b) === JSON.stringify(a)) { ui.toast("Aucune modification."); return; }
-    enregistrerPuisRendre([{ magasin: "aesh", enregistrer: [b] }], "Fiche de " + nomAesh(a) + " enregistrée.", "la fiche de " + nomAesh(a));
+    if (s.exclus.length) b.elevesExclus = s.exclus; else delete b.elevesExclus;
+    return JSON.stringify(b) === JSON.stringify(a) ? {} : { b: b };
   }
 
   /* =============== grille AESH (§7.1, vue 3) =============== */
@@ -1923,7 +2103,14 @@ var PialAffectations = (function () {
   // avant d'écrire. Perdue au rechargement ; vidée par un import ou une
   // restauration de sauvegarde, qui changent les données sous-jacentes.
   var pileAnnulation = [], MAX_ANNULATION = 20;
-  function viderAnnulation() { pileAnnulation = []; }
+  function viderAnnulation() {
+    pileAnnulation = [];
+    // les données ont changé sous les fiches : un brouillon ne s'y appliquerait plus
+    [autoEleve, autoAesh].forEach(function (f) {
+      if (f.minuteur) clearTimeout(f.minuteur);
+      f.minuteur = null; f.id = null; f.base = null; f.brouillons = {}; f.erreurs = {}; f.heures = {};
+    });
+  }
   function annuler() {
     var action = pileAnnulation.pop();
     if (!action) { ui.toast("Rien à annuler."); return; }
@@ -1938,10 +2125,14 @@ var PialAffectations = (function () {
   });
 
   /* =============== modifications (toute saisie manuelle épingle, §5.4) =============== */
-  // libelleAnnulation : l'action est annulable (§6), sous ce nom
-  function enregistrerPuisRendre(ops, message, libelleAnnulation) {
-    if (libelleAnnulation) {
-      pileAnnulation.push({ libelle: libelleAnnulation, ops: M.operationsInverses(ops, { affectations: etat.affectations, cours: etat.cours, eleves: etat.eleves, aesh: etat.aesh }) });
+  // libelleAnnulation : l'action est annulable (§6), sous ce nom.
+  // cleFusion : si l'action au sommet de la pile porte la même clé (frappe
+  // continue dans un même champ de fiche), elle couvre déjà celle-ci : on
+  // garde ses opérations inverses, qui ramènent à l'état d'avant la frappe.
+  function enregistrerPuisRendre(ops, message, libelleAnnulation, cleFusion) {
+    var haut = pileAnnulation[pileAnnulation.length - 1];
+    if (libelleAnnulation && !(cleFusion && haut && haut.fusion === cleFusion)) {
+      pileAnnulation.push({ libelle: libelleAnnulation, fusion: cleFusion || "", ops: M.operationsInverses(ops, { affectations: etat.affectations, cours: etat.cours, eleves: etat.eleves, aesh: etat.aesh }) });
       if (pileAnnulation.length > MAX_ANNULATION) pileAnnulation.shift();
     }
     return PialDB.appliquer(ops).then(recharger).then(function () {

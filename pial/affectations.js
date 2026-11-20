@@ -175,14 +175,21 @@ var PialAffectations = (function () {
     return etat.cours;
   }
   // conserve les champs saisis dans l'application lors d'une mise à jour
-  function fusionnerObjet(type, existant, nouveau) {
+  function fusionnerObjet(type, existant, nouveau, garderAppli) {
+    // cours : l'état vient du fichier s'il n'est pas « normal », sinon de
+    // l'état déjà choisi pour ce cours, puis de celui de sa matière (fiche élève)
+    if (type === "edt") {
+      var c = {};
+      Object.keys(nouveau).forEach(function (k) { c[k] = nouveau[k]; });
+      c.etat = M.etatCoursImporte(nouveau, existant, eleveParId(nouveau.eleveId));
+      return c;
+    }
     if (!existant) return nouveau;
-    var o = {};
-    Object.keys(nouveau).forEach(function (k) { o[k] = nouveau[k]; });
+    var o = type === "eleves" ? M.fusionEleve(existant, nouveau, garderAppli) : {};
+    if (type !== "eleves") Object.keys(nouveau).forEach(function (k) { o[k] = nouveau[k]; });
     if (type === "aesh") { o.ignorerIndispos = !!existant.ignorerIndispos; o.alias = existant.alias || []; }
     // temps périscolaires non gérés à l'import : on garde ce qui est en base
     if (type === "eleves") ["recreation", "meridienne"].forEach(function (k) { if (!(k in nouveau) && k in existant) o[k] = existant[k]; });
-    if (type === "edt" && nouveau.etat === "normal" && existant.etat) o.etat = existant.etat;
     if (type === "eleves" && (existant.etatsPeriscolaires || nouveau.etatsPeriscolaires)) {
       o.etatsPeriscolaires = {};
       [existant.etatsPeriscolaires, nouveau.etatsPeriscolaires].forEach(function (m) {
@@ -202,6 +209,17 @@ var PialAffectations = (function () {
     var cleId = "id";
     imp.planMaj = I.planFusion(existantsDuType(imp.type), imp.apercu.valides, cleId, "maj");
     imp.planRemplacer = I.planFusion(existantsDuType(imp.type), imp.apercu.valides, cleId, "remplacer");
+    // élèves : valeurs modifiées dans l'application que le fichier écraserait
+    imp.conflits = [];
+    imp.garderAppli = true;
+    if (imp.type === "eleves") {
+      var parId = {};
+      etat.eleves.forEach(function (e) { parId[e.id] = e; });
+      imp.planMaj.modifies.forEach(function (n) {
+        var champs = M.conflitsReimport(parId[n.id], n);
+        if (champs.length) imp.conflits.push({ existant: parId[n.id], nouveau: n, champs: champs });
+      });
+    }
     rendreApercu();
   });
 
@@ -236,9 +254,31 @@ var PialAffectations = (function () {
         + ap.periscolaireIgnore.length + ' ligne(s) remplie(s) : ' + ap.periscolaireIgnore.slice(0, 20).join(", ") + (ap.periscolaireIgnore.length > 20 ? "…" : "")
         + '). Pour les prendre en compte, cochez « Gérer les temps périscolaires » dans Réglages, puis importez à nouveau ce fichier.</p>';
     }
+    if (imp.conflits && imp.conflits.length) {
+      var LIB_CHAMP = { heuresInd: "heures individuelles", heuresMut: "heures mutualisées", debutNotif: "début de notification", finNotif: "fin de notification", besoins: "besoins" };
+      var valeur = function (k, v) {
+        if (k === "besoins") return (v || []).length ? v.join(", ") : "aucun";
+        if (k === "heuresInd" || k === "heuresMut") return heures(v || 0);
+        return v ? v.split("-").reverse().join("/") : "—";
+      };
+      h += '<div class="note alerte"><p style="margin:0 0 6px"><strong>' + pluriel(imp.conflits.length, "élève a", "élèves ont")
+        + ' des valeurs modifiées dans l\'application que ce fichier remplacerait :</strong></p><ul class="liste-motifs">'
+        + imp.conflits.map(function (cf) {
+          return '<li>' + ech(cf.existant.nomCourt) + ' (' + ech(cf.existant.classe) + ') : ' + cf.champs.map(function (k) {
+            return LIB_CHAMP[k] + ' ' + ech(valeur(k, cf.existant[k])) + ' dans l\'application, ' + ech(valeur(k, cf.nouveau[k])) + ' dans le fichier';
+          }).join(" ; ") + '</li>';
+        }).join("") + '</ul>'
+        + '<div class="choix-conflits" role="radiogroup" aria-label="Valeurs à garder">'
+        + '<label class="case"><input type="radio" name="imp-conflits" value="appli" checked> Garder les valeurs de l\'application</label>'
+        + '<label class="case"><input type="radio" name="imp-conflits" value="fichier"> Prendre celles du fichier</label></div>'
+        + '<p class="aide" style="margin:6px 0 0">Le choix s\'applique à tous ces élèves. Les autres colonnes sont mises à jour dans les deux cas ; le commentaire et les états par matière de la fiche ne sont jamais touchés par l\'import.</p></div>';
+    }
     if (ap.exemples.length) h += '<p class="aide">Lignes d\'exemple du gabarit ignorées : ' + ap.exemples.join(", ") + '.</p>';
     if (ap.doublons.length) h += '<p class="aide">Doublons ignorés (lignes identiques à une ligne précédente) : ' + ap.doublons.map(function (d) { return d.ligne; }).join(", ") + '.</p>';
     $("imp-details").innerHTML = h;
+    Array.prototype.forEach.call($("imp-details").querySelectorAll('[name="imp-conflits"]'), function (r) {
+      r.addEventListener("change", function () { if (this.checked) imp.garderAppli = this.value === "appli"; });
+    });
     $("imp-maj").disabled = !ap.valides.length;
     $("imp-remplacer").disabled = !ap.valides.length;
     $("imp-apercu").hidden = false;
@@ -250,7 +290,7 @@ var PialAffectations = (function () {
     var magasin = type === "eleves" ? "eleves" : (type === "aesh" ? "aesh" : "cours");
     var parId = {};
     existantsDuType(type).forEach(function (e) { parId[e.id] = e; });
-    var aEnregistrer = plan.ajouts.concat(plan.modifies).map(function (n) { return fusionnerObjet(type, parId[n.id], n); });
+    var aEnregistrer = plan.ajouts.concat(plan.modifies).map(function (n) { return fusionnerObjet(type, parId[n.id], n, imp.garderAppli !== false); });
     var ops = [{ magasin: magasin, supprimer: plan.supprimes.map(function (s) { return s.id; }), enregistrer: aEnregistrer }];
     // élèves supprimés : leurs cours et leurs créneaux du brouillon partent avec eux
     var suppr = {};
@@ -824,6 +864,7 @@ var PialAffectations = (function () {
       + (e.finNotif ? " · fin de notification le " + e.finNotif.split("-").reverse().join("/") : "")
       + (etab.alternance ? " · semaine " + semaineAffichee + " affichée" : "");
     $("ge-jauges").innerHTML = '<span class="pastille-etat e-' + cv.etat + '">' + LIB_ETAT_ELEVE[cv.etat] + '</span>' + jaugesEleve(e, cv);
+    rendreFicheEleve(e);
     var cases = casesEleve(e);
     var jours = (etab.joursOuvres && etab.joursOuvres.length ? etab.joursOuvres : M.JOURS.slice(0, 5)).slice();
     cases.forEach(function (c) { if (jours.indexOf(c.jour) < 0) jours.push(c.jour); });
@@ -868,6 +909,85 @@ var PialAffectations = (function () {
       d.addEventListener("keydown", function (ev) { if (ev.key === "Enter" && ev.target === this) ouvrirMenuCreneau(e, index[this.dataset.case]); });
     });
     brancherPucesAesh($("ge-table"));
+  }
+
+  /* =============== fiche de l'élève (spec §16) =============== */
+  // Notification, besoins, état par matière et commentaire, modifiables
+  // avant de lancer « Proposer ». Le commentaire reste dans l'espace PIAL :
+  // il n'est jamais exporté vers les AESH.
+  var ficheEleveOuverte = false;
+  var LIB_ETATS = { prioritaire: "Prioritaire", normal: "Normal", exclu: "Exclu" };
+  function nombreSaisi(v) { var x = parseFloat(String(v).replace(",", ".")); return isNaN(x) ? NaN : Math.round(x * 100) / 100; }
+  function rendreFicheEleve(e) {
+    var hote = $("ge-fiche"), m = e.modifiesAppli || {};
+    function marque(k) { return m[k] ? ' <span class="fe-modifie" title="Modifié dans l\'application : protégé au prochain import (vous choisirez quelle valeur garder)">modifié</span>' : ""; }
+    var matieres = M.matieresEleve(e, etat.cours);
+    var h = '<details class="fiche-eleve" id="fe-details"' + (ficheEleveOuverte ? " open" : "") + '><summary>Fiche de l\'élève'
+      + '<span class="aide"> — notification, besoins, état par matière, commentaire' + (e.commentaire ? " · commentaire saisi" : "") + '</span></summary>'
+      + '<div class="fe-corps"><div class="fe-colonne"><h4>Notification</h4><div class="fe-champs">'
+      + '<label>Heures individuelles' + marque("heuresInd") + '<input type="text" inputmode="decimal" id="fe-ind" value="' + ech(String(e.heuresInd || 0).replace(".", ",")) + '"></label>'
+      + '<label>Heures mutualisées' + marque("heuresMut") + '<input type="text" inputmode="decimal" id="fe-mut" value="' + ech(String(e.heuresMut || 0).replace(".", ",")) + '"></label>'
+      + '<label>Début' + marque("debutNotif") + '<input type="date" id="fe-debut" value="' + ech(e.debutNotif || "") + '"></label>'
+      + '<label>Fin' + marque("finNotif") + '<input type="date" id="fe-fin" value="' + ech(e.finNotif || "") + '"></label></div>'
+      + '<h4>Besoins' + marque("besoins") + '</h4><div class="fe-besoins">'
+      + I.ACCOMP.map(function (b, i) {
+        return '<label class="pastille-case"><input type="checkbox" data-besoin="' + i + '"' + ((e.besoins || []).indexOf(b) > -1 ? " checked" : "") + '> ' + ech(b) + '</label>';
+      }).join("") + '</div>'
+      + '<h4>Commentaire</h4><textarea id="fe-commentaire" rows="3" maxlength="1000" placeholder="Organisation, informations pratiques utiles à l\'affectation…">' + ech(e.commentaire || "") + '</textarea>'
+      + '<p class="aide fe-rappel">Pas d\'information médicale (diagnostic, traitement, pathologie) : décrivez des besoins fonctionnels. Ce commentaire reste dans l\'espace PIAL ; il n\'est jamais transmis aux AESH.</p>'
+      + '<div class="actions"><button type="button" class="btn btn-plein" id="fe-enregistrer">Enregistrer la fiche</button></div>'
+      + (Object.keys(m).length ? '<p class="aide">Les valeurs marquées « modifié » sont protégées : au prochain import des élèves, l\'aperçu vous demandera de garder celles de l\'application ou de prendre celles du fichier.</p>' : "")
+      + '</div><div class="fe-colonne"><h4>État par matière</h4>'
+      + (matieres.length ? '<p class="aide">S\'applique à tous les créneaux de la matière (et aux cours importés plus tard). Un créneau peut ensuite être réglé seul dans la grille.</p>'
+        + '<table class="tableau fe-matieres"><tbody>' + matieres.map(function (x) {
+          var detail = x.uniforme ? "" : '<div class="aide">réglé créneau par créneau : ' + ["prioritaire", "normal", "exclu"].filter(function (s) { return x.etats[s]; })
+            .map(function (s) { return x.etats[s] + " " + s + (x.etats[s] > 1 ? "s" : ""); }).join(", ") + '</div>';
+          return '<tr><td><strong>' + ech(x.libelle) + '</strong> <span class="aide">(' + pluriel(x.nb, "créneau") + ')</span>' + detail + '</td><td class="fe-etats">'
+            + ["prioritaire", "normal", "exclu"].map(function (s) {
+              var actif = x.uniforme === s;
+              return '<button type="button" class="btn-etat e-' + s + '" data-matiere="' + ech(x.cle) + '" data-etat-matiere="' + s + '" aria-pressed="' + actif + '">' + LIB_ETATS[s] + '</button>';
+            }).join("") + '</td></tr>';
+        }).join("") + '</tbody></table>' : '<p class="aide">Aucun cours importé pour cet élève.</p>')
+      + '</div></div></details>';
+    hote.innerHTML = h;
+    $("fe-details").addEventListener("toggle", function () { ficheEleveOuverte = this.open; });
+    $("fe-enregistrer").addEventListener("click", function () { enregistrerFicheEleve(e); });
+    Array.prototype.forEach.call(hote.querySelectorAll("[data-etat-matiere]"), function (b) {
+      b.addEventListener("click", function () { changerEtatMatiere(e, this.dataset.matiere, this.dataset.etatMatiere); });
+    });
+  }
+  function enregistrerFicheEleve(e) {
+    var ind = nombreSaisi($("fe-ind").value), mut = nombreSaisi($("fe-mut").value);
+    if (isNaN(ind) || ind < 0 || ind > 40 || isNaN(mut) || mut < 0 || mut > 40) { ui.toast("Heures notifiées invalides (de 0 à 40)."); return; }
+    if (!(ind > 0) && !(mut > 0)) { ui.toast("Indiquez au moins une heure notifiée, individuelle ou mutualisée."); return; }
+    var debut = $("fe-debut").value, fin = $("fe-fin").value;
+    if (debut && fin && fin < debut) { ui.toast("La fin de notification précède son début."); return; }
+    var besoins = Array.prototype.filter.call($("ge-fiche").querySelectorAll("[data-besoin]"), function (c) { return c.checked; })
+      .map(function (c) { return I.ACCOMP[parseInt(c.dataset.besoin, 10)]; });
+    var b = JSON.parse(JSON.stringify(e)), nouveau = { heuresInd: ind, heuresMut: mut, debutNotif: debut, finNotif: fin, besoins: besoins };
+    b.modifiesAppli = b.modifiesAppli || {};
+    var change = false;
+    M.CHAMPS_NOTIFICATION.forEach(function (k) {
+      var avant = k === "heuresInd" || k === "heuresMut" ? (e[k] || 0) : (k === "besoins" ? (e[k] || []) : (e[k] || ""));
+      if (JSON.stringify(avant) !== JSON.stringify(nouveau[k])) { b[k] = nouveau[k]; b.modifiesAppli[k] = true; change = true; }
+    });
+    if (!Object.keys(b.modifiesAppli).length) delete b.modifiesAppli;
+    var commentaire = $("fe-commentaire").value.replace(/\s+$/, "");
+    if (commentaire !== (e.commentaire || "")) { if (commentaire) b.commentaire = commentaire; else delete b.commentaire; change = true; }
+    if (!change) { ui.toast("Aucune modification."); return; }
+    enregistrerPuisRendre([{ magasin: "eleves", enregistrer: [b] }], "Fiche de " + e.nomCourt + " enregistrée.", "la fiche de " + e.nomCourt);
+  }
+  function changerEtatMatiere(e, cle, nouvelEtat) {
+    var b = JSON.parse(JSON.stringify(e));
+    b.etatsMatieres = b.etatsMatieres || {};
+    if (nouvelEtat === "normal") delete b.etatsMatieres[cle]; else b.etatsMatieres[cle] = nouvelEtat;
+    if (!Object.keys(b.etatsMatieres).length) delete b.etatsMatieres;
+    var cours = etat.cours.filter(function (c) { return c.eleveId === e.id && M.cleMatiere(c.matiere) === cle && c.etat !== nouvelEtat; })
+      .map(function (c) { var x = JSON.parse(JSON.stringify(c)); x.etat = nouvelEtat; return x; });
+    var libelle = (M.matieresEleve(e, etat.cours).filter(function (x) { return x.cle === cle; })[0] || { libelle: cle }).libelle;
+    enregistrerPuisRendre([{ magasin: "eleves", enregistrer: [b] }, { magasin: "cours", enregistrer: cours }],
+      libelle + " : " + LIB_ETATS[nouvelEtat].toLowerCase() + " (" + pluriel(cours.length, "créneau modifié", "créneaux modifiés") + ").",
+      "l'état de la matière " + libelle + " pour " + e.nomCourt);
   }
 
   /* =============== grille AESH (§7.1, vue 3) =============== */

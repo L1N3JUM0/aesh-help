@@ -59,6 +59,8 @@ Au moins une des deux colonnes d'heures doit être supérieure à 0.
 
 Les colonnes `Recreation` et `Pause_meridienne` ne sont lues que si le réglage « Gérer les temps périscolaires » est coché (§5.2). Sinon elles sont ignorées, même si leur valeur est invalide, et l'aperçu d'import signale les lignes où elles sont remplies (`oui`, `prioritaire` ou autre valeur que `non`). L'élève importé n'a alors ni `recreation` ni `meridienne` : une mise à jour garde les valeurs déjà en base.
 
+Réimport : les champs de notification et les besoins modifiés dans la fiche élève (§7.1) sont signalés dans l'aperçu ; un choix global dit s'il faut garder les valeurs de l'application ou prendre celles du fichier. Le commentaire et les états par matière ne sont jamais modifiés par l'import.
+
 ### 2.3 Gabarit `aesh.csv`
 
 | Colonne | Obligatoire | Exemple | Remarque |
@@ -305,6 +307,12 @@ Onglets existants : Importer, Rapports, Indicateurs, Statistiques, Réglages. Aj
 
 **Bascule entre grilles** : initiales d'une AESH dans la grille élève → grille de l'AESH ; nom d'un élève dans la grille AESH → grille de l'élève. Bouton « ← Retour : … » (pile des grilles ouvertes) et lien « Vue d'ensemble ».
 
+**Fiche de l'élève** (panneau repliable en tête de la grille élève, à remplir avant « Proposer ») :
+- notification (heures individuelles et mutualisées, début, fin) et besoins (liste ACCOMP), modifiables ; une valeur modifiée est marquée « modifié » (`modifiesAppli`) et protégée au réimport (§2.2) ;
+- état par matière (prioritaire / normal / exclu) : appliqué à tous les créneaux de la matière, mémorisé dans `etatsMatieres` pour les cours importés plus tard ; un créneau peut ensuite être réglé seul dans la grille ;
+- commentaire libre, avec le rappel « pas d'information médicale » ; il reste dans l'espace PIAL (sauvegarde comprise) et n'est **jamais exporté vers les AESH** (§8.3) ;
+- chaque enregistrement est annulable.
+
 **Panneau d'alertes** latéral et repliable : conflits, sous-couvertures, dépassements, notifications qui arrivent à échéance. Un clic sur une alerte mène au créneau concerné.
 
 **Ergonomie** :
@@ -401,6 +409,8 @@ En-tête : version, date d'effet, date d'impression. Pas de nom complet (il n'es
 }
 ```
 
+Le commentaire de la fiche élève, les états par matière et les marques « modifié » ne figurent jamais dans ce format.
+
 **Côté application AESH** (phase 4) : ajouter « Importer mon affectation ». Cette action crée ou met à jour les fiches élèves (prénom, initiale, classe, établissement, modalité, heures, matières) **sans jamais écraser** les notes ni les rapports existants. Elle affiche un aperçu des changements avant d'appliquer.
 
 ### 8.4 Sauvegarde sur clé USB
@@ -446,7 +456,7 @@ Migration additive : ne jamais toucher aux magasins `rapports` et `imports`.
 | Magasin | keyPath | Index | Contenu |
 |---|---|---|---|
 | `etablissements` | `id` | | paramètres §2.5 |
-| `eleves` | `id` (= `annee\|cle`, §3) | cle, annee, etablissement, classe | élève + notification + options récré/méridienne + `etatsPeriscolaires` (§5.2) + besoins |
+| `eleves` | `id` (= `annee\|cle`, §3) | cle, annee, etablissement, classe | élève + notification + options récré/méridienne + `etatsPeriscolaires` (§5.2) + besoins + `commentaire`, `etatsMatieres` ({matière normalisée: état}), `modifiesAppli` ({champ: true}) — fiche élève (§7.1), sans migration |
 | `aesh` | `id` (= `nom\|prenom` normalisé, §2.3) | annee | AESH + paramètres + formations + alias de rapprochement |
 | `cours` | `id` | eleveCle, etablissement | lignes d'EDT élève + état prioritaire/normal/exclu |
 | `affectations` | `id` | version, aeshId, creneauCle | brouillon (version = 0) et versions validées |
@@ -616,6 +626,7 @@ Ordre de traitement : A (corrections), B (trous), E (grille AESH), puis C (fiche
 6. Grille AESH avancée de la phase 3 (§7.1, vue 3) : à l'échelle du temps, disponibilités visibles, bascule élève ↔ AESH avec retour, impression A4 paysage (§8.2). L'export ZIP reste en phase 3.
 7. Variantes écartées supprimées du code (« AESH connue libre », « créneau collé à une AESH connue », ancien critère « créneau isolé ») ; pénalité « journée courte » gardée telle quelle (périscolaire compris). Les périscolaires prioritaires (pause méridienne de Louis I.) restent couverts sur les 3 jeux, avec 1 ou 12 ordres (test).
 8. Plusieurs ordres de départage des AESH, meilleur résultat gardé selon 6 critères ordonnés ; N réglable (12 par défaut) ; progression au-delà de 1,5 s (§5.3.5).
+9. Fiche élève (§7.1) : notification et besoins modifiables, état par matière, commentaire non exporté. Réimport des élèves : l'aperçu liste les élèves dont une valeur modifiée dans l'application (notification, besoins) serait écrasée, avec un choix global « garder la valeur de l'application » / « prendre celle du fichier » (par défaut : garder). Réimport de l'EDT : un cours « normal » dans le fichier garde l'état déjà choisi pour ce cours, sinon prend celui de sa matière.
 
 ## 15. Sujets ouverts
 

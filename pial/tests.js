@@ -469,6 +469,32 @@ var PialTests = (function () {
       var j2 = M.journeesAesh(f.aesh[0], f.ctx(l, { ecartMax: 150, journeeMin: 60 }));
       egal([j2.A.trous, j2.A.courtes], [0, 1], "réglages : écart max 2 h 30, journée courte sous 1 h");
     });
+    t("fiche élève : réimport et valeurs modifiées dans l'application", function () {
+      var existant = { id: "x", nomCourt: "Lucas M.", heuresInd: 8, heuresMut: 0, debutNotif: "2026-09-01", finNotif: "2027-06-30",
+        besoins: ["Prise de notes"], commentaire: "Préfère être placé près de la porte", etatsMatieres: { eps: "exclu" },
+        modifiesAppli: { heuresInd: true, besoins: true } };
+      var fichier = { id: "x", nomCourt: "Lucas M.", heuresInd: 6, heuresMut: 0, debutNotif: "2026-09-01", finNotif: "2027-07-04", besoins: ["Prise de notes"] };
+      egal(M.conflitsReimport(existant, fichier), ["heuresInd"], "besoins identiques, fin de notification non modifiée dans l'appli");
+      egal(M.conflitsReimport({ heuresInd: 8 }, fichier), [], "rien de modifié dans l'appli : pas de conflit");
+      var garder = M.fusionEleve(existant, fichier, true);
+      egal([garder.heuresInd, garder.finNotif, garder.besoins, garder.commentaire, garder.etatsMatieres, garder.modifiesAppli],
+        [8, "2027-07-04", ["Prise de notes"], "Préfère être placé près de la porte", { eps: "exclu" }, { heuresInd: true, besoins: true }], "garder les valeurs de l'appli");
+      var fic = M.fusionEleve(existant, fichier, false);
+      egal([fic.heuresInd, fic.commentaire, "modifiesAppli" in fic], [6, "Préfère être placé près de la porte", false], "prendre le fichier : la marque tombe, le commentaire reste");
+      egal(M.fusionEleve(null, fichier, true), fichier, "nouvel élève");
+    });
+    t("fiche élève : état par matière", function () {
+      var el = { id: "e", etatsMatieres: { eps: "exclu", mathematiques: "prioritaire" } };
+      egal(M.etatCoursImporte({ matiere: "EPS", etat: "normal" }, null, el), "exclu", "nouveau cours : état de la matière");
+      egal(M.etatCoursImporte({ matiere: "Mathématiques", etat: "normal" }, null, el), "prioritaire", "casse et accents ignorés");
+      egal(M.etatCoursImporte({ matiere: "EPS", etat: "normal" }, { etat: "normal" }, el), "normal", "cours déjà réglé un par un : gardé");
+      egal(M.etatCoursImporte({ matiere: "EPS", etat: "prioritaire" }, null, el), "prioritaire", "le fichier dit prioritaire");
+      egal(M.etatCoursImporte({ matiere: "Français", etat: "normal" }, null, el), "normal");
+      var cours = [{ eleveId: "e", matiere: "EPS", etat: "exclu" }, { eleveId: "e", matiere: "Mathématiques", etat: "prioritaire" },
+        { eleveId: "e", matiere: "mathematiques", etat: "normal" }, { eleveId: "autre", matiere: "SVT", etat: "normal" }];
+      var m = M.matieresEleve(el, cours);
+      egal(m.map(function (x) { return [x.libelle, x.nb, x.etatMatiere, x.uniforme]; }), [["EPS", 1, "exclu", "exclu"], ["Mathématiques", 2, "prioritaire", null]]);
+    });
     t("synthèse du bandeau", function () {
       var f = fixture(M), e = f.e;
       var s = M.synthese(f.ctx([aff("aesh|x", f.cA, "lundi", "08:00", "08:55", "mutualise", [e.mut1, e.mut2])]));

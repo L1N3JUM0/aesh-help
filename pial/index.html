@@ -303,6 +303,31 @@ button.ga-eleve:hover,button.ga-eleve:focus-visible{text-decoration-color:var(--
 .mc-section h4{font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:var(--gris);margin:0 0 6px}
 .mc-boutons{display:flex;flex-wrap:wrap;gap:6px}
 .mc-boutons button[aria-pressed=true]{background:var(--encre);color:#fff;border-color:var(--encre)}
+
+/* fiche de l'élève (grille élève) */
+.fiche-eleve{border:1px solid var(--seyes);border-radius:var(--rayon);margin:12px 0;background:#FAFBFD}
+.fiche-eleve summary{cursor:pointer;padding:10px 14px;font-weight:700;color:var(--encre)}
+.fiche-eleve summary .aide{font-weight:400}
+.fe-corps{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:8px 28px;padding:0 14px 14px}
+.fe-colonne h4{margin:10px 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.3px;color:var(--gris)}
+.fe-champs{display:grid;grid-template-columns:repeat(2,minmax(120px,1fr));gap:8px 12px}
+.fe-champs label{display:flex;flex-direction:column;gap:3px;font-size:12.5px;font-weight:600}
+.fe-champs input{font:inherit;font-weight:400;padding:6px 8px;border:1px solid var(--seyes);border-radius:6px;background:#fff}
+.fe-besoins{display:flex;flex-wrap:wrap;gap:6px}
+.pastille-case{display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border:1px solid var(--seyes);border-radius:14px;background:#fff;font-size:12.5px;cursor:pointer}
+.pastille-case:has(input:checked){background:#E8EEF8;border-color:var(--encre-clair)}
+#fe-commentaire{width:100%;box-sizing:border-box;font:inherit;padding:7px 9px;border:1px solid var(--seyes);border-radius:6px;resize:vertical}
+.fe-rappel{color:#8A5A12}
+.fe-modifie{font-size:10.5px;font-weight:600;color:#8A5A12;background:#FFF4E0;border-radius:8px;padding:0 6px;text-transform:none;letter-spacing:0}
+.fe-matieres td{vertical-align:middle}
+.fe-etats{white-space:nowrap;text-align:right}
+.btn-etat{font:inherit;font-size:12px;padding:4px 9px;border:1px solid var(--seyes);background:#fff;color:var(--gris);cursor:pointer;margin-left:-1px}
+.btn-etat:first-child{border-radius:7px 0 0 7px}
+.btn-etat:last-child{border-radius:0 7px 7px 0}
+.btn-etat[aria-pressed=true].e-prioritaire{background:#FFF4E0;color:#8A5A12;border-color:#E0B36A;font-weight:700}
+.btn-etat[aria-pressed=true].e-normal{background:var(--encre);color:#fff;border-color:var(--encre);font-weight:700}
+.btn-etat[aria-pressed=true].e-exclu{background:#E6E6E6;color:#444;border-color:#BBB;font-weight:700}
+.choix-conflits{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:6px}
 .mc-aesh{list-style:none;margin:0;padding:0;max-height:300px;overflow:auto;border:1px solid #E4E8F0;border-radius:8px}
 .mc-aesh li{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 10px;border-bottom:1px solid #EEF1F5;font-size:13.5px}
 .mc-aesh li:last-child{border-bottom:none}
@@ -659,6 +684,7 @@ button.ga-eleve:hover,button.ga-eleve:focus-visible{text-decoration-color:var(--
             <h2 id="ge-titre"></h2>
             <p class="chapeau" id="ge-sous-titre"></p>
             <div id="ge-jauges"></div>
+            <div id="ge-fiche"></div>
             <div class="tableau-conteneur"><table class="grille-edt" id="ge-table"></table></div>
             <p class="aide">Cliquez sur un créneau pour changer son état, affecter ou retirer une AESH ; sur les initiales d'une AESH pour ouvrir sa grille. 🔒 = affectation épinglée, ⚠ = contrainte non respectée.</p>
           </div>

@@ -251,6 +251,63 @@ var PialModele = (function () {
     return { A: A, B: B, moy: (A + B) / 2, quotite: aesh.quotite || 0, etat: etatCharge(A, B, aesh.quotite || 0, ctx.reglages) };
   }
 
+  /* =============== fiche élève (spec §16) =============== */
+  // Champs de notification modifiables dans la fiche ; une modification est
+  // notée dans eleve.modifiesAppli[champ] pour être protégée au réimport.
+  var CHAMPS_NOTIFICATION = ["heuresInd", "heuresMut", "debutNotif", "finNotif", "besoins"];
+  // champs modifiés dans l'application dont la valeur du fichier diffère
+  function conflitsReimport(existant, nouveau) {
+    var m = (existant && existant.modifiesAppli) || {};
+    return CHAMPS_NOTIFICATION.filter(function (k) {
+      return m[k] && k in nouveau && JSON.stringify(existant[k]) !== JSON.stringify(nouveau[k]);
+    });
+  }
+  // Élève réimporté : valeurs du fichier, sauf les champs propres à
+  // l'application (commentaire, états par matière) et, si garderAppli, les
+  // champs de notification modifiés dans l'application (sinon le fichier
+  // l'emporte et la marque « modifié » tombe).
+  function fusionEleve(existant, nouveau, garderAppli) {
+    var o = {};
+    Object.keys(nouveau).forEach(function (k) { o[k] = nouveau[k]; });
+    if (!existant) return o;
+    ["commentaire", "etatsMatieres"].forEach(function (k) { if (k in existant) o[k] = existant[k]; });
+    var m = existant.modifiesAppli || {}, garde = {};
+    Object.keys(m).forEach(function (k) {
+      if (!m[k]) return;
+      if (garderAppli || !(k in nouveau)) { o[k] = existant[k]; garde[k] = true; }
+    });
+    if (Object.keys(garde).length) o.modifiesAppli = garde;
+    return o;
+  }
+  // matière sans casse ni accents : clé de eleve.etatsMatieres
+  function cleMatiere(matiere) { return normaliser(matiere); }
+  // état d'un cours importé : celui du fichier s'il n'est pas « normal » ;
+  // sinon celui déjà choisi dans l'application pour ce cours, puis celui de
+  // sa matière (fiche élève), puis « normal »
+  function etatCoursImporte(nouveau, existant, eleve) {
+    if (nouveau.etat && nouveau.etat !== "normal") return nouveau.etat;
+    if (existant && existant.etat) return existant.etat;
+    var m = eleve && eleve.etatsMatieres && eleve.etatsMatieres[cleMatiere(nouveau.matiere)];
+    return m || "normal";
+  }
+  // matières d'un élève, avec le nombre de cours par état
+  function matieresEleve(eleve, cours) {
+    var par = {}, ordre = [];
+    cours.forEach(function (c) {
+      if (c.eleveId !== eleve.id) return;
+      var k = cleMatiere(c.matiere);
+      if (!par[k]) { par[k] = { cle: k, libelle: c.matiere, nb: 0, etats: { prioritaire: 0, normal: 0, exclu: 0 } }; ordre.push(k); }
+      par[k].nb++;
+      par[k].etats[c.etat || "normal"]++;
+    });
+    return ordre.sort(function (a, b) { return par[a].libelle.localeCompare(par[b].libelle, "fr"); }).map(function (k) {
+      var x = par[k];
+      x.etatMatiere = (eleve.etatsMatieres || {})[k] || "normal";
+      x.uniforme = ["prioritaire", "normal", "exclu"].filter(function (s) { return x.etats[s] === x.nb; })[0] || null;
+      return x;
+    });
+  }
+
   /* =============== trous et journées courtes (§5.3.5) =============== */
   // intervalles : [[début, fin]] en minutes, pour une journée et une
   // semaine. Renvoie la présence (minutes, chevauchements fusionnés), les
@@ -686,6 +743,8 @@ var PialModele = (function () {
     contexte: contexte, dureeAffectation: dureeAffectation,
     etatCouverture: etatCouverture, couvertureEleve: couvertureEleve,
     etatCharge: etatCharge, chargeAesh: chargeAesh, mesureJournee: mesureJournee, journeesAesh: journeesAesh,
+    CHAMPS_NOTIFICATION: CHAMPS_NOTIFICATION, conflitsReimport: conflitsReimport, fusionEleve: fusionEleve,
+    cleMatiere: cleMatiere, etatCoursImporte: etatCoursImporte, matieresEleve: matieresEleve,
     memeCours: memeCours, peutMutualiser: peutMutualiser, coursSurCreneau: coursSurCreneau,
     indisponibilite: indisponibilite, verifierPauseRepas: verifierPauseRepas, verifierAffectation: verifierAffectation,
     motifsIndisponibilite: motifsIndisponibilite, cleEtatPeriscolaire: cleEtatPeriscolaire,

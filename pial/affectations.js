@@ -385,6 +385,7 @@ var PialAffectations = (function () {
   /* =============== onglet Affectations : outils =============== */
   var semaineAffichee = "A";
   var eleveOuvert = null;     // id de l'élève dont la grille est affichée
+  var aeshOuverte = null;     // id de l'AESH dont la grille est affichée
   var ctxCourant = null, violationsParAff = {};
 
   var COULEURS_AESH = ["#1F3B63", "#2F6B4F", "#8A4FB0", "#B0473C", "#2A7F8F", "#9A6B12", "#5A5FC8", "#A33F7A",
@@ -566,7 +567,7 @@ var PialAffectations = (function () {
       b.addEventListener("click", function () { fermerRapport(); ouvrirGrilleEleve(this.dataset.rapportEleve); });
     });
     Array.prototype.forEach.call($("rp-corps").querySelectorAll("[data-rapport-aesh]"), function (b) {
-      b.addEventListener("click", function () { fermerRapport(); $("af-aesh").value = this.dataset.rapportAesh; rendreAffectations(); });
+      b.addEventListener("click", function () { fermerRapport(); ouvrirGrilleAesh(this.dataset.rapportAesh); });
     });
     $("voile-rapport").hidden = false;
     $("rp-fermer").focus();
@@ -686,7 +687,8 @@ var PialAffectations = (function () {
     var ch = M.chargeAesh(a, ctxCourant), global = ctxCourant.reglages.respecterIndispos;
     var nbEleves = {};
     etat.affectations.forEach(function (x) { if (x.aeshId === a.id) x.eleves.forEach(function (id) { nbEleves[id] = true; }); });
-    hote.innerHTML = '<div class="fiche-aesh"><h3>' + ech(nomAesh(a)) + '</h3><dl>'
+    hote.innerHTML = '<div class="fiche-aesh"><h3>' + ech(nomAesh(a)) + '</h3>'
+      + '<p><button type="button" class="btn btn-vide" id="fa-grille">Emploi du temps de ' + ech(a.prenom) + ' →</button></p><dl>'
       + '<dt>Quotité</dt><dd>' + heures(ch.quotite) + ' · charge ' + (ch.A !== ch.B ? 'semaine A ' + heures(ch.A) + ', semaine B ' + heures(ch.B) : heures(ch.A)) + ' (' + LIB_ETAT_AESH[ch.etat] + ')</dd>'
       + '<dt>Élèves</dt><dd>' + Object.keys(nbEleves).length + '</dd>'
       + '<dt>Établissements</dt><dd>' + ((a.etablissements || []).length ? ech(a.etablissements.map(nomEtablissement).join(", ")) : "tous") + '</dd>'
@@ -698,6 +700,7 @@ var PialAffectations = (function () {
         ? "Pour cette AESH seulement : le moteur et le menu des créneaux pourront la placer sur ses demi-journées indisponibles et dans tous les établissements. À réserver à un arrangement ponctuel."
         : "Sans effet : le réglage global « Respecter les indisponibilités » est décoché (Réglages).") + '</p></div>';
     hote.hidden = false;
+    $("fa-grille").addEventListener("click", function () { ouvrirGrilleAesh(a.id); });
     $("fa-ignorer").addEventListener("change", function () {
       var b = JSON.parse(JSON.stringify(a));
       b.ignorerIndispos = this.checked;
@@ -727,32 +730,65 @@ var PialAffectations = (function () {
     });
     return cases;
   }
-  function ouvrirGrilleEleve(id) {
-    eleveOuvert = id;
-    $("aff-ensemble").hidden = true;
-    $("aff-grille-eleve").hidden = false;
-    rendreGrilleEleve();
+  /* =============== navigation entre les vues =============== */
+  // vue affichée : vue d'ensemble (null), grille d'un élève ou d'une AESH ;
+  // pileVues garde les grilles précédentes pour le bouton « Retour »
+  var pileVues = [];
+  function vueActuelle() {
+    return eleveOuvert ? { type: "eleve", id: eleveOuvert } : (aeshOuverte ? { type: "aesh", id: aeshOuverte } : null);
+  }
+  function libelleVue(v) {
+    if (!v) return "vue d'ensemble";
+    if (v.type === "eleve") { var e = eleveParId(v.id); return e ? e.nomCourt : "élève"; }
+    return nomAesh(aeshParId(v.id));
+  }
+  function afficherVue(v) {
+    eleveOuvert = v && v.type === "eleve" ? v.id : null;
+    aeshOuverte = v && v.type === "aesh" ? v.id : null;
+    $("aff-ensemble").hidden = !!v;
+    $("aff-grille-eleve").hidden = !eleveOuvert;
+    $("aff-grille-aesh").hidden = !aeshOuverte;
+    var precedente = pileVues[pileVues.length - 1] || null;
+    ["aff-retour-ensemble", "aff-retour-aesh"].forEach(function (id) { $(id).textContent = "← " + (precedente ? "Retour : " : "") + libelleVue(precedente); });
+    ["ge-ensemble", "ga-ensemble"].forEach(function (id) { $(id).hidden = !precedente; });
+    if (!v) { pileVues = []; rendreEnsemble(); }
+    else if (eleveOuvert) rendreGrilleEleve();
+    else rendreGrilleAesh();
     window.scrollTo(0, 0);
   }
-  $("aff-retour-ensemble").addEventListener("click", function () {
-    eleveOuvert = null;
-    $("aff-grille-eleve").hidden = true;
-    $("aff-ensemble").hidden = false;
-    rendreEnsemble();
-  });
+  function ouvrirVue(v) {
+    var c = vueActuelle();
+    if (c && c.type === v.type && c.id === v.id) { afficherVue(v); return; }
+    if (c) { pileVues.push(c); if (pileVues.length > 30) pileVues.shift(); }
+    afficherVue(v);
+  }
+  function retourVue() {
+    // une vue précédente peut avoir disparu (élève ou AESH supprimés)
+    var v = pileVues.pop() || null;
+    while (v && !(v.type === "eleve" ? eleveParId(v.id) : aeshParId(v.id))) v = pileVues.pop() || null;
+    afficherVue(v);
+  }
+  function ouvrirGrilleEleve(id) { ouvrirVue({ type: "eleve", id: id }); }
+  function ouvrirGrilleAesh(id) { ouvrirVue({ type: "aesh", id: id }); }
+  ["aff-retour-ensemble", "aff-retour-aesh"].forEach(function (id) { $(id).addEventListener("click", retourVue); });
+  ["ge-ensemble", "ga-ensemble"].forEach(function (id) { $(id).addEventListener("click", function () { afficherVue(null); }); });
 
+  // initiales d'une AESH : bouton qui ouvre sa grille (le reste de la case
+  // ouvre le menu du créneau)
   function puceAff(aff) {
     var a = aeshParId(aff.aeshId), conflit = erreursDe(aff).length > 0;
     var titre = nomAesh(a) + (aff.modalite === "mutualise" ? " (mutualisé, " + aff.eleves.length + " élève(s))" : aff.modalite === "periscolaire" ? " (périscolaire)" : " (individuel)")
       + (aff.creneau.semaine !== "toutes" ? " — semaine " + aff.creneau.semaine : "")
-      + (conflit ? " — " + erreursDe(aff).map(function (v) { return v.message; }).join(" ") : "");
-    return '<span class="puce-aesh' + (conflit ? " conflit" : "") + '" style="background:' + couleurAesh(aff.aeshId) + '" title="' + ech(titre) + '">'
-      + (aff.epinglee ? "🔒" : "") + ech(initialesAesh(a)) + (aff.modalite === "mutualise" ? "+" : "") + (conflit ? " ⚠" : "") + '</span>';
+      + (conflit ? " — " + erreursDe(aff).map(function (v) { return v.message; }).join(" ") : "")
+      + (a ? " — cliquer pour ouvrir sa grille" : "");
+    return '<button type="button" class="puce-aesh' + (conflit ? " conflit" : "") + '" style="background:' + couleurAesh(aff.aeshId) + '" title="' + ech(titre) + '"'
+      + (a ? ' data-grille-aesh="' + ech(a.id) + '"' : " disabled") + '>'
+      + (aff.epinglee ? "🔒" : "") + ech(initialesAesh(a)) + (aff.modalite === "mutualise" ? "+" : "") + (conflit ? " ⚠" : "") + '</button>';
   }
 
   function rendreGrilleEleve() {
     var e = eleveParId(eleveOuvert);
-    if (!e) { $("aff-retour-ensemble").click(); return; }
+    if (!e) { retourVue(); return; }
     var etab = etablissementParId(e.etablissement) || M.etablissementParDefaut(e.etablissement);
     var cv = M.couvertureEleve(e, ctxCourant), periGere = ctxCourant.reglages.gererPeriscolaire;
     $("ge-titre").textContent = e.nomCourt + " — " + e.classe;
@@ -803,9 +839,220 @@ var PialAffectations = (function () {
     });
     Array.prototype.forEach.call($("ge-table").querySelectorAll("[data-case]"), function (d) {
       d.addEventListener("click", function () { ouvrirMenuCreneau(e, index[this.dataset.case]); });
-      d.addEventListener("keydown", function (ev) { if (ev.key === "Enter") ouvrirMenuCreneau(e, index[this.dataset.case]); });
+      d.addEventListener("keydown", function (ev) { if (ev.key === "Enter" && ev.target === this) ouvrirMenuCreneau(e, index[this.dataset.case]); });
+    });
+    brancherPucesAesh($("ge-table"));
+  }
+
+  /* =============== grille AESH (§7.1, vue 3) =============== */
+  // Semaine de l'AESH à l'échelle du temps : les trous et les changements
+  // d'établissement se voient d'un coup d'œil. Fond blanc = libre, hachures
+  // grises = indisponibilité, cadre pointillé rouge = trou de plus de
+  // l'écart maximal. Les vœux (fiche AESH, étape D) s'ajouteront ici.
+  var COULEURS_ETAB = ["#3A6FB0", "#2F6B4F", "#9A6B12", "#8A4FB0", "#B0473C", "#2A7F8F", "#5A5FC8", "#7B5B3A"];
+  function couleurEtab(id) {
+    var ids = etat.etablissements.slice().sort(function (a, b) { return txt(a.nom).localeCompare(txt(b.nom), "fr"); }).map(function (e) { return e.id; });
+    var i = ids.indexOf(id);
+    return COULEURS_ETAB[(i < 0 ? 0 : i) % COULEURS_ETAB.length];
+  }
+  function semainesAff(aff) { return M.semainesDe(aff.creneau.semaine, etablissementParId(aff.creneau.etab)); }
+  function affsAeshSemaine(a, semaine) {
+    return (ctxCourant._affParAesh[a.id] || []).filter(function (x) { return semainesAff(x).indexOf(semaine) > -1; })
+      .sort(function (p, q) { return M.minutes(p.creneau.debut) - M.minutes(q.creneau.debut) || M.minutes(p.creneau.fin) - M.minutes(q.creneau.fin); });
+  }
+  // jours affichés : jours de classe des établissements possibles, et tout
+  // jour où l'AESH a un créneau
+  function joursAesh(a, affs) {
+    var vus = {};
+    var ids = (a.etablissements || []).length ? a.etablissements : etat.etablissements.map(function (e) { return e.id; });
+    ids.forEach(function (id) {
+      var e = etablissementParId(id);
+      (e && e.joursOuvres && e.joursOuvres.length ? e.joursOuvres : M.JOURS.slice(0, 5)).forEach(function (j) { vus[j] = true; });
+    });
+    affs.forEach(function (x) { vus[x.creneau.jour] = true; });
+    var jours = M.JOURS.filter(function (j) { return vus[j]; });
+    return jours.length ? jours : M.JOURS.slice(0, 5);
+  }
+  function bornesGrille(affs) {
+    var t0 = 8 * 60, t1 = 17 * 60;
+    affs.forEach(function (x) {
+      t0 = Math.min(t0, Math.floor(M.minutes(x.creneau.debut) / 60) * 60);
+      t1 = Math.max(t1, Math.ceil(M.minutes(x.creneau.fin) / 60) * 60);
+    });
+    return { t0: t0, t1: t1 };
+  }
+  // HTML de la grille d'une AESH pour une semaine. opts.impression : sans
+  // boutons ; opts.hauteurMax : hauteur maximale de la zone horaire (px).
+  function grilleAeshHtml(a, semaine, opts) {
+    opts = opts || {};
+    var imp = !!opts.impression, r = ctxCourant.reglages;
+    var affs = affsAeshSemaine(a, semaine), jours = joursAesh(a, affs), b = bornesGrille(affs);
+    var k = Math.min(1.1, opts.hauteurMax ? opts.hauteurMax / (b.t1 - b.t0) : 1.1);
+    var H = Math.round((b.t1 - b.t0) * k);
+    function y(m) { return ((m - b.t0) * k).toFixed(1); }
+    function haut(d, f) { return Math.max(2, (f - d) * k).toFixed(1); }
+    var mesure = M.journeesAesh(a, ctxCourant)[semaine];
+    var h = '<div class="ga-grille" style="grid-template-columns:46px repeat(' + jours.length + ',minmax(' + (imp ? 80 : 118) + 'px,1fr))">';
+    h += '<div class="ga-coin"></div>' + jours.map(function (j) {
+      var m = mesure.jours[j];
+      var info = m ? texteDuree(m.presence) + " de présence" + (m.trous ? ' · <span class="ga-alerte">' + pluriel(m.trous, "trou") + '</span>' : "")
+        + (m.courte ? ' · <span class="ga-alerte">journée courte</span>' : "") : "libre";
+      return '<div class="ga-tete"><strong>' + j + '</strong><span>' + info + '</span></div>';
+    }).join("");
+    // axe des heures
+    h += '<div class="ga-axe" style="height:' + H + 'px">';
+    for (var t = b.t0; t <= b.t1; t += 60) h += '<span style="top:' + y(t) + 'px">' + M.hhmm(t) + '</span>';
+    h += '</div>';
+    var ignorees = !r.respecterIndispos || a.ignorerIndispos;
+    jours.forEach(function (j) {
+      h += '<div class="ga-jour" style="height:' + H + 'px">';
+      for (var t2 = b.t0 + 60; t2 < b.t1; t2 += 60) h += '<div class="ga-ligne" style="top:' + y(t2) + 'px"></div>';
+      // indisponibilités (journée, matin ou après-midi)
+      (a.indisponibilites || []).forEach(function (code) {
+        var p = M.normaliser(code).split("-");
+        if (M.jourNormalise(p[0]) !== j) return;
+        var d = p[1] === "pm" ? 12 * 60 : b.t0, f = p[1] === "am" ? 12 * 60 : b.t1;
+        h += '<div class="ga-indispo' + (ignorees ? " ignoree" : "") + '" style="top:' + y(d) + 'px;height:' + haut(d, f) + 'px" title="Indisponible : '
+          + ech(texteIndispo(code)) + (ignorees ? " (ignorée)" : "") + '"><span>Indisponible' + (ignorees ? " (ignorée)" : "") + '</span></div>';
+      });
+      var duJour = affs.filter(function (x) { return x.creneau.jour === j; });
+      // trous : écarts de plus de ecartMax entre deux périodes de présence
+      var blocs = [];
+      duJour.forEach(function (x) {
+        var d = M.minutes(x.creneau.debut), f = M.minutes(x.creneau.fin), der = blocs[blocs.length - 1];
+        if (der && d <= der[1]) der[1] = Math.max(der[1], f); else blocs.push([d, f]);
+      });
+      for (var i = 1; i < blocs.length; i++) {
+        var e0 = blocs[i - 1][1], e1 = blocs[i][0];
+        if (e1 - e0 > r.ecartMax) h += '<div class="ga-trou" style="top:' + y(e0) + 'px;height:' + haut(e0, e1) + 'px"><span>trou de ' + texteDuree(e1 - e0) + '</span></div>';
+      }
+      // créneaux ; deux créneaux qui se chevauchent (conflit) côte à côte
+      var finsVoies = [], precedent = null;
+      duJour.forEach(function (x) {
+        var d = M.minutes(x.creneau.debut), f = M.minutes(x.creneau.fin);
+        var voie = 0;
+        while (finsVoies[voie] !== undefined && finsVoies[voie] > d) voie++;
+        finsVoies[voie] = f;
+        x._voie = voie;
+      });
+      var nbVoies = Math.max(1, finsVoies.length);
+      duJour.forEach(function (x) {
+        var d = M.minutes(x.creneau.debut), f = M.minutes(x.creneau.fin), hauteur = (f - d) * k;
+        var conflit = erreursDe(x), chg = precedent && precedent.creneau.etab !== x.creneau.etab;
+        precedent = x;
+        var eleves = x.eleves.map(eleveParId).filter(Boolean);
+        var classes = [];
+        eleves.forEach(function (e) { if (classes.indexOf(e.classe) < 0) classes.push(e.classe); });
+        var noms = eleves.map(function (e) {
+          return imp ? '<span class="ga-eleve">' + ech(e.nomCourt) + '</span>'
+            : '<button type="button" class="ga-eleve" data-grille-eleve="' + ech(e.id) + '" title="Ouvrir la grille de ' + ech(e.nomCourt) + '">' + ech(e.nomCourt) + '</button>';
+        }).join(", ") || "élève supprimé";
+        var nature = x.modalite === "periscolaire" ? LIB_PERI[x.periscolaire] : (x.modalite === "mutualise" ? "mutualisé" : "");
+        var titre = x.creneau.debut + "–" + x.creneau.fin + " · " + eleves.map(function (e) { return e.nomCourt + " (" + e.classe + ")"; }).join(", ")
+          + " · " + nomEtablissement(x.creneau.etab) + (nature ? " · " + nature : "") + (x.creneau.semaine !== "toutes" ? " · semaine " + x.creneau.semaine + " seulement" : "")
+          + (x.epinglee ? " · épinglée" : "") + (conflit.length ? " — ⚠ " + conflit.map(function (v) { return v.message; }).join(" ") : "");
+        var largeur = 100 / nbVoies;
+        h += '<div class="ga-bloc' + (hauteur < 30 ? " court" : "") + (chg ? " chg" : "") + (conflit.length ? " conflit" : "") + (x.modalite === "periscolaire" ? " peri" : "")
+          + '" style="top:' + y(d) + 'px;height:' + haut(d, f) + 'px;left:calc(' + (x._voie * largeur) + '% + 3px);width:calc(' + largeur + '% - 6px);border-left-color:' + couleurEtab(x.creneau.etab) + '"'
+          + (imp ? "" : ' data-aff="' + ech(x.id) + '" tabindex="0"') + ' title="' + ech(titre) + '">'
+          + '<div class="ga-l1">' + (chg ? '<span class="ga-chg" title="Changement d\'établissement">↪</span> ' : "") + (x.epinglee ? "🔒" : "") + (conflit.length ? "⚠ " : "")
+          + '<span class="ga-h">' + x.creneau.debut + '</span> ' + noms + '</div>'
+          + (hauteur >= 30 ? '<div class="ga-l2">' + ech(classes.join(", ")) + (nature ? " · " + ech(nature) : "") + (x.creneau.semaine !== "toutes" ? " · sem. " + x.creneau.semaine : "")
+            + '</div><div class="ga-l3">' + ech(nomEtablissement(x.creneau.etab)) + '</div>' : "")
+          + '</div>';
+      });
+      duJour.forEach(function (x) { delete x._voie; });
+      h += '</div>';
+    });
+    return h + '</div>';
+  }
+  function legendeGrilleAesh() {
+    return '<div class="ga-legende"><span><i class="lg-libre"></i>libre</span><span><i class="lg-indispo"></i>indisponible</span>'
+      + '<span><i class="lg-trou"></i>trou de plus de ' + ech(texteDuree(ctxCourant.reglages.ecartMax)) + '</span>'
+      + '<span>↪ changement d\'établissement</span><span>bord coloré = établissement</span><span>🔒 épinglée · ⚠ contrainte non respectée</span></div>';
+  }
+  function resumeAesh(a) {
+    var ch = M.chargeAesh(a, ctxCourant), j = M.journeesAesh(a, ctxCourant), r = ctxCourant.reglages;
+    function ab(x, y2, f) { return x === y2 ? f(x) : f(x) + " (A) / " + f(y2) + " (B)"; }
+    return {
+      quotite: heures(ch.quotite), charge: ab(ch.A, ch.B, heures), etat: LIB_ETAT_AESH[ch.etat],
+      reste: ab(Math.max(0, ch.quotite - ch.A), Math.max(0, ch.quotite - ch.B), heures),
+      etabs: (a.etablissements || []).length ? a.etablissements.map(nomEtablissement).join(", ") : "tous",
+      indispos: (a.indisponibilites || []).length ? a.indisponibilites.map(texteIndispo).join(", ")
+        + (!r.respecterIndispos || a.ignorerIndispos ? " (ignorées)" : "") : "aucune",
+      trous: ab(j.A.trous, j.B.trous, String), courtes: ab(j.A.courtes, j.B.courtes, String)
+    };
+  }
+  function rendreGrilleAesh() {
+    var a = aeshParId(aeshOuverte);
+    if (!a) { retourVue(); return; }
+    var s = resumeAesh(a), affs = ctxCourant._affParAesh[a.id] || [];
+    var alternance = affs.some(function (x) { return semainesAff(x).length === 1; })
+      || etat.etablissements.some(function (e) { return e.alternance && (!(a.etablissements || []).length || a.etablissements.indexOf(e.id) > -1); });
+    $("ga-titre").innerHTML = '<span class="puce-aesh" style="background:' + couleurAesh(a.id) + '">' + ech(initialesAesh(a)) + '</span> ' + ech(nomAesh(a));
+    $("ga-sous-titre").textContent = "Quotité " + s.quotite + " · charge " + s.charge + " (" + s.etat + ") · heures restantes : " + s.reste
+      + (alternance ? " · semaine " + semaineAffichee + " affichée" : "");
+    var eleves = {};
+    affs.forEach(function (x) { x.eleves.forEach(function (id) { var e = eleveParId(id); if (e) eleves[id] = e; }); });
+    var liste = Object.keys(eleves).map(function (id) { return eleves[id]; }).sort(function (p, q) { return p.nomCourt.localeCompare(q.nomCourt, "fr"); });
+    $("ga-resume").innerHTML = '<dl class="ga-infos"><dt>Établissements possibles</dt><dd>' + ech(s.etabs) + '</dd>'
+      + '<dt>Indisponibilités</dt><dd>' + ech(s.indispos) + '</dd>'
+      + '<dt>Journées</dt><dd>' + s.trous + ' trou(s) de plus de ' + ech(texteDuree(ctxCourant.reglages.ecartMax)) + ' · ' + s.courtes + ' journée(s) de moins de ' + ech(texteDuree(ctxCourant.reglages.journeeMin)) + '</dd>'
+      + '<dt>Élèves (' + liste.length + ')</dt><dd>' + (liste.length ? liste.map(function (e) {
+        return '<button type="button" class="btn-lien" data-grille-eleve="' + ech(e.id) + '">' + ech(e.nomCourt) + '</button> <span class="aide">(' + ech(e.classe) + ')</span>';
+      }).join(", ") : "aucun") + '</dd></dl>';
+    $("ga-grille").innerHTML = '<div class="tableau-conteneur">' + grilleAeshHtml(a, semaineAffichee) + '</div>' + legendeGrilleAesh();
+    Array.prototype.forEach.call($("aff-grille-aesh").querySelectorAll("[data-grille-eleve]"), function (bt) {
+      bt.addEventListener("click", function (ev) { ev.stopPropagation(); ouvrirGrilleEleve(this.dataset.grilleEleve); });
+      bt.addEventListener("keydown", function (ev) { ev.stopPropagation(); });
+    });
+    Array.prototype.forEach.call($("ga-grille").querySelectorAll("[data-aff]"), function (d) {
+      function ouvrir() { ouvrirMenuDepuisAffectation(d.dataset.aff); }
+      d.addEventListener("click", ouvrir);
+      d.addEventListener("keydown", function (ev) { if (ev.key === "Enter" && ev.target === d) ouvrir(); });
     });
   }
+  // menu du créneau, ouvert depuis la grille d'une AESH : sur le premier
+  // élève de l'affectation (le menu montre le groupe)
+  function ouvrirMenuDepuisAffectation(affId) {
+    var x = etat.affectations.filter(function (y) { return y.id === affId; })[0];
+    if (!x) return;
+    var e = x.eleves.map(eleveParId).filter(Boolean)[0];
+    if (!e) { ui.toast("Aucun élève connu sur ce créneau."); return; }
+    var cas = casesEleve(e).filter(function (c) {
+      return c.jour === x.creneau.jour && c.debut === x.creneau.debut && c.fin === x.creneau.fin && (c.type === "periscolaire") === (x.modalite === "periscolaire");
+    })[0];
+    if (!cas) { ui.toast("Ce créneau n'est plus dans l'emploi du temps de " + e.nomCourt + " : retirez l'affectation depuis sa grille."); return; }
+    ouvrirMenuCreneau(e, cas);
+  }
+  function brancherPucesAesh(hote) {
+    Array.prototype.forEach.call(hote.querySelectorAll("[data-grille-aesh]"), function (bt) {
+      bt.addEventListener("click", function (ev) { ev.stopPropagation(); ouvrirGrilleAesh(this.dataset.grilleAesh); });
+      bt.addEventListener("keydown", function (ev) { ev.stopPropagation(); });
+    });
+  }
+  $("ga-ouvrir-fiche").addEventListener("click", function () { $("af-aesh").value = aeshOuverte; afficherVue(null); remplirFiltres(); rendreAffectations(); });
+
+  /* =============== impression des grilles AESH (A4 paysage) =============== */
+  function cleSemaine(a, s) { return affsAeshSemaine(a, s).map(function (x) { return x.creneauCle + "|" + x.eleves.join(","); }).join(";"); }
+  function pageImpressionAesh(a, semaine, libelleSemaine) {
+    var s = resumeAesh(a);
+    return '<section class="impression-edt"><header><div><h1>' + ech(nomAesh(a)) + '</h1><p>' + ech(libelleSemaine) + ' · quotité ' + s.quotite + ' · charge ' + ech(s.charge)
+      + ' · établissements : ' + ech(s.etabs) + '</p></div><div class="ie-date">Édité le ' + ech(aujourdhui().split("-").reverse().join("/")) + '</div></header>'
+      + grilleAeshHtml(a, semaine, { impression: true, hauteurMax: 540 }) + legendeGrilleAesh() + '</section>';
+  }
+  function imprimerGrillesAesh(liste) {
+    if (!liste.length) { ui.toast("Aucune AESH à imprimer."); return; }
+    var pages = [];
+    liste.forEach(function (a) {
+      if (cleSemaine(a, "A") === cleSemaine(a, "B")) pages.push(pageImpressionAesh(a, "A", "Semaines A et B"));
+      else { pages.push(pageImpressionAesh(a, "A", "Semaine A")); pages.push(pageImpressionAesh(a, "B", "Semaine B")); }
+    });
+    $("impression").innerHTML = pages.join("");
+    window.print();
+  }
+  $("ga-imprimer").addEventListener("click", function () { var a = aeshParId(aeshOuverte); if (a) imprimerGrillesAesh([a]); });
+  $("ga-imprimer-toutes").addEventListener("click", function () { imprimerGrillesAesh(aeshTriees()); });
 
   /* =============== menu d'un créneau (§7.1) =============== */
   var menu = null; // {eleve, cas, modalite, semaine}
@@ -1263,9 +1510,8 @@ var PialAffectations = (function () {
             })[0];
             if (cible) { cible.scrollIntoView({ block: "center" }); cible.focus(); }
           }
-        } else if (al.aeshId) {
-          $("af-aesh").value = al.aeshId;
-          if (eleveOuvert) $("aff-retour-ensemble").click(); else rendreAffectations();
+        } else if (al.aeshId && aeshParId(al.aeshId)) {
+          ouvrirGrilleAesh(al.aeshId);
         }
       }
       li.addEventListener("click", aller);
@@ -1284,7 +1530,7 @@ var PialAffectations = (function () {
     var alertes = M.alertes(ctxCourant, aujourdhui());
     rendreSynthese(alertes);
     rendreAlertes(alertes);
-    if (eleveOuvert) rendreGrilleEleve(); else rendreEnsemble();
+    if (eleveOuvert) rendreGrilleEleve(); else if (aeshOuverte) rendreGrilleAesh(); else rendreEnsemble();
   }
   function ouvrirOnglet() { remplirFiltres(); rendreAffectations(); }
 

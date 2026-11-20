@@ -295,8 +295,13 @@ Onglets existants : Importer, Rapports, Indicateurs, Statistiques, Réglages. Aj
      - retirer l'affectation ;
      - épingler ou désépingler.
 3. **Grille AESH** : semaine de l'AESH, avec pour chaque créneau l'élève (ou les élèves), la classe et l'établissement.
-   - Les trous et les changements d'établissement sont visibles d'un coup d'œil.
-   - Même menu au clic pour réaffecter.
+   - Les trous et les changements d'établissement sont visibles d'un coup d'œil : grille **à l'échelle du temps** (hauteur proportionnelle à la durée), bord gauche coloré par établissement, « ↪ » sur un créneau qui suit un changement d'établissement, cadre pointillé rouge sur un trou de plus de l'écart maximal (avec sa durée), présence et trous du jour en tête de colonne.
+   - Disponibilités : fond blanc = libre ; indisponibilités hachurées (atténuées si elles sont ignorées) ; vœux hachurés (étape D) ; quotité, charge et heures restantes (A/B) en tête, avec la liste des élèves.
+   - Semaine A ou B selon le sélecteur du bandeau ; un créneau d'une seule semaine porte « sem. A » ou « sem. B ».
+   - Même menu au clic pour réaffecter (ouvert sur le premier élève de l'affectation : le menu montre le groupe).
+   - Ouverture : bouton « Emploi du temps » de la fiche de l'AESH, nom d'une AESH dans le rapport de fin, alerte qui ne concerne qu'une AESH, initiales d'une AESH dans la grille d'un élève.
+
+**Bascule entre grilles** : initiales d'une AESH dans la grille élève → grille de l'AESH ; nom d'un élève dans la grille AESH → grille de l'élève. Bouton « ← Retour : … » (pile des grilles ouvertes) et lien « Vue d'ensemble ».
 
 **Panneau d'alertes** latéral et repliable : conflits, sous-couvertures, dépassements, notifications qui arrivent à échéance. Un clic sur une alerte mène au créneau concerné.
 
@@ -361,7 +366,7 @@ L'onglet existant est étendu avec une section « Affectations ».
 ### 8.2 Impression PDF
 
 `window.print()` avec des feuilles `@media print` dédiées pour :
-- la grille d'une AESH ;
+- la grille d'une AESH — **livrée avant la phase 3** (§16) : page A4 paysage (`@page paysage`), une par AESH, deux si les semaines A et B diffèrent ; bouton « Imprimer (PDF) » sur la grille, et « Imprimer toutes les AESH » ; même rendu à l'échelle du temps que l'écran, sans boutons ;
 - la grille d'un élève ;
 - le tableau de couverture par établissement ;
 - les statistiques.
@@ -606,6 +611,7 @@ Ordre de traitement : A (corrections), B (trous), E (grille AESH), puis C (fiche
 3. Trous : réglage « écart maximal entre deux accompagnements » (2 h) ; score −30 par trou, −10 par journée de moins de 2 h (non bloquants) ; « même établissement » limité aux voisins à moins de l'écart maximal ; passe sur les trous après la passe sur le nombre d'AESH par élève ; rapport par AESH (§5.3.5, §5.3.7).
 4. Préférence « à jour égal, créneau collé à celui d'une AESH qui accompagne déjà l'élève » : codée (`OPTIONS.colleConnue`), mesurée, **désactivée** : elle fait baisser la couverture en pénurie (moyenne sur 12 permutations des AESH : 303,96 h → 301,42 h ; 280 h sur les exemples tels quels) pour un gain sur les trous que la passe obtient sans perte.
 5. Mesures : `outils/rapport-moteur.js`, section « Trous et journées courtes », sur les exemples tels quels et en moyenne sur 12 permutations des identifiants des AESH (le glouton est sensible à l'ordre de départage).
+6. Grille AESH avancée de la phase 3 (§7.1, vue 3) : à l'échelle du temps, disponibilités visibles, bascule élève ↔ AESH avec retour, impression A4 paysage (§8.2). L'export ZIP reste en phase 3.
 
 ## 15. Sujets ouverts
 

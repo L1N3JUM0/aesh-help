@@ -248,6 +248,52 @@ table.grille-edt td.heure{font-variant-numeric:tabular-nums;color:var(--gris);bo
 .cellule-cours .cc-etat{font-size:10.5px;text-transform:uppercase;letter-spacing:.3px;color:#8A5A12}
 .puce-aesh{display:inline-block;margin:2px 3px 0 0;padding:1px 6px;border-radius:9px;color:#fff;font-weight:700;font-size:11px}
 .puce-aesh.conflit{outline:2px solid var(--sous);outline-offset:1px}
+button.puce-aesh{border:none;font-family:inherit;cursor:pointer;line-height:1.5}
+button.puce-aesh:hover,button.puce-aesh:focus-visible{outline:2px solid var(--encre);outline-offset:1px}
+.barre-retour{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;margin:0 0 10px}
+.barre-retour .ga-actions{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+
+/* grille AESH : à l'échelle du temps */
+.ga-infos{display:grid;grid-template-columns:max-content 1fr;gap:3px 12px;margin:0 0 12px;font-size:13px}
+.ga-infos dt{color:var(--gris);font-weight:600}
+.ga-infos dd{margin:0}
+.ga-grille{display:grid;min-width:640px;font-size:11.5px;border-top:1px solid var(--seyes)}
+.ga-coin{border-bottom:1px solid var(--seyes)}
+.ga-tete{padding:5px 6px;border-bottom:1px solid var(--seyes);border-left:1px solid #E4E8F0;display:flex;flex-direction:column;gap:1px}
+.ga-tete strong{text-transform:uppercase;letter-spacing:.3px;font-size:11.5px;color:var(--encre)}
+.ga-tete span{color:var(--gris);font-size:10.5px}
+.ga-alerte{color:var(--sous)!important;font-weight:600}
+.ga-axe{position:relative}
+.ga-axe span{position:absolute;right:6px;transform:translateY(-50%);color:var(--gris);font-variant-numeric:tabular-nums;font-size:10.5px}
+.ga-axe span:first-child{transform:none}
+.ga-axe span:last-child{transform:translateY(-100%)}
+.ga-jour{position:relative;border-left:1px solid #E4E8F0;background:#fff}
+.ga-ligne{position:absolute;left:0;right:0;border-top:1px solid #EEF1F6}
+.ga-indispo{position:absolute;left:0;right:0;background:repeating-linear-gradient(45deg,#ECECEC 0 6px,#DADADA 6px 12px);color:#666;font-size:10.5px}
+.ga-indispo.ignoree{opacity:.45}
+.ga-indispo span{position:absolute;left:4px;bottom:3px;background:rgba(255,255,255,.85);padding:0 4px;border-radius:4px}
+.ga-trou{position:absolute;left:3px;right:3px;border:1.5px dashed var(--sous);border-radius:6px;background:rgba(176,71,60,.05);display:flex;align-items:center;justify-content:center}
+.ga-trou span{color:var(--sous);font-size:10.5px;font-weight:600;background:#fff;padding:0 4px;border-radius:4px}
+.ga-bloc{position:absolute;box-sizing:border-box;border:1px solid #CBD3E1;border-left:5px solid;border-radius:6px;background:#F6F8FC;padding:2px 5px;overflow:hidden;line-height:1.3;z-index:1}
+.ga-bloc[data-aff]{cursor:pointer}
+.ga-bloc[data-aff]:hover,.ga-bloc[data-aff]:focus{border-color:var(--encre-clair);outline:none;box-shadow:0 1px 4px rgba(31,59,99,.25);z-index:2}
+.ga-bloc.peri{background:#EEF3FB;font-style:italic}
+.ga-bloc.conflit{background:#FBEDEB;border-top-color:var(--sous);border-right-color:var(--sous);border-bottom-color:var(--sous)}
+.ga-bloc.chg{border-top:2px solid var(--partiel)}
+.ga-bloc.court{padding-top:0;padding-bottom:0;white-space:nowrap;text-overflow:ellipsis}
+.ga-bloc.court .ga-l1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10.5px}
+.ga-l1{font-weight:600}
+.ga-l2,.ga-l3{color:var(--gris);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ga-h{font-variant-numeric:tabular-nums;color:var(--gris);font-weight:400}
+.ga-chg{color:var(--partiel);font-weight:700}
+button.ga-eleve{border:none;background:none;padding:0;font:inherit;font-weight:600;color:var(--encre);text-decoration:underline;text-decoration-color:var(--seyes);cursor:pointer}
+button.ga-eleve:hover,button.ga-eleve:focus-visible{text-decoration-color:var(--encre);outline:none}
+.ga-legende{display:flex;flex-wrap:wrap;gap:4px 16px;margin:10px 0 0;font-size:11.5px;color:var(--gris);align-items:center}
+.ga-legende span{display:inline-flex;align-items:center;gap:5px}
+.ga-legende i{display:inline-block;width:18px;height:12px;border-radius:3px;border:1px solid #CBD3E1}
+.ga-legende .lg-libre{background:#fff}
+.ga-legende .lg-indispo{background:repeating-linear-gradient(45deg,#ECECEC 0 3px,#DADADA 3px 6px)}
+.ga-legende .lg-trou{border:1.5px dashed var(--sous);background:rgba(176,71,60,.05)}
 .modale-large{max-width:620px;max-height:90vh;overflow:auto}
 .modale-rapport{max-width:780px}
 .modale h3{font-family:var(--serif);font-size:17px;color:var(--encre);margin:0 0 4px}
@@ -445,7 +491,21 @@ table.grille-edt td.heure{font-variant-numeric:tabular-nums;color:var(--gris);bo
   .bloc-impression-stat .carte-chiffre .cc-label{font-size:8pt;color:var(--gris)}
   .bloc-impression-stat .note-sous-graphique{font-size:8pt;color:var(--gris);margin:6pt 0 0}
   .bloc-impression-stat svg{width:100%;height:auto;display:block}
+
+  /* ---- grilles AESH : une page A4 paysage par AESH et par semaine ---- */
+  .impression-edt{page:paysage;break-after:page;font-family:var(--sans);color:var(--texte)}
+  .impression-edt:last-child{break-after:auto}
+  .impression-edt header{
+    display:flex;justify-content:space-between;align-items:baseline;gap:10pt;
+    background:var(--encre);color:var(--feuille);padding:6pt 10pt;margin:0 0 8pt;
+  }
+  .impression-edt h1{margin:0;font-family:var(--serif);font-size:14pt}
+  .impression-edt header p,.impression-edt .ie-date{margin:0;font-size:9pt}
+  .impression-edt .ga-grille{min-width:0;font-size:8.5pt}
+  .impression-edt .ga-bloc{font-size:8pt}
+  .impression-edt .ga-legende{font-size:8pt}
 }
+@page paysage{ size:A4 landscape; margin:10mm; }
 #impression{display:none}
 </style>
 </head>
@@ -588,12 +648,31 @@ table.grille-edt td.heure{font-variant-numeric:tabular-nums;color:var(--gris);bo
         <!-- grille élève -->
         <div id="aff-grille-eleve" hidden>
           <div class="carte">
-            <button type="button" class="btn-lien" id="aff-retour-ensemble" style="margin:0 0 10px">← Vue d'ensemble</button>
+            <div class="barre-retour"><button type="button" class="btn-lien" id="aff-retour-ensemble">← vue d'ensemble</button>
+              <button type="button" class="btn-lien" id="ge-ensemble" hidden>Vue d'ensemble</button></div>
             <h2 id="ge-titre"></h2>
             <p class="chapeau" id="ge-sous-titre"></p>
             <div id="ge-jauges"></div>
             <div class="tableau-conteneur"><table class="grille-edt" id="ge-table"></table></div>
-            <p class="aide">Cliquez sur un créneau pour changer son état, affecter ou retirer une AESH. 🔒 = affectation épinglée, ⚠ = contrainte non respectée.</p>
+            <p class="aide">Cliquez sur un créneau pour changer son état, affecter ou retirer une AESH ; sur les initiales d'une AESH pour ouvrir sa grille. 🔒 = affectation épinglée, ⚠ = contrainte non respectée.</p>
+          </div>
+        </div>
+
+        <!-- grille AESH -->
+        <div id="aff-grille-aesh" hidden>
+          <div class="carte">
+            <div class="barre-retour"><button type="button" class="btn-lien" id="aff-retour-aesh">← vue d'ensemble</button>
+              <button type="button" class="btn-lien" id="ga-ensemble" hidden>Vue d'ensemble</button>
+              <span class="ga-actions">
+                <button type="button" class="btn btn-vide" id="ga-ouvrir-fiche">Fiche et filtre</button>
+                <button type="button" class="btn btn-vide" id="ga-imprimer">Imprimer (PDF)</button>
+                <button type="button" class="btn btn-vide" id="ga-imprimer-toutes">Imprimer toutes les AESH</button>
+              </span></div>
+            <h2 id="ga-titre"></h2>
+            <p class="chapeau" id="ga-sous-titre"></p>
+            <div id="ga-resume"></div>
+            <div id="ga-grille"></div>
+            <p class="aide">Cliquez sur un créneau pour le modifier (même menu que dans la grille de l'élève) ; sur le nom d'un élève pour ouvrir sa grille. Impression : une page A4 paysage par AESH, deux si les semaines A et B diffèrent ; choisissez « Enregistrer au format PDF » dans la fenêtre d'impression.</p>
           </div>
         </div>
       </div>

@@ -975,8 +975,8 @@ button.ga-eleve:hover,button.ga-eleve:focus-visible{text-decoration-color:var(--
       <div class="champ" style="max-width:260px"><label for="reg-pause">Pause repas minimale des AESH (minutes)</label><input type="number" id="reg-pause" min="0" max="120" step="5"></div>
       <div class="champ" style="max-width:420px"><label for="reg-ecart">Écart maximal entre deux accompagnements d'une AESH (heures)</label><input type="number" id="reg-ecart" min="0.5" max="8" step="0.5">
         <p class="aide">Au-delà, la proposition évite de laisser un trou dans la journée de l'AESH (pénalité, pas une interdiction). 2 h par défaut.</p></div>
-      <div class="champ" style="max-width:420px"><label for="reg-ordres">Nombre d'ordres de départage essayés par « Proposer »</label><input type="number" id="reg-ordres" min="1" max="50" step="1">
-        <p class="aide">Le moteur départage les AESH à égalité dans un certain ordre ; il essaie plusieurs ordres et garde le meilleur résultat (heures couvertes d'abord). 12 par défaut ; 1 = plus rapide. Le résultat est le même à chaque relance.</p></div>
+      <div class="champ" style="max-width:420px"><label for="reg-budget">Temps de recherche de « Proposer » (secondes)</label><input type="number" id="reg-budget" min="0.5" max="60" step="0.5">
+        <p class="aide">Le moteur départage les AESH à égalité dans un certain ordre ; il essaie autant d'ordres que ce temps le permet (au moins 4) et garde le meilleur résultat (heures couvertes d'abord). 2 s par défaut. Le nombre d'ordres essayés est mémorisé avec la proposition : une relance sur les mêmes données et les mêmes règles rejoue ce nombre et donne le même résultat.</p></div>
       <div class="actions"><button type="button" class="btn btn-vide" id="reg-enregistrer-regles">Enregistrer</button></div>
     </div>
 

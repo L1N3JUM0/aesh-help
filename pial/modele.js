@@ -64,7 +64,7 @@ var PialModele = (function () {
     seuilSousUtilisation: 0.9,   // §4.3
     ecartMax: 120,               // §5.3.5 écart maximal entre deux accompagnements (minutes)
     journeeMin: 120,             // §5.3.5 journée courte : moins de 2 h de présence
-    nbOrdres: 12,                // §16 ordres de départage essayés par « Proposer »
+    budgetOrdres: 2,             // §16 secondes de recherche de « Proposer » (au moins 4 ordres de départage)
     specialites: SPECIALITES_DEFAUT, // §16 table spécialité → besoins fonctionnels
     joursAlerteNotification: 30  // §6
   };

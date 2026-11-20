@@ -14,7 +14,8 @@
    comparent trois capacités — les exemples (pénurie), les exemples + le
    renfort (FICTIF_aesh_renfort.csv), les AESH doublées (capacité
    suffisante) — avec ou sans passes d'amélioration, puis avec un seul
-   ordre de départage des AESH ou le meilleur de NB_ORDRES.
+   ordre de départage des AESH ou le meilleur de NB_ORDRES ; enfin le mode
+   « budget de temps » de l'interface (BUDGET_MS), rejoué à l'identique.
    ===================================================================== */
 
 var fs = require("fs");
@@ -33,6 +34,7 @@ function h(x) { return (Math.round(x * 100) / 100).toString().replace(".", ",") 
 function pct(a, b) { return b ? Math.round(100 * a / b) + " %" : "—"; }
 function chrono(fn) { var t0 = process.hrtime.bigint(); var r = fn(); return { r: r, ms: Number(process.hrtime.bigint() - t0) / 1e6 }; }
 var NB_ORDRES = 12;
+var BUDGET_MS = 2000;     // temps de recherche par défaut de « Proposer » (réglage budgetOrdres)
 function ms(x) { return Math.round(x) + " ms"; }
 // nombre d'AESH différentes par élève : {0: n, 1: n, …} et élèves à 4 ou plus
 function aeshParEleve(d, affs) {
@@ -179,6 +181,21 @@ Promise.all([T.chargerExemples(env), T.chargerExemples(env, { renfort: true })])
     l.push("| " + x[0] + " | " + celluleOrdres(un.rapport.qualite, false) + " | " + celluleOrdres(moy, true) + " | " + celluleOrdres(m.rapport.qualite, false)
       + " | n° " + (m.rapport.ordres.retenu + 1) + " | " + ms(Number(t1 - t0) / 1e6) + " / " + ms(Number(t2 - t1) / 1e6)
       + (m.rapport.violations.length ? " · **" + m.rapport.violations.length + " violation(s)**" : "") + " |");
+  });
+  l.push("");
+  l.push("### Budget de temps (« Proposer » dans l'interface)");
+  l.push("");
+  l.push("« Proposer » essaie autant d'ordres que le temps de recherche le permet (" + (BUDGET_MS / 1000) + " s ici, au moins " + P.MIN_ORDRES
+    + "), mémorise le nombre essayé et le rejoue tel quel quand les données n'ont pas changé. Colonne « rejoué » : proposerMeilleur(d, nb) redonne exactement le même résultat.");
+  l.push("");
+  l.push("| Jeu | Ordres essayés | Temps | Meilleur (retenu) | Ordre retenu | Rejoué |");
+  l.push("|---|---|---|---|---|---|");
+  [["Exemples (pénurie)", d], ["Exemples + renfort", jeux[1]], ["AESH doublées", doublees], ["Agrandi ×4", grand]].forEach(function (x) {
+    function horloge() { return Number(process.hrtime.bigint()) / 1e6; }
+    var t0 = horloge(), b = P.proposerBudget(x[1], BUDGET_MS, horloge), t1 = horloge();
+    var rejoue = JSON.stringify(P.proposerMeilleur(x[1], b.rapport.ordres.nb)) === JSON.stringify(b);
+    l.push("| " + x[0] + " | " + b.rapport.ordres.nb + " | " + ms(t1 - t0) + " | " + celluleOrdres(b.rapport.qualite, false)
+      + " | n° " + (b.rapport.ordres.retenu + 1) + " | " + (rejoue ? "identique" : "**différent**") + " |");
   });
   console.log(l.join("\n"));
 }).catch(function (err) { console.error(err); process.exitCode = 1; });

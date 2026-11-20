@@ -904,18 +904,26 @@ var PialMoteur = (function () {
     }
     return 0;
   }
+  // Nombre d'ordres : fixe, ou fixé par un budget de temps (« Proposer »).
+  // Un budget ne rend pas le résultat aléatoire : le nombre d'ordres essayés
+  // est mémorisé avec la proposition, et la relance sur les mêmes données
+  // rejoue exactement ce nombre (proposerMeilleur(donnees, nb)).
+  var MIN_ORDRES = 4, MAX_ORDRES = 1000;
   // Calcul pas à pas (un ordre par appel de suivant()), pour que
   // l'interface puisse rendre la main au navigateur entre deux ordres.
+  // n : nombre d'ordres, ou Infinity (l'appelant décide quand arreter()).
   function plusieursOrdres(donnees, n) {
-    n = Math.max(1, Math.floor(n || 1));
+    var total = n === Infinity ? MAX_ORDRES : Math.min(MAX_ORDRES, Math.max(1, Math.floor(n || 1)));
     var ids = (donnees.aesh || []).map(function (a) { return a.id; });
     var k = 0, meilleur = null, essais = [];
     return {
-      total: n,
+      total: function () { return total; },
       fait: function () { return k; },
-      fini: function () { return k >= n; },
+      fini: function () { return k >= total; },
+      // arrête après l'ordre en cours (au moins un ordre)
+      arreter: function () { total = Math.max(1, k); },
       suivant: function () {
-        if (k >= n) return;
+        if (k >= total) return;
         var res = proposer(donnees, ordreAesh(ids, k));
         essais.push({ ordre: k, qualite: res.rapport.qualite });
         // à qualité égale, le premier ordre essayé est gardé
@@ -924,7 +932,7 @@ var PialMoteur = (function () {
       },
       resultat: function () {
         var res = meilleur.res;
-        res.rapport.ordres = { nb: n, retenu: meilleur.ordre, essais: essais };
+        res.rapport.ordres = { nb: k, retenu: meilleur.ordre, essais: essais };
         return res;
       }
     };
@@ -933,6 +941,46 @@ var PialMoteur = (function () {
     var calc = plusieursOrdres(donnees, n);
     while (!calc.fini()) calc.suivant();
     return calc.resultat();
+  }
+  // Autant d'ordres que le budget (ms) le permet, au moins MIN_ORDRES.
+  // maintenant() : horloge en ms (fournie par l'appelant : le module reste pur).
+  // Le rapport donne le nombre d'ordres essayés (ordres.nb) : le mémoriser
+  // pour rejouer le même résultat.
+  function proposerBudget(donnees, budgetMs, maintenant) {
+    var calc = plusieursOrdres(donnees, Infinity), t0 = maintenant();
+    while (!calc.fini()) {
+      calc.suivant();
+      var ecoule = maintenant() - t0;
+      if (calc.fait() >= MIN_ORDRES && ecoule >= budgetMs) calc.arreter();
+    }
+    return calc.resultat();
+  }
+
+  // Signature des données d'entrée de « Proposer » : établissements, élèves,
+  // AESH, cours, affectations épinglées (les autres sont remplacées) et
+  // réglages. Indépendante de l'ordre des lignes et des clés. Deux relances
+  // de même signature rejouent le même nombre d'ordres, donc le même résultat.
+  function canonique(x) {
+    if (Array.isArray(x)) return "[" + x.map(canonique).join(",") + "]";
+    if (x && typeof x === "object") return "{" + Object.keys(x).sort().map(function (k) { return JSON.stringify(k) + ":" + canonique(x[k]); }).join(",") + "}";
+    return JSON.stringify(x === undefined ? null : x);
+  }
+  function listeCanonique(liste) {
+    return (liste || []).map(canonique).sort();
+  }
+  function signatureDonnees(donnees) {
+    var texte = canonique({
+      annee: donnees.annee || "", reglages: donnees.reglages || {},
+      etablissements: listeCanonique(donnees.etablissements), eleves: listeCanonique(donnees.eleves), aesh: listeCanonique(donnees.aesh), cours: listeCanonique(donnees.cours),
+      epinglees: listeCanonique((donnees.affectations || []).filter(function (a) { return a.epinglee; }))
+    });
+    // deux empreintes FNV-1a 32 bits (graines différentes) : 64 bits en hexadécimal
+    function fnv(graine) {
+      var h = graine >>> 0;
+      for (var i = 0; i < texte.length; i++) { h ^= texte.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+      return ("0000000" + h.toString(16)).slice(-8);
+    }
+    return fnv(0x811C9DC5) + fnv(0x2F1D3A5B);
   }
 
   /* =============== menu de créneau (§7.1) =============== */
@@ -964,7 +1012,7 @@ var PialMoteur = (function () {
   return {
     POIDS: POIDS, OPTIONS: OPTIONS, BESOINS_MATIERES: BESOINS_MATIERES, LIBELLE_MOTIF: LIBELLE_MOTIF,
     proposer: proposer, classerAesh: classerAesh, ordreAesh: ordreAesh, comparerQualite: comparerQualite,
-    plusieursOrdres: plusieursOrdres, proposerMeilleur: proposerMeilleur, morceau: morceau, ameliorerAffectations: ameliorerAffectations,
+    plusieursOrdres: plusieursOrdres, proposerMeilleur: proposerMeilleur, proposerBudget: proposerBudget, signatureDonnees: signatureDonnees, MIN_ORDRES: MIN_ORDRES, morceau: morceau, ameliorerAffectations: ameliorerAffectations,
     ameliorerTrousAffectations: ameliorerTrousAffectations
   };
 })();

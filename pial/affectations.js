@@ -58,6 +58,9 @@ var PialAffectations = (function () {
       parNom.correspondances.forEach(function (c) { etat.correspondances[c.type] = c.colonnes; });
       var reg = parNom.parametres.filter(function (p) { return p.cle === "reglages"; })[0];
       etat.reglages = (reg && reg.valeur) || {};
+      // {signature, nbOrdres, ms, budget, date} : nombre d'ordres de la dernière proposition (§16)
+      var prop = parNom.parametres.filter(function (p) { return p.cle === "proposition"; })[0];
+      etat.proposition = (prop && prop.valeur) || null;
     });
   }
 
@@ -408,7 +411,7 @@ var PialAffectations = (function () {
     $("reg-periscolaire").checked = !!r.gererPeriscolaire;
     $("reg-pause").value = r.pauseRepasMin;
     $("reg-ecart").value = r.ecartMax / 60;
-    $("reg-ordres").value = r.nbOrdres;
+    $("reg-budget").value = r.budgetOrdres;
     rendreSpecialites();
   }
   $("reg-enregistrer-regles").addEventListener("click", function () {
@@ -416,8 +419,8 @@ var PialAffectations = (function () {
     if (isNaN(pause) || pause < 0 || pause > 120) { ui.toast("Durée de pause invalide (0 à 120 minutes)."); return; }
     var ecart = Math.round(parseFloat(String($("reg-ecart").value).replace(",", ".")) * 60);
     if (isNaN(ecart) || ecart < 30 || ecart > 480) { ui.toast("Écart maximal invalide (de 0,5 à 8 heures)."); return; }
-    var ordres = parseInt($("reg-ordres").value, 10);
-    if (isNaN(ordres) || ordres < 1 || ordres > 50) { ui.toast("Nombre d'ordres invalide (de 1 à 50)."); return; }
+    var budget = Math.round(parseFloat(String($("reg-budget").value).replace(",", ".")) * 10) / 10;
+    if (isNaN(budget) || budget < 0.5 || budget > 60) { ui.toast("Temps de recherche invalide (de 0,5 à 60 secondes)."); return; }
     var valeur = {};
     Object.keys(etat.reglages).forEach(function (k) { valeur[k] = etat.reglages[k]; });
     valeur.dureeReelle = $("reg-duree-reelle").checked;
@@ -425,7 +428,8 @@ var PialAffectations = (function () {
     valeur.gererPeriscolaire = $("reg-periscolaire").checked;
     valeur.pauseRepasMin = pause;
     valeur.ecartMax = ecart;
-    valeur.nbOrdres = ordres;
+    valeur.budgetOrdres = budget;
+    delete valeur.nbOrdres;   // ancien réglage (nombre fixe), remplacé par le temps de recherche
     PialDB.appliquer([{ magasin: "parametres", enregistrer: [{ cle: "reglages", valeur: valeur }] }]).then(recharger).then(function () {
       ui.toast("Règles de calcul enregistrées.");
       if (typeof PialAffectations.surChangement === "function") PialAffectations.surChangement();
@@ -566,34 +570,53 @@ var PialAffectations = (function () {
       affectations: affectations || etat.affectations, reglages: etat.reglages };
   }
   // relance partielle : les épinglées sont gardées, les autres remplacées.
-  // Le moteur essaie plusieurs ordres de départage (spec §16), un par tour,
-  // en rendant la main au navigateur entre deux ordres (thread principal,
-  // pas de Web Worker sous file://) ; une progression s'affiche si le
-  // calcul doit dépasser 1,5 s.
+  // Le moteur essaie plusieurs ordres de départage (spec §16), autant que le
+  // temps de recherche le permet (au moins P.MIN_ORDRES), un par tour, en
+  // rendant la main au navigateur entre deux ordres (thread principal, pas
+  // de Web Worker sous file://) ; une progression s'affiche si le calcul
+  // doit dépasser 1,5 s. Le nombre d'ordres essayés est mémorisé avec la
+  // signature des données : une relance sur les mêmes données rejoue ce
+  // nombre, donc le même résultat, quel que soit le temps de calcul.
   function maintenant() { return (window.performance || Date).now(); }
+  function secondes(ms) { var s = Math.round(ms / 100) / 10; return (s >= 10 ? String(Math.round(s)) : String(s).replace(".", ",")) + " s"; }
   function proposer() {
     var bouton = $("aff-proposer");
     bouton.disabled = true;
     bouton.textContent = "Calcul…";
-    var n = M.contexte({ reglages: etat.reglages }).reglages.nbOrdres;
-    var calc = P.plusieursOrdres(donneesMoteur(), n), t0 = maintenant(), visible = false;
+    var budget = M.contexte({ reglages: etat.reglages }).reglages.budgetOrdres * 1000;
+    var donnees = donneesMoteur(), signature = P.signatureDonnees(donnees);
+    var repris = etat.proposition && etat.proposition.signature === signature && etat.proposition.nbOrdres > 0 ? etat.proposition.nbOrdres : 0;
+    var calc = P.plusieursOrdres(donnees, repris || Infinity), t0 = maintenant(), visible = false;
+    // part faite : ordres (nombre repris) ou temps et minimum d'ordres (budget)
+    function avancement(ecoule) { return repris ? calc.fait() / repris : Math.min(1, Math.max(ecoule / budget, calc.fait() / P.MIN_ORDRES)); }
     function etape() {
       var debut = maintenant();
-      do { calc.suivant(); } while (!calc.fini() && maintenant() - debut < 50);
+      do {
+        calc.suivant();
+        if (!repris && calc.fait() >= P.MIN_ORDRES && maintenant() - t0 >= budget) calc.arreter();
+      } while (!calc.fini() && maintenant() - debut < 50);
       var ecoule = maintenant() - t0;
-      if (!visible && !calc.fini() && ecoule / calc.fait() * calc.total > 1500) { visible = true; $("aff-progression").hidden = false; }
+      if (!visible && !calc.fini() && ecoule / avancement(ecoule) > 1500) { visible = true; $("aff-progression").hidden = false; }
       if (visible) {
-        $("aff-progression-texte").textContent = "Recherche du meilleur résultat : " + calc.fait() + " ordre" + (calc.fait() > 1 ? "s" : "") + " essayé" + (calc.fait() > 1 ? "s" : "") + " sur " + calc.total;
-        $("aff-progression-barre").value = calc.fait() / calc.total;
+        $("aff-progression-texte").textContent = "Recherche du meilleur résultat : " + pluriel(calc.fait(), "ordre essayé", "ordres essayés")
+          + (repris ? " sur " + repris : " en " + secondes(ecoule) + " (temps de recherche : " + secondes(budget) + ")");
+        $("aff-progression-barre").value = avancement(ecoule);
       }
       if (!calc.fini()) { setTimeout(etape, 0); return; }
       $("aff-progression").hidden = true;
       var res = calc.resultat(), ms = maintenant() - t0;
+      res.rapport.ordres.ms = ms;
+      res.rapport.ordres.repris = !!repris;
       var remplacees = etat.affectations.filter(function (a) { return !a.epinglee; }).map(function (a) { return a.id; });
       var nouvelles = res.affectations.filter(function (a) { return !a.epinglee; });
       dernierRapport = { rapport: res.rapport, ms: ms, nbRemplacees: remplacees.length };
-      enregistrerPuisRendre([{ magasin: "affectations", supprimer: remplacees, enregistrer: nouvelles }],
-        pluriel(nouvelles.length, "affectation proposée", "affectations proposées") + ".", "la proposition").then(afficherRapport);
+      var memo = repris ? etat.proposition
+        : { signature: signature, nbOrdres: res.rapport.ordres.nb, ms: Math.round(ms), budget: budget / 1000, date: new Date().toISOString() };
+      // mémoriser le nombre d'ordres avant la proposition : une relance doit le retrouver
+      PialDB.appliquer([{ magasin: "parametres", enregistrer: [{ cle: "proposition", valeur: memo }] }]).then(function () {
+        return enregistrerPuisRendre([{ magasin: "affectations", supprimer: remplacees, enregistrer: nouvelles }],
+          pluriel(nouvelles.length, "affectation proposée", "affectations proposées") + ".", "la proposition");
+      }).then(afficherRapport);
     }
     // laisse le navigateur afficher « Calcul… » avant le calcul
     setTimeout(etape, 30);
@@ -624,10 +647,12 @@ var PialAffectations = (function () {
       + (dernierRapport.nbRemplacees ? ' · ' + pluriel(dernierRapport.nbRemplacees, "affectation non épinglée remplacée", "affectations non épinglées remplacées") : "")
       + (r.nbEchanges ? ' · ' + pluriel(r.nbEchanges, "créneau repris ou échangé", "créneaux repris ou échangés") + ' entre AESH pour limiter à ' + P.POIDS.maxAeshParEleve + ' le nombre d\'AESH par élève' : "")
       + (r.nbEchangesTrous ? ' · ' + pluriel(r.nbEchangesTrous, "créneau repris ou échangé", "créneaux repris ou échangés") + ' pour réduire les trous des journées' : "") + '.</p>';
-    if (r.ordres && r.ordres.nb > 1) {
+    if (r.ordres) {
       var q0 = r.ordres.essais[0].qualite, q = r.qualite;
       var resume = function (x) { return heures(x.couvert) + " couvertes, " + pluriel(x.elevesPlusDe3, "élève", "élèves") + " à plus de " + P.POIDS.maxAeshParEleve + " AESH, " + pluriel(x.trous, "trou") + ", " + pluriel(x.courtes, "journée courte", "journées courtes"); };
-      h += '<p class="aide">Meilleur résultat parmi ' + r.ordres.nb + ' ordres de départage des AESH (ordre n° ' + (r.ordres.retenu + 1) + ' retenu) : '
+      h += '<p class="aide"><strong>' + pluriel(r.ordres.nb, "ordre essayé", "ordres essayés") + ' en ' + secondes(r.ordres.ms) + '</strong>'
+        + (r.ordres.repris ? ' (nombre repris de la proposition précédente : mêmes données et mêmes règles, donc même résultat)' : "")
+        + ' · meilleur résultat parmi ces ordres de départage des AESH (ordre n° ' + (r.ordres.retenu + 1) + ' retenu) : '
         + ech(resume(q)) + (r.ordres.retenu ? ' ; avec le premier ordre : ' + ech(resume(q0)) : "") + '.</p>';
     }
     if (r.violations.length) h += '<p class="note alerte">⚠ ' + pluriel(r.violations.length, "contrainte non respectée", "contraintes non respectées") + ' par la proposition : signalez-le.</p>';
@@ -1967,6 +1992,8 @@ var PialAffectations = (function () {
       compteurs: { affectations: etat.affectations.length, eleves: etat.eleves.length, aesh: etat.aesh.length, conflits: conflits,
         indCouvert: s.indCouvert, indDemande: s.indDemande, mutCouvert: s.mutCouvert, mutDemande: s.mutDemande, elevesSous: s.elevesSous },
       libelles: libelles };
+    // nombre d'ordres de départage de la proposition d'origine (§16), pour la rejouer
+    if (etat.proposition) v.proposition = { nbOrdres: etat.proposition.nbOrdres, ms: etat.proposition.ms, budget: etat.proposition.budget, date: etat.proposition.date };
     var copies = etat.affectations.map(function (a) {
       var c = JSON.parse(JSON.stringify(a));
       c.id = "v" + numero + "|" + a.id; c.version = numero;

@@ -1314,6 +1314,46 @@ var PialTests = (function () {
           && P.comparerQualite(avec("courtes", 1), avec("periNormalNonCouvert", 9)) > 0 && P.comparerQualite(q, q) === 0, "ordre des critères");
       });
     });
+    t("moteur (exemples) : budget de temps — au moins 4 ordres, nombre mémorisé, relance identique", function () {
+      return charger().then(function (x) {
+        // horloge simulée : chaque lecture avance de 300 ms
+        function horloge(pas) { var t = 0; return function () { t += pas; return t; }; }
+        var court = P.proposerBudget(x.d, 100, horloge(300));
+        egal(court.rapport.ordres.nb, P.MIN_ORDRES, "budget dépassé dès le premier ordre : minimum de " + P.MIN_ORDRES);
+        var long = P.proposerBudget(x.d, 2000, horloge(300));
+        egal(long.rapport.ordres.nb, 7, "2 s à 300 ms par ordre : 7 ordres");
+        egal(long.rapport.ordres.essais.length, long.rapport.ordres.nb);
+        egal(JSON.stringify(P.proposerMeilleur(x.d, long.rapport.ordres.nb)), JSON.stringify(long), "rejouer le nombre mémorisé : même résultat");
+        egal(JSON.stringify(P.proposerBudget(x.d, 2000, horloge(300))), JSON.stringify(long), "relance au même rythme : même résultat");
+        // pas à pas, arrêt par l'appelant
+        var calc = P.plusieursOrdres(x.d, Infinity);
+        calc.suivant(); calc.suivant(); calc.arreter();
+        vrai(calc.fini(), "arrêté");
+        egal(calc.resultat().rapport.ordres.nb, 2);
+        egal(JSON.stringify(calc.resultat().affectations), JSON.stringify(P.proposerMeilleur(x.d, 2).affectations));
+      });
+    });
+    t("moteur : signature des données de « Proposer »", function () {
+      return charger().then(function (x) {
+        var d = avecAffectations(x.d, []), s0 = P.signatureDonnees(d);
+        vrai(/^[0-9a-f]{16}$/.test(s0), s0);
+        var melange = avecAffectations(x.d, []);
+        melange.aesh = x.d.aesh.slice().reverse();
+        melange.eleves = x.d.eleves.map(function (e) { var o = {}; Object.keys(e).reverse().forEach(function (k) { o[k] = e[k]; }); return o; }).reverse();
+        egal(P.signatureDonnees(melange), s0, "ordre des lignes et des clés sans effet");
+        // les affectations non épinglées sont remplacées : sans effet ; les épinglées comptent
+        var nonEp = x.res.affectations.filter(function (a) { return !a.epinglee; });
+        egal(P.signatureDonnees(avecAffectations(x.d, nonEp)), s0, "affectations non épinglées sans effet");
+        var ep = JSON.parse(JSON.stringify(nonEp[0])); ep.epinglee = true;
+        vrai(P.signatureDonnees(avecAffectations(x.d, [ep])) !== s0, "affectation épinglée prise en compte");
+        var autre = avecAffectations(x.d, []);
+        autre.aesh = x.d.aesh.map(function (a, i) { if (i) return a; var b = JSON.parse(JSON.stringify(a)); b.quotite = (b.quotite || 0) + 1; return b; });
+        vrai(P.signatureDonnees(autre) !== s0, "quotité modifiée");
+        var reg = avecAffectations(x.d, []);
+        reg.reglages = { budgetOrdres: 5 };
+        vrai(P.signatureDonnees(reg) !== s0, "réglages pris en compte");
+      });
+    });
     t("moteur (exemples) : le renfort de deux AESH fait remonter la couverture (scénario)", function () {
       return Promise.all([charger(), chargerExemples(env, { renfort: true })]).then(function (x) {
         var avant = x[0].res, d = avecAffectations(x[1], avant.affectations), apres = P.proposer(d);

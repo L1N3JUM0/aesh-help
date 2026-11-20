@@ -900,14 +900,16 @@ var PialAffectations = (function () {
 
   // initiales d'une AESH : bouton qui ouvre sa grille (le reste de la case
   // ouvre le menu du créneau)
-  function puceAff(aff) {
+  function puceGrille(aff) { return puceAff(aff, true); }
+  // glissable : dans la grille élève, les initiales se glissent sur un autre créneau
+  function puceAff(aff, glissable) {
     var a = aeshParId(aff.aeshId), conflit = erreursDe(aff).length > 0;
     var titre = nomAesh(a) + (aff.modalite === "mutualise" ? " (mutualisé, " + aff.eleves.length + " élève(s))" : aff.modalite === "periscolaire" ? " (périscolaire)" : " (individuel)")
       + (aff.creneau.semaine !== "toutes" ? " — semaine " + aff.creneau.semaine : "")
       + (conflit ? " — " + erreursDe(aff).map(function (v) { return v.message; }).join(" ") : "")
-      + (a ? " — cliquer pour ouvrir sa grille" : "");
+      + (a ? " — cliquer pour ouvrir sa grille" + (glissable ? ", glisser pour déplacer" : "") : "");
     return '<button type="button" class="puce-aesh' + (conflit ? " conflit" : "") + '" style="background:' + couleurAesh(aff.aeshId) + '" title="' + ech(titre) + '"'
-      + (a ? ' data-grille-aesh="' + ech(a.id) + '"' : " disabled") + '>'
+      + (a ? ' data-grille-aesh="' + ech(a.id) + '"' + (glissable ? ' data-glisser-aesh="' + ech(a.id) + '" data-aff-id="' + ech(aff.id) + '"' : "") : " disabled") + '>'
       + (aff.epinglee ? "🔒" : "") + ech(initialesAesh(a)) + (aff.modalite === "mutualise" ? "+" : "") + (conflit ? " ⚠" : "") + '</button>';
   }
 
@@ -944,13 +946,13 @@ var PialAffectations = (function () {
           if (c.type === "periscolaire") {
             return '<div class="cellule-cours periscolaire' + (c.etat !== "normal" ? " " + c.etat : "") + '" tabindex="0" data-case="' + ech(cle) + '"><div class="cc-mat">' + LIB_PERI[c.periscolaire] + '</div>'
               + (c.etat !== "normal" ? '<div class="cc-etat">' + c.etat + '</div>' : "")
-              + affs.filter(function (a) { return a.modalite === "periscolaire"; }).map(puceAff).join("") + '</div>';
+              + affs.filter(function (a) { return a.modalite === "periscolaire"; }).map(puceGrille).join("") + '</div>';
           }
           var co = c.cours;
           return '<div class="cellule-cours ' + (co.etat !== "normal" ? co.etat : "") + '" tabindex="0" data-case="' + ech(cle) + '">'
             + '<div class="cc-mat">' + ech(co.matiere) + (co.groupe ? " · " + ech(co.groupe) : "") + (co.semaine ? " (sem. " + co.semaine + ")" : "") + '</div>'
             + (co.etat !== "normal" ? '<div class="cc-etat">' + co.etat + '</div>' : "")
-            + affs.filter(function (a) { return a.modalite !== "periscolaire"; }).map(puceAff).join("") + '</div>';
+            + affs.filter(function (a) { return a.modalite !== "periscolaire"; }).map(puceGrille).join("") + '</div>';
         }).join("") + "</td>";
       });
       h += "</tr>";
@@ -968,6 +970,168 @@ var PialAffectations = (function () {
       d.addEventListener("keydown", function (ev) { if (ev.key === "Enter" && ev.target === this) ouvrirMenuCreneau(e, index[this.dataset.case]); });
     });
     brancherPucesAesh($("ge-table"));
+    indexCases = index;
+    rendrePalette(e);
+  }
+
+  /* =============== glisser-déposer (spec §16, F) =============== */
+  // Pointer Events (souris, stylet, tactile), pas l'API HTML drag-and-drop.
+  // Sources : initiales d'une AESH sur un créneau de la grille élève
+  // (déplacer) ou palette des AESH au-dessus de la grille (affecter).
+  // Pendant le glissement, chaque créneau est vert (valide), rouge (motif
+  // au survol) ou gris (sans effet). Un dépôt sur un créneau rouge est
+  // permis, avec une alerte, comme la saisie manuelle. Toute affectation
+  // déposée est épinglée ; l'action est annulable. Le clic garde son rôle.
+  var SEUIL_GLISSER = 6;          // px avant de considérer un glissement
+  var indexCases = {};            // data-case -> case de la grille élève affichée
+  var glisse = null, clicAAnnuler = false;
+
+  // contexte de dépôt (même forme que le menu) pour l'AESH sur la case
+  function contexteDepot(e, cas, source) {
+    var etab = etablissementParId(e.etablissement), mods = modalitesPossibles(e, cas);
+    var modalite = source && mods.indexOf(source.modalite) > -1 ? source.modalite : mods[0];
+    var semaine = cas.type === "cours" && cas.cours.semaine ? cas.cours.semaine
+      : (source && source.creneau.semaine !== "toutes" && etab && etab.alternance ? source.creneau.semaine : "toutes");
+    return { eleve: e, cas: cas, modalite: modalite, semaine: semaine };
+  }
+  // verdict d'une case : {etat: "ok" | "non" | "neutre", motifs, m}
+  function verdictDepot(e, cas, aeshId, source, ctxSans) {
+    var m = contexteDepot(e, cas, source);
+    var ici = affsActuelles(m);
+    if (source && ici.some(function (a) { return a.id === source.id; })) return { etat: "neutre", motifs: ["créneau de départ"], m: m };
+    if (ici.some(function (a) { return a.aeshId === aeshId; })) return { etat: "neutre", motifs: ["déjà affectée sur ce créneau"], m: m };
+    var cand = candidat(aeshId, m);
+    var v = M.violationsSimulees(aeshId, cand.aff, ctxSans, cand.remplaceId);
+    return { etat: v.length ? "non" : "ok", motifs: v.map(function (x) { return x.message; }), m: m };
+  }
+  function debutGlisser(ev, el) {
+    if (ev.button !== undefined && ev.button !== 0) return;
+    var e = eleveParId(eleveOuvert);
+    if (!e) return;
+    var source = el.dataset.affId ? etat.affectations.filter(function (a) { return a.id === el.dataset.affId; })[0] : null;
+    glisse = { el: el, pointerId: ev.pointerId, x0: ev.clientX, y0: ev.clientY, actif: false, eleve: e,
+      aeshId: el.dataset.glisserAesh, source: source || null };
+  }
+  function activerGlisser() {
+    var g = glisse, ctxSans = ctxCourant;
+    if (g.source) {
+      ctxSans = M.contexte({ etablissements: etat.etablissements, eleves: etat.eleves, aesh: etat.aesh, cours: etat.cours,
+        affectations: etat.affectations.filter(function (a) { return a.id !== g.source.id; }), reglages: etat.reglages });
+    }
+    g.actif = true;
+    g.verdicts = {};
+    Array.prototype.forEach.call($("ge-table").querySelectorAll("[data-case]"), function (d) {
+      var cas = indexCases[d.dataset.case];
+      if (!cas) return;
+      var v = verdictDepot(g.eleve, cas, g.aeshId, g.source, ctxSans);
+      g.verdicts[d.dataset.case] = v;
+      d.classList.add("depot-" + v.etat);
+    });
+    try { g.el.setPointerCapture(g.pointerId); } catch (x) { /* ancien navigateur */ }
+    var a = aeshParId(g.aeshId);
+    g.fantome = document.createElement("div");
+    g.fantome.className = "fantome-glisser";
+    g.fantome.innerHTML = '<span class="puce-aesh" style="background:' + couleurAesh(g.aeshId) + '">' + ech(initialesAesh(a)) + '</span> ' + ech(nomAesh(a));
+    g.bulle = document.createElement("div");
+    g.bulle.className = "bulle-glisser";
+    g.bulle.hidden = true;
+    document.body.appendChild(g.fantome);
+    document.body.appendChild(g.bulle);
+    document.body.classList.add("glisser-en-cours");
+  }
+  function caseSous(g, x, y) {
+    var el = document.elementFromPoint(x, y);
+    var d = el && el.closest ? el.closest("#ge-table [data-case]") : null;
+    return d && g.verdicts[d.dataset.case] ? d : null;
+  }
+  function deplacerGlisser(ev) {
+    var g = glisse;
+    if (!g || ev.pointerId !== g.pointerId) return;
+    if (!g.actif) {
+      if (Math.abs(ev.clientX - g.x0) + Math.abs(ev.clientY - g.y0) < SEUIL_GLISSER) return;
+      activerGlisser();
+    }
+    ev.preventDefault();
+    g.fantome.style.left = (ev.clientX + 12) + "px";
+    g.fantome.style.top = (ev.clientY + 12) + "px";
+    var d = caseSous(g, ev.clientX, ev.clientY);
+    if (g.survol && g.survol !== d) g.survol.classList.remove("depot-survol");
+    g.survol = d;
+    if (d) {
+      d.classList.add("depot-survol");
+      var v = g.verdicts[d.dataset.case], a = aeshParId(g.aeshId);
+      g.bulle.className = "bulle-glisser " + v.etat;
+      g.bulle.textContent = v.etat === "ok" ? (g.source ? "Déplacer " : "Affecter ") + nomAesh(a) + " ici"
+        : (v.etat === "non" ? "⚠ " + v.motifs.join(" ") + " Dépôt possible, signalé dans les alertes." : v.motifs.join(" "));
+      g.bulle.style.left = (ev.clientX + 14) + "px";
+      g.bulle.style.top = (ev.clientY + 40) + "px";
+      g.bulle.hidden = false;
+    } else g.bulle.hidden = true;
+    // défilement automatique près des bords de la fenêtre
+    if (ev.clientY < 40) window.scrollBy(0, -12);
+    else if (ev.clientY > window.innerHeight - 40) window.scrollBy(0, 12);
+  }
+  function finGlisser(ev, annule) {
+    var g = glisse;
+    if (!g || (ev && ev.pointerId !== undefined && ev.pointerId !== g.pointerId)) return;
+    glisse = null;
+    if (!g.actif) return;   // simple clic : il garde son rôle
+    clicAAnnuler = true;    // le clic qui suit le relâchement ne doit rien ouvrir
+    setTimeout(function () { clicAAnnuler = false; }, 0);
+    var d = annule ? null : caseSous(g, ev.clientX, ev.clientY);
+    Array.prototype.forEach.call(document.querySelectorAll(".depot-ok, .depot-non, .depot-neutre"), function (x) {
+      x.classList.remove("depot-ok", "depot-non", "depot-neutre", "depot-survol");
+    });
+    g.fantome.remove(); g.bulle.remove();
+    document.body.classList.remove("glisser-en-cours");
+    if (!d) return;
+    var v = g.verdicts[d.dataset.case];
+    if (v.etat === "neutre") return;
+    deposer(g, v);
+  }
+  function deposer(g, v) {
+    var a = aeshParId(g.aeshId), e = g.eleve, ops = [], sans = [];
+    if (g.source) {
+      // retire l'élève de son créneau de départ
+      var restants = g.source.eleves.filter(function (id) { return id !== e.id; });
+      if (restants.length) {
+        var b = JSON.parse(JSON.stringify(g.source));
+        b.eleves = restants; b.epinglee = true; b.origine = "manuel";
+        ops.push({ magasin: "affectations", enregistrer: [avecAlertes(b)] });
+      } else { ops.push({ magasin: "affectations", supprimer: [g.source.id] }); sans.push(g.source.id); }
+    }
+    var r = operationsAffecter(g.aeshId, v.m, sans);
+    ops = ops.concat(r.ops);
+    var ou = v.m.cas.jour + " " + v.m.cas.debut;
+    enregistrerPuisRendre(ops, nomAesh(a) + (g.source ? " déplacée sur " : " affectée sur ") + ou + " pour " + e.nomCourt
+      + (v.etat === "non" ? " — attention : " + v.motifs.join(" ") : " (épinglée)."),
+      (g.source ? "le déplacement de " : "l'affectation de ") + nomAesh(a) + " (" + e.nomCourt + ", " + ou + ")");
+  }
+  document.addEventListener("pointerdown", function (ev) {
+    var el = ev.target.closest && ev.target.closest("[data-glisser-aesh]");
+    if (el && !glisse) debutGlisser(ev, el);
+  });
+  document.addEventListener("pointermove", deplacerGlisser, { passive: false });
+  document.addEventListener("pointerup", function (ev) { finGlisser(ev, false); });
+  document.addEventListener("pointercancel", function (ev) { finGlisser(ev, true); });
+  document.addEventListener("keydown", function (ev) { if (ev.key === "Escape" && glisse) finGlisser({}, true); });
+  // après un glissement, le clic ne doit ni ouvrir la grille de l'AESH ni le menu
+  document.addEventListener("click", function (ev) { if (clicAAnnuler) { ev.stopPropagation(); ev.preventDefault(); clicAAnnuler = false; } }, true);
+  // palette des AESH au-dessus de la grille élève : celles qui
+  // interviennent dans l'établissement de l'élève d'abord
+  function rendrePalette(e) {
+    var ici = [], ailleurs = [];
+    aeshTriees().forEach(function (a) {
+      ((a.etablissements || []).length && a.etablissements.indexOf(e.etablissement) < 0 ? ailleurs : ici).push(a);
+    });
+    function puce(a, loin) {
+      var ch = M.chargeAesh(a, ctxCourant), reste = Math.max(0, ch.quotite - Math.max(ch.A, ch.B));
+      return '<span class="palette-aesh' + (loin ? " loin" : "") + '" data-glisser-aesh="' + ech(a.id) + '" title="Glisser sur un créneau pour affecter ' + ech(nomAesh(a))
+        + (loin ? " (n'intervient pas dans cet établissement)" : "") + '"><span class="puce-aesh" style="background:' + couleurAesh(a.id) + '">' + ech(initialesAesh(a)) + '</span>'
+        + ech(a.prenom + " " + txt(a.nom).charAt(0) + ".") + ' <span class="aide">' + heures(reste) + '</span></span>';
+    }
+    $("ge-palette").innerHTML = etat.aesh.length ? '<span class="aide">Glisser une AESH sur un créneau :</span> ' + ici.map(function (a) { return puce(a, false); }).join("")
+      + (ailleurs.length ? '<span class="palette-sep">autres établissements :</span>' + ailleurs.map(function (a) { return puce(a, true); }).join("") : "") : "";
   }
 
   /* =============== fiche de l'élève (spec §16) =============== */
@@ -1448,41 +1612,47 @@ var PialAffectations = (function () {
   $("voile-creneau").addEventListener("click", function (ev) { if (ev.target === this) fermerMenu(); });
   document.addEventListener("keydown", function (ev) { if (ev.key === "Escape" && menu) fermerMenu(); });
 
-  function creneauMenu() {
-    var c = menu.cas;
-    return { etab: menu.eleve.etablissement, jour: c.jour, debut: c.debut, fin: c.fin, semaine: menu.semaine };
+  // m : contexte d'un créneau {eleve, cas, modalite, semaine} — le menu
+  // ouvert (par défaut) ou un dépôt du glisser-déposer
+  function creneauMenu(m) {
+    m = m || menu;
+    var c = m.cas;
+    return { etab: m.eleve.etablissement, jour: c.jour, debut: c.debut, fin: c.fin, semaine: m.semaine };
   }
   // affectations de l'élève sur ce créneau, toutes semaines confondues
-  function affsActuelles() {
-    var c = menu.cas;
-    return affsEleveCreneau(menu.eleve.id, menu.eleve.etablissement, c.jour, c.debut, c.fin, null).filter(function (a) {
-      return menu.cas.type === "periscolaire" ? a.modalite === "periscolaire" : a.modalite !== "periscolaire";
+  function affsActuelles(m) {
+    m = m || menu;
+    var c = m.cas;
+    return affsEleveCreneau(m.eleve.id, m.eleve.etablissement, c.jour, c.debut, c.fin, null).filter(function (a) {
+      return m.cas.type === "periscolaire" ? a.modalite === "periscolaire" : a.modalite !== "periscolaire";
     });
   }
   // affectation qu'une AESH a déjà sur ce créneau et que l'élève peut rejoindre :
   // mutualisé = même classe, même cours, même groupe (§2.4) ; périscolaire =
   // même temps périscolaire. Sinon l'AESH est simplement « déjà occupée ».
-  function affARejoindre(aeshId) {
-    if (menu.modalite === "individuel") return null;
-    var cr = creneauMenu();
+  function affARejoindre(aeshId, m) {
+    m = m || menu;
+    if (m.modalite === "individuel") return null;
+    var cr = creneauMenu(m);
     return etat.affectations.filter(function (a) {
-      if (!(a.aeshId === aeshId && a.modalite === menu.modalite && a.creneau.etab === cr.etab && a.creneau.jour === cr.jour
+      if (!(a.aeshId === aeshId && a.modalite === m.modalite && a.creneau.etab === cr.etab && a.creneau.jour === cr.jour
         && a.creneau.debut === cr.debut && a.creneau.fin === cr.fin && a.creneau.semaine === cr.semaine
-        && a.eleves.indexOf(menu.eleve.id) < 0)) return false;
-      if (a.modalite === "periscolaire") return a.periscolaire === menu.cas.periscolaire;
+        && a.eleves.indexOf(m.eleve.id) < 0)) return false;
+      if (a.modalite === "periscolaire") return a.periscolaire === m.cas.periscolaire;
       return a.eleves.every(function (id) {
-        return M.coursSurCreneau(id, a.creneau, ctxCourant).some(function (co) { return M.memeCours(co, menu.cas.cours); });
+        return M.coursSurCreneau(id, a.creneau, ctxCourant).some(function (co) { return M.memeCours(co, m.cas.cours); });
       });
     })[0] || null;
   }
-  function candidat(aeshId) {
-    var rejoindre = affARejoindre(aeshId);
+  function candidat(aeshId, m) {
+    m = m || menu;
+    var rejoindre = affARejoindre(aeshId, m);
     return {
       remplaceId: rejoindre ? rejoindre.id : null,
       aff: {
-        creneau: rejoindre ? rejoindre.creneau : creneauMenu(), modalite: menu.modalite,
-        periscolaire: menu.cas.type === "periscolaire" ? menu.cas.periscolaire : undefined,
-        eleves: (rejoindre ? rejoindre.eleves : []).concat([menu.eleve.id])
+        creneau: rejoindre ? rejoindre.creneau : creneauMenu(m), modalite: m.modalite,
+        periscolaire: m.cas.type === "periscolaire" ? m.cas.periscolaire : undefined,
+        eleves: (rejoindre ? rejoindre.eleves : []).concat([m.eleve.id])
       }
     };
   }
@@ -1785,20 +1955,28 @@ var PialAffectations = (function () {
       if (message) ui.toast(message);
     });
   }
-  function avecAlertes(aff) {
+  // sansIds : affectations qui vont disparaître dans la même action
+  function avecAlertes(aff, sansIds) {
     var ctx = M.contexte({ etablissements: etat.etablissements, eleves: etat.eleves, aesh: etat.aesh, cours: etat.cours,
-      affectations: etat.affectations.filter(function (a) { return a.id !== aff.id; }).concat([aff]), reglages: etat.reglages });
+      affectations: etat.affectations.filter(function (a) { return a.id !== aff.id && (sansIds || []).indexOf(a.id) < 0; }).concat([aff]), reglages: etat.reglages });
     aff.alertes = M.verifierAffectation(aff, ctx).map(function (v) { return v.message; });
     return aff;
   }
   function affecter(aeshId) {
-    var cand = candidat(aeshId), ops = [];
+    var r = operationsAffecter(aeshId, menu), a = aeshParId(aeshId);
+    enregistrerPuisRendre(r.ops, nomAesh(a) + " affectée à " + menu.eleve.nomCourt + (r.aff.alertes.length ? " — attention : contrainte non respectée." : "."),
+      "l'affectation de " + nomAesh(a) + " à " + menu.eleve.nomCourt);
+  }
+  // opérations pour affecter une AESH sur le créneau m (épinglée, alertes
+  // calculées sans les affectations sansIds qui disparaissent en même temps)
+  function operationsAffecter(aeshId, m, sansIds) {
+    var cand = candidat(aeshId, m), ops = [];
     var aff;
     if (cand.remplaceId) {
       aff = JSON.parse(JSON.stringify(etat.affectations.filter(function (a) { return a.id === cand.remplaceId; })[0]));
       aff.eleves = cand.aff.eleves;
     } else {
-      aff = { id: nouvelId(), annee: anneeCourante(), version: 0, aeshId: aeshId, creneau: cand.aff.creneau, modalite: menu.modalite,
+      aff = { id: nouvelId(), annee: anneeCourante(), version: 0, aeshId: aeshId, creneau: cand.aff.creneau, modalite: m.modalite,
         eleves: cand.aff.eleves, raisons: [] };
       if (cand.aff.periscolaire) aff.periscolaire = cand.aff.periscolaire;
     }
@@ -1808,13 +1986,13 @@ var PialAffectations = (function () {
     // en individuel, la nouvelle AESH remplace l'affectation individuelle en place
     // (sur les semaines concernées)
     var semaines = M.semainesDe(aff.creneau.semaine, etablissementParId(aff.creneau.etab));
-    var remplacees = menu.modalite === "individuel" ? affsActuelles().filter(function (a) {
-      return a.modalite === "individuel" && M.semainesDe(a.creneau.semaine, etablissementParId(a.creneau.etab)).some(function (s) { return semaines.indexOf(s) > -1; });
+    var remplacees = m.modalite === "individuel" ? affsActuelles(m).filter(function (a) {
+      return a.modalite === "individuel" && (sansIds || []).indexOf(a.id) < 0
+        && M.semainesDe(a.creneau.semaine, etablissementParId(a.creneau.etab)).some(function (s) { return semaines.indexOf(s) > -1; });
     }) : [];
-    ops.push({ magasin: "affectations", supprimer: remplacees.map(function (a) { return a.id; }), enregistrer: [avecAlertes(aff)] });
-    var a = aeshParId(aeshId);
-    enregistrerPuisRendre(ops, nomAesh(a) + " affectée à " + menu.eleve.nomCourt + (aff.alertes.length ? " — attention : contrainte non respectée." : "."),
-      "l'affectation de " + nomAesh(a) + " à " + menu.eleve.nomCourt);
+    var sans = (sansIds || []).concat(remplacees.map(function (a) { return a.id; }));
+    ops.push({ magasin: "affectations", supprimer: remplacees.map(function (a) { return a.id; }), enregistrer: [avecAlertes(aff, sans)] });
+    return { ops: ops, aff: aff };
   }
   function retirer(affId) {
     var aff = etat.affectations.filter(function (a) { return a.id === affId; })[0];

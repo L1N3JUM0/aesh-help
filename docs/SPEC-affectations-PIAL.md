@@ -321,7 +321,7 @@ Onglets existants : Importer, Rapports, Indicateurs, Statistiques, Réglages. Aj
 
 **Ergonomie** :
 - interface pensée pour un ordinateur, utilisable sur tablette ;
-- **clic plutôt que glisser-déposer** (fiable sur tablette) ;
+- le **clic** reste la voie principale (menu du créneau, fiable sur tablette et au clavier) ; **glisser-déposer en plus** (§16) dans la grille élève, en Pointer Events (souris, stylet, tactile ; pas l'API HTML drag-and-drop) : initiales d'une AESH sur un créneau → autre créneau de l'élève (déplacer ; depuis un créneau mutualisé, seul cet élève quitte le groupe), ou palette des AESH au-dessus de la grille → créneau (affecter). Seuil de 6 px avant de glisser : en deçà, c'est un clic. Pendant le glissement, créneaux valides en vert, non valides en rouge avec le motif dans une bulle au survol, sans effet en gris ; dépôt sur un créneau rouge permis avec alerte (comme la saisie manuelle). Même logique que le menu (rejoindre un groupe, remplacer l'individuel en place), épinglage automatique, une action annulable. Échap annule le glissement ;
 - annulation de la dernière action (pile d'annulation de 20 actions minimum).
 
 ### 7.2 Onglet « AESH »
@@ -634,6 +634,7 @@ Ordre de traitement : A (corrections), B (trous), E (grille AESH), puis C (fiche
 8. Plusieurs ordres de départage des AESH, meilleur résultat gardé selon 6 critères ordonnés ; N réglable (12 par défaut) ; progression au-delà de 1,5 s (§5.3.5).
 9. Fiche élève (§7.1) : notification et besoins modifiables, état par matière, commentaire non exporté. Réimport des élèves : l'aperçu liste les élèves dont une valeur modifiée dans l'application (notification, besoins) serait écrasée, avec un choix global « garder la valeur de l'application » / « prendre celle du fichier » (par défaut : garder). Réimport de l'EDT : un cours « normal » dans le fichier garde l'état déjà choisi pour ce cours, sinon prend celui de sa matière.
 10. Fiche AESH avancée de la phase 4 (§7.2) : quotité, établissements, indisponibilités, vœux (−20 par vœu touché), élèves à ne pas affecter (contrainte dure n° 8, §4.4), spécialités reliées à des besoins fonctionnels (table de Réglages, §7.3) ; poids « formation » activé (+0 à +10, proportionnel). Besoins ajoutés à ACCOMP en fin de liste, dans les deux applications.
+11. Glisser-déposer dans la grille élève, en plus du menu au clic (§7.1, Ergonomie). Pas encore dans la grille AESH.
 
 ## 15. Sujets ouverts
 

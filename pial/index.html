@@ -252,6 +252,25 @@ table.grille-edt td.heure{font-variant-numeric:tabular-nums;color:var(--gris);bo
 .puce-aesh.conflit{outline:2px solid var(--sous);outline-offset:1px}
 button.puce-aesh{border:none;font-family:inherit;cursor:pointer;line-height:1.5}
 button.puce-aesh:hover,button.puce-aesh:focus-visible{outline:2px solid var(--encre);outline-offset:1px}
+/* glisser-déposer (grille élève) */
+.ge-palette{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:10px 0}
+.palette-aesh{display:inline-flex;align-items:center;gap:5px;padding:3px 9px 3px 3px;border:1px solid var(--seyes);border-radius:14px;background:#fff;font-size:12.5px;cursor:grab;user-select:none;-webkit-user-select:none;touch-action:none}
+.palette-aesh .puce-aesh{margin:0}
+.palette-aesh.loin{opacity:.55}
+.palette-sep{font-size:11.5px;color:var(--gris);margin-left:8px}
+[data-glisser-aesh]{touch-action:none;user-select:none;-webkit-user-select:none}
+button.puce-aesh[data-glisser-aesh]{cursor:grab}
+body.glisser-en-cours,body.glisser-en-cours *{cursor:grabbing!important;user-select:none!important;-webkit-user-select:none!important}
+.cellule-cours.depot-ok{background:#E3F2EA;border-color:var(--couvert)}
+.cellule-cours.depot-non{background:#FBEDEB;border-color:var(--sous)}
+.cellule-cours.depot-neutre{opacity:.55}
+.cellule-cours.depot-survol{outline:3px solid var(--encre);outline-offset:1px}
+.cellule-cours.depot-ok.depot-survol{outline-color:var(--couvert)}
+.cellule-cours.depot-non.depot-survol{outline-color:var(--sous)}
+.fantome-glisser{position:fixed;z-index:1000;pointer-events:none;background:#fff;border:1px solid var(--seyes);border-radius:14px;padding:3px 10px 3px 3px;font-size:12.5px;box-shadow:0 4px 14px rgba(31,59,99,.25)}
+.bulle-glisser{position:fixed;z-index:1000;pointer-events:none;max-width:320px;background:#fff;border:1px solid var(--seyes);border-left:4px solid var(--gris);border-radius:6px;padding:6px 9px;font-size:12px;box-shadow:0 4px 14px rgba(31,59,99,.2)}
+.bulle-glisser.ok{border-left-color:var(--couvert)}
+.bulle-glisser.non{border-left-color:var(--sous);color:#7A2E26}
 .barre-retour{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;margin:0 0 10px}
 .barre-retour .ga-actions{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
 
@@ -703,8 +722,9 @@ button.ga-eleve:hover,button.ga-eleve:focus-visible{text-decoration-color:var(--
             <p class="chapeau" id="ge-sous-titre"></p>
             <div id="ge-jauges"></div>
             <div id="ge-fiche"></div>
+            <div class="ge-palette" id="ge-palette"></div>
             <div class="tableau-conteneur"><table class="grille-edt" id="ge-table"></table></div>
-            <p class="aide">Cliquez sur un créneau pour changer son état, affecter ou retirer une AESH ; sur les initiales d'une AESH pour ouvrir sa grille. 🔒 = affectation épinglée, ⚠ = contrainte non respectée.</p>
+            <p class="aide">Cliquez sur un créneau pour changer son état, affecter ou retirer une AESH ; sur les initiales d'une AESH pour ouvrir sa grille. Glissez les initiales d'une AESH vers un autre créneau pour la déplacer, ou une AESH de la palette vers un créneau pour l'affecter : vert = possible, rouge = contrainte non respectée (motif au survol ; le dépôt reste possible et sera signalé). Échap annule. 🔒 = affectation épinglée, ⚠ = contrainte non respectée.</p>
           </div>
         </div>
 

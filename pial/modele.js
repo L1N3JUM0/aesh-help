@@ -614,6 +614,13 @@ var PialModele = (function () {
      remplace celle qu'on modifie éventuellement (remplaceId). Renvoie []
      si l'AESH est disponible. */
   function motifsIndisponibilite(aeshId, candidat, ctx, remplaceId) {
+    return violationsSimulees(aeshId, candidat, ctx, remplaceId).filter(function (v) {
+      return ["exclusion", "chevauchement", "deplacement", "quotite", "pause", "indisponibilite", "etablissement"].indexOf(v.code) > -1;
+    });
+  }
+  // Toutes les violations de niveau « erreur » si l'AESH prenait ce
+  // candidat (glisser-déposer : créneau valide ou non, avec le motif)
+  function violationsSimulees(aeshId, candidat, ctx, remplaceId) {
     var simulee = {
       id: "__simulation__", aeshId: aeshId, creneau: candidat.creneau, modalite: candidat.modalite,
       periscolaire: candidat.periscolaire, eleves: candidat.eleves
@@ -623,9 +630,7 @@ var PialModele = (function () {
       etablissements: Object.keys(ctx.etablissements).map(function (k) { return ctx.etablissements[k]; }),
       eleves: ctx.eleves, aesh: ctx.aesh, cours: ctx.cours, affectations: affs, reglages: ctx.reglages
     });
-    return verifierAffectation(simulee, ctx2).filter(function (v) {
-      return v.niveau === "erreur" && ["exclusion", "chevauchement", "deplacement", "quotite", "pause", "indisponibilite", "etablissement"].indexOf(v.code) > -1;
-    });
+    return verifierAffectation(simulee, ctx2).filter(function (v) { return v.niveau === "erreur"; });
   }
 
   /* =============== besoins périscolaires (§5.2) =============== */
@@ -826,7 +831,7 @@ var PialModele = (function () {
     cleMatiere: cleMatiere, etatCoursImporte: etatCoursImporte, matieresEleve: matieresEleve,
     memeCours: memeCours, peutMutualiser: peutMutualiser, coursSurCreneau: coursSurCreneau,
     indisponibilite: indisponibilite, verifierPauseRepas: verifierPauseRepas, verifierAffectation: verifierAffectation,
-    motifsIndisponibilite: motifsIndisponibilite, cleEtatPeriscolaire: cleEtatPeriscolaire,
+    motifsIndisponibilite: motifsIndisponibilite, violationsSimulees: violationsSimulees, cleEtatPeriscolaire: cleEtatPeriscolaire,
     etatPeriscolaire: etatPeriscolaire, creneauxPeriscolaires: creneauxPeriscolaires,
     joursEntre: joursEntre, alertes: alertes, synthese: synthese, comparerAffectations: comparerAffectations,
     operationsInverses: operationsInverses

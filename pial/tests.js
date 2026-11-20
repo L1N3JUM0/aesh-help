@@ -526,6 +526,18 @@ var PialTests = (function () {
       egal([g.quotite, g.indisponibilites, g.voeux, g.elevesExclus, g.ignorerIndispos], [20, ["ven"], { demiJournees: ["mer"] }, ["x"], true]);
       egal(M.fusionEleve(existant, fichier, false, "aesh").quotite, 24);
     });
+    t("glisser-déposer : violations d'une affectation simulée", function () {
+      var f = fixture(M), e = f.e;
+      var l = [aff("aesh|y", f.cA, "lundi", "08:00", "08:55", "individuel", [e.ind])];
+      var ctx = f.ctx(l);
+      // Bob (2 h) déjà à 08:00 : 08:00 pour un autre élève = chevauchement ; mercredi = indisponible ; cours exclu = erreur aussi
+      var v1 = M.violationsSimulees("aesh|y", { creneau: { etab: f.cA.id, jour: "lundi", debut: "08:00", fin: "08:55", semaine: "toutes" }, modalite: "individuel", eleves: [e.mut1.id] }, ctx);
+      vrai(v1.some(function (x) { return x.code === "chevauchement"; }), JSON.stringify(v1));
+      vrai(v1.some(function (x) { return x.code === "notification"; }), "Léa n'a pas d'heures individuelles : signalé aussi (pas seulement les motifs AESH)");
+      egal(M.motifsIndisponibilite("aesh|y", { creneau: { etab: f.cA.id, jour: "lundi", debut: "08:00", fin: "08:55", semaine: "toutes" }, modalite: "individuel", eleves: [e.mut1.id] }, ctx)
+        .map(function (x) { return x.code; }), ["chevauchement"], "le menu ne garde que les motifs propres à l'AESH");
+      egal(M.violationsSimulees("aesh|x", { creneau: { etab: f.cA.id, jour: "lundi", debut: "08:55", fin: "09:50", semaine: "toutes" }, modalite: "individuel", eleves: [e.ind.id] }, ctx), [], "créneau valide");
+    });
     t("synthèse du bandeau", function () {
       var f = fixture(M), e = f.e;
       var s = M.synthese(f.ctx([aff("aesh|x", f.cA, "lundi", "08:00", "08:55", "mutualise", [e.mut1, e.mut2])]));

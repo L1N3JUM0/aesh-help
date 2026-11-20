@@ -723,7 +723,14 @@ var ACCOMP = ["Reformulation des consignes","Secrétaire, scripteur","Aide à la
   "Recentrage sur la tâche","Aide à l'organisation","Prise de notes","Lecture à voix haute",
   "Aide à la manipulation","Mise en confiance, encouragement","Gestion des émotions",
   "Médiation avec l'enseignant","Relations avec les autres élèves","Aménagement des évaluations",
-  "Aide aux déplacements","Gestes du quotidien","Mise en mots, verbalisation"];
+  "Aide aux déplacements","Gestes du quotidien","Mise en mots, verbalisation",
+  // ajoutés le 20/11/2026, toujours en fin de liste (les rapports existants
+  // ne changent pas) ; même liste dans pial/import-fichiers.js
+  "Adaptation des supports visuels","Description orale des documents",
+  "Aide à l'utilisation des outils numériques","Communication en LSF ou LfPC",
+  "Accès aux informations orales","Structuration par supports visuels (pictogrammes, emploi du temps imagé)",
+  "Préparation des transitions et des changements","Aide à l'installation et aux transferts",
+  "Gestion de la fatigue et des pauses"];
 
 var RELATIONS = [
   {v:"Fluide", d:"confiance installée"},
@@ -1098,7 +1105,7 @@ function ouvrirRapport(eid){
   pModalite2 = pastilles($("r-modalite"), MODALITES, {valeur: rapportEleve.modalite||"Individuel"});
   pInvestTendance = pastilles($("r-invest-tendance"), INVEST_TENDANCE, {});
   rendreGroupesInvest();
-  pAccomp    = pastilles($("r-accomp"), ACCOMP.concat(db.accompPerso), {multi:true, valeur: dernier?dernier.accomp:[]});
+  pAccomp    = pastilles($("r-accomp"), ACCOMP.concat(db.accompPerso.filter(function(v){ return ACCOMP.indexOf(v)<0; })), {multi:true, valeur: dernier?dernier.accomp:[]});
   pMatieres2 = pastilles($("r-matieres"), MATIERES.concat(db.matieresPerso), {multi:true,
                  valeur: (rapportEleve.matieres&&rapportEleve.matieres.length)?rapportEleve.matieres:(dernier?dernier.matieres:[])});
   $("r-commentaire").value="";

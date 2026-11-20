@@ -208,6 +208,8 @@ var PialAffectations = (function () {
     if (manquants.length) { ui.toast("Colonne(s) obligatoire(s) non choisie(s) : " + manquants.join(", ") + "."); return; }
     imp.apercu = I.apercu(imp.type, imp.lignes.slice(1), imp.correspondance, { annee: anneeCourante(), elevesConnus: elevesConnus(),
       gererPeriscolaire: !!etat.reglages.gererPeriscolaire, specialites: M.contexte({ reglages: etat.reglages }).reglages.specialites });
+    // identifiants internes (§3) : une fiche existante de même clé garde le sien
+    imp.apercu.valides = M.attribuerIdentifiants(imp.type, imp.apercu.valides, existantsDuType(imp.type), etat.eleves);
     var cleId = "id";
     imp.planMaj = I.planFusion(existantsDuType(imp.type), imp.apercu.valides, cleId, "maj");
     imp.planRemplacer = I.planFusion(existantsDuType(imp.type), imp.apercu.valides, cleId, "remplacer");
@@ -565,9 +567,12 @@ var PialAffectations = (function () {
   /* =============== proposition automatique (§5) =============== */
   var dernierRapport = null; // {rapport, ms, nbRemplacees} : en mémoire, jusqu'au rechargement
   function nbEpinglees() { return etat.affectations.filter(function (a) { return a.epinglee; }).length; }
+  // données du moteur : le moteur départage par l'ordre des clés, pas des
+  // identifiants internes (M.donneesParCles) ; son résultat est traduit en
+  // retour par M.traduireIds(…, vue.versId)
   function donneesMoteur(affectations) {
-    return { annee: anneeCourante(), etablissements: etat.etablissements, eleves: etat.eleves, aesh: etat.aesh, cours: etat.cours,
-      affectations: affectations || etat.affectations, reglages: etat.reglages };
+    return M.donneesParCles({ annee: anneeCourante(), etablissements: etat.etablissements, eleves: etat.eleves, aesh: etat.aesh, cours: etat.cours,
+      affectations: affectations || etat.affectations, reglages: etat.reglages });
   }
   // relance partielle : les épinglées sont gardées, les autres remplacées.
   // Le moteur essaie plusieurs ordres de départage (spec §16), autant que le
@@ -584,7 +589,7 @@ var PialAffectations = (function () {
     bouton.disabled = true;
     bouton.textContent = "Calcul…";
     var budget = M.contexte({ reglages: etat.reglages }).reglages.budgetOrdres * 1000;
-    var donnees = donneesMoteur(), signature = P.signatureDonnees(donnees);
+    var vue = donneesMoteur(), donnees = vue.donnees, signature = P.signatureDonnees(donnees);
     var repris = etat.proposition && etat.proposition.signature === signature && etat.proposition.nbOrdres > 0 ? etat.proposition.nbOrdres : 0;
     var calc = P.plusieursOrdres(donnees, repris || Infinity), t0 = maintenant(), visible = false;
     // part faite : ordres (nombre repris) ou temps et minimum d'ordres (budget)
@@ -604,7 +609,7 @@ var PialAffectations = (function () {
       }
       if (!calc.fini()) { setTimeout(etape, 0); return; }
       $("aff-progression").hidden = true;
-      var res = calc.resultat(), ms = maintenant() - t0;
+      var res = M.traduireIds(calc.resultat(), vue.versId), ms = maintenant() - t0;
       res.rapport.ordres.ms = ms;
       res.rapport.ordres.repris = !!repris;
       var remplacees = etat.affectations.filter(function (a) { return !a.epinglee; }).map(function (a) { return a.id; });
@@ -1913,7 +1918,7 @@ var PialAffectations = (function () {
     // AESH disponibles, puis indisponibles grisées avec le motif
     var dejaLa = {};
     actuelles.forEach(function (a) { dejaLa[a.aeshId] = true; });
-    var dispo = [], indispo = [];
+    var dispo = [], indispo = [], vue = null;
     aeshTriees().forEach(function (a) {
       if (dejaLa[a.id]) return;
       var cand = candidat(a.id);
@@ -1923,7 +1928,8 @@ var PialAffectations = (function () {
       var x = { a: a, motifs: motifs, info: info };
       if (!motifs.length) {
         // score et raisons du moteur (§5.3.5), pour trier les disponibles
-        var ev = P.classerAesh(donneesMoteur(), cand.aff, cand.remplaceId, a.id)[0];
+        if (!vue) vue = donneesMoteur();
+        var ev = M.traduireIds(P.classerAesh(vue.donnees, M.traduireIds(cand.aff, vue.versCle), M.traduireIds(cand.remplaceId, vue.versCle), vue.versCle[a.id])[0], vue.versId);
         if (ev && ev.possible) { x.score = ev.score; x.raisons = ev.raisons; }
       }
       (motifs.length ? indispo : dispo).push(x);

@@ -1392,6 +1392,132 @@ var PialTests = (function () {
     });
   }
 
+  /* =============== identifiants internes et migration v3 -> v4 (spec §3) =============== */
+  function testsMigration(t, P, M, I, env) {
+    t("identifiants : générés, uniques, reconnus", function () {
+      var vus = {};
+      for (var i = 0; i < 500; i++) {
+        var id = M.nouvelIdentifiant(i % 2 ? "ae" : "el");
+        vrai(!vus[id], "doublon " + id);
+        vus[id] = true;
+        vrai(M.estIdentifiantInterne(id) && id.indexOf("|") < 0, id);
+      }
+      vrai(!M.estIdentifiantInterne("2026-2027|lucas m.|5b|x") && !M.estIdentifiantInterne("durand|sophie"), "ancienne forme non reconnue");
+    });
+    t("identifiants : affectation du moteur traduite dans les deux sens", function () {
+      var versId = { "durand|sophie": "ae-1", "2026-2027|lucas m.|5b|x": "el-1" };
+      var versCle = { "ae-1": "durand|sophie", "el-1": "2026-2027|lucas m.|5b|x" };
+      egal(M.idAffectationTraduit("mo|durand|sophie|x|lundi|08:00|09:00|toutes", versId), "mo|ae-1|x|lundi|08:00|09:00|toutes");
+      egal(M.idAffectationTraduit("v3|mo|durand|sophie|x|lundi|08:00|09:00|A", versId), "v3|mo|ae-1|x|lundi|08:00|09:00|A", "copie d'une version");
+      egal(M.idAffectationTraduit("mo|ae-1|x|lundi|08:00|09:00|toutes", versCle), "mo|durand|sophie|x|lundi|08:00|09:00|toutes");
+      egal(M.idAffectationTraduit("m-abc-1", versId), "m-abc-1", "saisie manuelle : inchangée");
+      egal(M.idAffectationTraduit("mo|martin|paul|x", versId), "mo|martin|paul|x", "AESH inconnue : inchangée");
+      egal(M.traduireIds({ "el-1": ["ae-1", 3, "texte"] }, versCle), { "2026-2027|lucas m.|5b|x": ["durand|sophie", 3, "texte"] }, "clés d'objet comprises");
+    });
+    t("migration v3 -> v4 : petit jeu (références, versions, exclusions, orphelins)", function () {
+      var e1 = { id: "2026-2027|lucas m.|5b|x", cle: "lucas m.|5b|x", annee: "2026-2027", nomCourt: "Lucas M." };
+      var e2 = { id: "2026-2027|ines b.|4a|x", cle: "ines b.|4a|x", annee: "2026-2027", nomCourt: "Inès B." };
+      var a1 = { id: "durand|sophie", nom: "Durand", prenom: "Sophie", elevesExclus: [e2.id, "2025-2026|parti|3c|x"] };
+      var co = { eleveId: e1.id, jour: "lundi", debut: "08:00", fin: "09:00", semaine: "", matiere: "Maths", groupe: "" };
+      co.id = M.idCours(co);
+      var aff = { id: "mo|durand|sophie|x|lundi|08:00|09:00|toutes", version: 0, aeshId: a1.id, eleves: [e1.id, e2.id], creneauCle: "x|lundi|08:00|09:00|toutes" };
+      var copie = JSON.parse(JSON.stringify(aff)); copie.id = "v1|" + aff.id; copie.version = 1;
+      var orphelin = { id: "v1|mo|martin|paul|x|mardi|08:00|09:00|toutes", version: 1, aeshId: "martin|paul", eleves: ["2026-2027|parti|5b|x"] };
+      var v = { numero: 1, libelles: { eleves: {}, aesh: {} } };
+      v.libelles.eleves[e1.id] = { nomCourt: "Lucas M." }; v.libelles.eleves["2026-2027|parti|5b|x"] = { nomCourt: "Parti P." };
+      v.libelles.aesh[a1.id] = "Sophie Durand"; v.libelles.aesh["martin|paul"] = "Paul Martin";
+      var m = M.migrerV4({ eleves: [e1, e2], aesh: [a1], cours: [co], affectations: [aff, copie, orphelin], versions: [v] });
+      var n1 = m.eleves[0], n2 = m.eleves[1], na = m.aesh[0];
+      vrai(M.estIdentifiantInterne(n1.id) && M.estIdentifiantInterne(na.id), "identifiants internes");
+      egal([n1.cle, n1.annee, n1.parcours], [e1.cle, e1.annee, n1.id], "clé et année gardées, parcours = identifiant");
+      egal(na.cle, "durand|sophie", "clé de l'AESH");
+      egal(na.elevesExclus, [n2.id, "2025-2026|parti|3c|x"], "exclusions suivies, élève disparu gardé tel quel");
+      egal(m.cours[0].eleveId, n1.id); egal(m.cours[0].id, M.idCours(m.cours[0]), "identifiant du cours recalculé");
+      egal([m.affectations[0].aeshId, m.affectations[0].eleves], [na.id, [n1.id, n2.id]]);
+      egal(m.affectations[0].id, "mo|" + na.id + "|x|lundi|08:00|09:00|toutes");
+      egal(m.affectations[1].id, "v1|mo|" + na.id + "|x|lundi|08:00|09:00|toutes", "copie de version");
+      egal(m.affectations[2], orphelin, "affectation d'une version vers des fiches supprimées : inchangée");
+      egal(Object.keys(m.versions[0].libelles.eleves).sort(), [n1.id, "2026-2027|parti|5b|x"].sort(), "libellés des versions suivis");
+      egal(m.versions[0].libelles.aesh[na.id], "Sophie Durand");
+      egal(m.versions[0].libelles.aesh["martin|paul"], "Paul Martin");
+      egal(e1.id, "2026-2027|lucas m.|5b|x", "entrées non modifiées");
+      var m2 = M.migrerV4(m);
+      egal([m2.eleves, m2.aesh, m2.cours, m2.affectations, m2.versions], [m.eleves, m.aesh, m.cours, m.affectations, m.versions], "idempotente");
+      egal(m2.carte, {});
+    });
+
+    function v3() {
+      // base v3 d'exemple : élèves, AESH, cours, brouillon proposé, une version validée
+      return chargerExemples(env, { renfort: true }).then(function (d) {
+        var res = P.proposer(d);
+        d.affectations = res.affectations.map(function (a, i) { var c = JSON.parse(JSON.stringify(a)); if (i % 5 === 0) c.epinglee = true; return c; });
+        var libelles = { eleves: {}, aesh: {} };
+        d.eleves.forEach(function (e) { libelles.eleves[e.id] = { nomCourt: e.nomCourt, classe: e.classe }; });
+        d.aesh.forEach(function (a) { libelles.aesh[a.id] = a.prenom + " " + a.nom; });
+        d.versions = [{ numero: 1, annee: d.annee, libelles: libelles }];
+        d.affectations = d.affectations.concat(d.affectations.map(function (a) { var c = JSON.parse(JSON.stringify(a)); c.id = "v1|" + a.id; c.version = 1; return c; }));
+        d.aesh[0].elevesExclus = [d.eleves[3].id];
+        return d;
+      });
+    }
+    t("migration v3 -> v4 sur les exemples : rien n'est perdu, tout reste relié", function () {
+      return v3().then(function (d) {
+        var avant = JSON.stringify(d), m = M.migrerV4(d);
+        egal(JSON.stringify(d), avant, "données v3 non modifiées");
+        egal([m.eleves.length, m.aesh.length, m.cours.length, m.affectations.length, m.versions.length],
+          [d.eleves.length, d.aesh.length, d.cours.length, d.affectations.length, d.versions.length], "aucun enregistrement perdu");
+        var ids = {}, cles = {};
+        m.eleves.concat(m.aesh).forEach(function (x) {
+          vrai(M.estIdentifiantInterne(x.id) && !ids[x.id], "identifiant interne unique : " + x.id);
+          ids[x.id] = true;
+        });
+        m.eleves.forEach(function (e) { var k = M.cleFicheEleve(e); vrai(!cles[k], "clé élève unique"); cles[k] = true; egal(e.parcours, e.id); });
+        m.aesh.forEach(function (a) { vrai(!cles[a.cle], "clé AESH unique"); cles[a.cle] = true; });
+        var coursIds = {};
+        m.cours.forEach(function (c) { vrai(ids[c.eleveId], "cours relié à un élève"); vrai(!coursIds[c.id], "identifiant de cours unique"); coursIds[c.id] = true; });
+        var affIds = {};
+        m.affectations.forEach(function (a) {
+          vrai(ids[a.aeshId] && a.eleves.every(function (x) { return ids[x]; }), "affectation reliée : " + a.id);
+          vrai(!affIds[a.id], "identifiant d'affectation unique"); affIds[a.id] = true;
+        });
+        vrai(Object.keys(m.versions[0].libelles.eleves).concat(Object.keys(m.versions[0].libelles.aesh)).every(function (x) { return ids[x]; }), "libellés de la version reliés");
+        egal(m.aesh[0].elevesExclus, [m.carte[d.eleves[3].id]], "élève à ne pas affecter suivi");
+        // retour exact à la forme v3 par les clés
+        var t2 = M.tableCles(m.eleves, m.aesh);
+        egal(M.traduireIds(m.affectations, t2.versCle), d.affectations, "affectations : aller-retour exact");
+        egal(M.traduireIds(m.cours.map(function (c) { var x = JSON.parse(JSON.stringify(c)); x.eleveId = t2.versCle[c.eleveId]; x.id = M.idCours(x); return x; }), {}), d.cours, "cours : aller-retour exact");
+      });
+    });
+    t("migration v3 -> v4 sur les exemples : même proposition et même signature", function () {
+      return v3().then(function (d) {
+        var m = M.migrerV4(d);
+        function base(x, affs) { return { annee: d.annee, etablissements: d.etablissements, eleves: x.eleves, aesh: x.aesh, cours: x.cours, affectations: affs, reglages: d.reglages }; }
+        var brouillonV3 = d.affectations.filter(function (a) { return a.version === 0; }), brouillonV4 = m.affectations.filter(function (a) { return a.version === 0; });
+        var vue = M.donneesParCles(base(m, brouillonV4));
+        egal(P.signatureDonnees(vue.donnees), P.signatureDonnees(base(d, brouillonV3)), "signature identique (le nombre d'ordres mémorisé reste valable)");
+        var r3 = P.proposerMeilleur(base(d, brouillonV3), 3), r4 = M.traduireIds(P.proposerMeilleur(vue.donnees, 3), vue.versId);
+        egal(M.traduireIds(r4.affectations, M.tableCles(m.eleves, m.aesh).versCle), r3.affectations, "même proposition, épinglées comprises");
+        vrai(r4.affectations.every(function (a) { return M.estIdentifiantInterne(a.aeshId) && a.eleves.every(M.estIdentifiantInterne); }), "résultat traduit en identifiants internes");
+        egal(r4.rapport.heures, r3.rapport.heures, "même rapport");
+      });
+    });
+    t("import après migration : une fiche existante garde son identifiant", function () {
+      return v3().then(function (d) {
+        var m = M.migrerV4(d);
+        var eleves = M.attribuerIdentifiants("eleves", d.eleves, m.eleves);
+        egal(eleves.map(function (e) { return [e.id, e.parcours]; }), m.eleves.map(function (e) { return [e.id, e.parcours]; }), "élèves : identifiants et parcours repris");
+        var aesh = M.attribuerIdentifiants("aesh", d.aesh, m.aesh);
+        egal(aesh.map(function (a) { return [a.id, a.cle]; }), m.aesh.map(function (a) { return [a.id, a.cle]; }), "AESH : identifiants repris");
+        egal(M.attribuerIdentifiants("edt", d.cours, m.cours, m.eleves).map(function (c) { return c.id; }), m.cours.map(function (c) { return c.id; }), "cours : mêmes identifiants");
+        var nouveau = JSON.parse(JSON.stringify(d.eleves[0])); nouveau.cle = "zoe z.|5b|x"; nouveau.id = M.idEleve(d.annee, nouveau.cle);
+        var n = M.attribuerIdentifiants("eleves", [nouveau], m.eleves)[0];
+        vrai(M.estIdentifiantInterne(n.id) && !m.eleves.some(function (e) { return e.id === n.id; }) && n.parcours === n.id, "nouvel élève : nouvel identifiant");
+        var planMaj = I.planFusion(m.eleves, eleves, "id", "maj");
+        egal([planMaj.ajouts.length, planMaj.modifies.length], [0, 0], "réimport du même fichier : rien à changer");
+      });
+    });
+  }
+
   /* =============== exécution =============== */
   function executer(env) {
     var tests = [];
@@ -1401,6 +1527,7 @@ var PialTests = (function () {
     if (env.zip) { groupeCourant = "zip"; testsZip(t, env.zip, env); }
     if (env.importFichiers) { groupeCourant = "import"; testsImport(t, env.importFichiers, env.modele, env.zip, env); }
     if (env.moteur && env.importFichiers) { groupeCourant = "moteur"; testsMoteur(t, env.moteur, env.modele, env); }
+    if (env.moteur && env.importFichiers) { groupeCourant = "migration"; testsMigration(t, env.moteur, env.modele, env.importFichiers, env); }
     var bilan = { reussis: 0, echecs: [], ignores: 0, lignes: [] };
     return tests.reduce(function (p, test) {
       return p.then(function () {

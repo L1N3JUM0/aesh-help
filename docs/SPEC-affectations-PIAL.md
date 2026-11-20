@@ -110,9 +110,12 @@ Ajouté automatiquement au premier import qui mentionne un nouvel établissement
 - **Clé élève** : `prenom + " " + initiale_nom + "." | classe | etablissement`, normalisée (casse, accents, espaces). Exemple : `lucas m.|5b|college paul gauthier`. C'est le même format que `nomTransmission()` dans l'application AESH, ce qui permet de rapprocher les rapports.
 - **Minimisation** : à l'import, le nom de famille est réduit à son initiale. Le nom complet n'est jamais stocké. Ce choix est cohérent avec le principe déjà retenu pour les transmissions.
 - **Collision** (deux « Lucas M. » en 5B dans le même établissement) : l'import est bloqué pour ces lignes. Le coordonnateur doit les différencier, par exemple en écrivant « Ma. » et « Mo. » dans la colonne `Nom` : une valeur de `Nom` qui se termine par un point est considérée comme une abréviation déjà choisie et conservée telle quelle (« Lucas Ma. »).
-- **Changement d'année** : comme la classe change, la clé change aussi. Lors du premier import d'une nouvelle année scolaire, proposer de rattacher chaque nouvel élève à un élève de l'année précédente qui a le même prénom, la même initiale, le même établissement et le niveau N+1. Le coordonnateur confirme chaque rapprochement ; c'est lui qui permet de conserver l'historique.
+- **Changement d'année** : comme la classe change, la clé change aussi. Lors du premier import d'une nouvelle année scolaire, proposer de rattacher chaque nouvel élève à un élève de l'année précédente qui a le même prénom, la même initiale, le même établissement et le niveau N+1. Le coordonnateur confirme chaque rapprochement ; c'est lui qui permet de conserver l'historique. Le rapprochement confirmé donnera à la nouvelle fiche le `parcours` de l'ancienne (phase 4) : les fiches d'un même élève sur plusieurs années partagent ce champ, indexé.
 - **Année scolaire** : chaque élève, chaque affectation et chaque version porte une année scolaire (`2026-2027`). Cela permet de réutiliser la purge par année qui existe déjà.
-- **Identifiant de stockage** : la clé élève ne contient pas l'année (un redoublant peut retrouver une classe de même nom). L'enregistrement est donc identifié par `id = annee + "|" + cle` (ex. `2026-2027|lucas m.|5b|college paul gauthier`), la clé seule restant indexée.
+- **Identifiant interne** (schéma v4, §17) : chaque élève et chaque AESH reçoit à sa création un identifiant interne (`el-…`, `ae-…`), jamais modifié. Toutes les références (cours, affectations du brouillon et des versions, élèves à ne pas affecter, libellés des versions) l'utilisent. Changer la classe, l'établissement ou le nom ne modifie donc que des champs.
+- **Clés uniques** : la clé reste l'identité « métier », et elle est unique. Pour un élève, c'est `annee` + `cle`, car la clé ne contient pas l'année : un redoublant peut retrouver une classe de même nom (index unique `anneeCle`). Pour une AESH, c'est `cle` = `nom|prenom` normalisé (index unique). Elle sert à l'import (une ligne dont la clé existe met à jour cette fiche, qui garde son identifiant), au rapprochement des rapports et à la détection des collisions.
+- **Parcours** : `parcours` est l'identifiant commun aux fiches d'un même élève d'une année sur l'autre. Il vaut l'identifiant de la fiche tant qu'aucun rapprochement n'est fait.
+- **Moteur** : il départage les égalités par l'ordre des identifiants (§5.3.5). Il reçoit donc les clés à la place des identifiants internes (forme `annee|cle` et `nom|prenom` des schémas v3 et antérieurs), et son résultat est retraduit. Ses résultats ne dépendent pas des identifiants internes et sont identiques à ceux du schéma v3.
 
 ---
 
@@ -421,7 +424,7 @@ Le commentaire de la fiche élève, les états par matière et les marques « mo
 
 ### 8.4 Sauvegarde sur clé USB
 
-- La sauvegarde existante (`pial-suivi/N`) est étendue aux nouveaux magasins. Le format passe à `pial-suivi/2`, et les fichiers `pial-suivi/1` restent restaurables.
+- La sauvegarde existante (`pial-suivi/N`) est étendue aux nouveaux magasins. Le format passe à `pial-suivi/2`, et les fichiers `pial-suivi/1` restent restaurables. Schéma v4 : `pial-suivi/3`, avec les identifiants internes ; un fichier `pial-suivi/2` est migré à la restauration, comme la base (§9.2).
 - Le fichier est téléchargé, puis le coordonnateur l'enregistre sur sa clé.
 - **Chiffrement optionnel par mot de passe** (recommandé pour une clé USB, qui peut se perdre) : PBKDF2 (≥ 200 000 itérations) puis AES-GCM via `crypto.subtle`. Format `pial-suivi-chiffre/1` = `{format, sel, iv, iterations, donnees_b64}`. Mot de passe perdu = sauvegarde illisible : le dire clairement à l'écran.
 - Rappel de sauvegarde après 30 jours, comme dans l'application AESH.
@@ -455,24 +458,31 @@ L'espace PIAL s'installe comme une application distincte de l'application AESH :
 
 Ajouter **tous** les fichiers de `/pial/` nécessaires à l'application (existants compris : ils n'y figuraient pas) à `FICHIERS` dans `service-worker.js`, et incrémenter `CACHE_VERSION`. Le gestionnaire `fetch` ne met jamais en cache `exemples/` ni `outils/`, et le repli hors ligne d'une navigation sous `/pial/` renvoie `pial/index.html` (et non le `index.html` racine).
 
-### 9.2 IndexedDB : base `pial-suivi`, schéma v3
+### 9.2 IndexedDB : base `pial-suivi`, schéma v4
 
 Migration additive : ne jamais toucher aux magasins `rapports` et `imports`.
 
 | Magasin | keyPath | Index | Contenu |
 |---|---|---|---|
 | `etablissements` | `id` | | paramètres §2.5 |
-| `eleves` | `id` (= `annee\|cle`, §3) | cle, annee, etablissement, classe | élève + notification + options récré/méridienne + `etatsPeriscolaires` (§5.2) + besoins + `commentaire`, `etatsMatieres` ({matière normalisée: état}), `modifiesAppli` ({champ: true}) — fiche élève (§7.1), sans migration |
-| `aesh` | `id` (= `nom\|prenom` normalisé, §2.3) | annee | AESH + paramètres + formations + alias de rapprochement |
-| `cours` | `id` | eleveCle, etablissement | lignes d'EDT élève + état prioritaire/normal/exclu |
+| `eleves` | `id` (interne, §3) | cle, annee, **anneeCle** ([annee, cle], unique), parcours, etablissement, classe | élève + `parcours` + notification + options récré/méridienne + `etatsPeriscolaires` (§5.2) + besoins + `commentaire`, `etatsMatieres` ({matière normalisée: état}), `modifiesAppli` ({champ: true}) — fiche élève (§7.1) |
+| `aesh` | `id` (interne, §3) | annee, **cle** (`nom\|prenom` normalisé, §2.3, unique) | AESH + paramètres + formations + alias de rapprochement |
+| `cours` | `id` (élève interne, jour, début, fin, semaine, matière, groupe) | eleveId, eleveCle, etablissement | lignes d'EDT élève + état prioritaire/normal/exclu |
 | `affectations` | `id` | version, aeshId, creneauCle | brouillon (version = 0) et versions validées |
 | `versions` | `numero` | annee | date d'effet, commentaire, compteurs, libellés des élèves et AESH (§6) ; numérotation globale, jamais remise à zéro d'une année à l'autre |
 | `correspondances` | `type` | | correspondances de colonnes mémorisées |
 | `parametres` | `cle` | | réglages du module (`{cle:"reglages", valeur:{dureeReelle, respecterIndispos, gererPeriscolaire, pauseRepasMin…}}`) — ajouté au schéma (§13) ; un réglage absent prend sa valeur par défaut, sans migration |
 
-Une affectation contient : `{id, annee, version, aeshId, creneau{etab,jour,debut,fin,semaine}, creneauCle, modalite, eleves:[cle…], epinglee, origine:"moteur"|"manuel", raisons:[…], alertes:[…]}`. `creneauCle` est un champ calculé (`etab|jour|debut|fin|semaine`) qui alimente l'index du même nom ; `eleves` contient les identifiants de stockage (`annee|cle`).
+Une affectation contient : `{id, annee, version, aeshId, creneau{etab,jour,debut,fin,semaine}, creneauCle, modalite, eleves:[cle…], epinglee, origine:"moteur"|"manuel", raisons:[…], alertes:[…]}`. `creneauCle` est un champ calculé (`etab|jour|debut|fin|semaine`) qui alimente l'index du même nom ; `eleves` contient les identifiants internes des élèves, `aeshId` celui de l'AESH. L'identifiant d'une affectation du moteur, `mo|<AESH>|<créneau>`, contient l'identifiant interne de l'AESH.
 
 La migration v2 → v3 gère le blocage par un autre onglet ouvert : `onblocked` affiche un message demandant de fermer les autres onglets, `onversionchange` ferme la connexion.
+
+**Migration v3 → v4** (identifiants internes, §3, §17) :
+
+- **Avant :** au démarrage, si la base v3 contient des élèves, des AESH ou des affectations, une confirmation renforcée donne les nombres concernés. Elle propose « Exporter une sauvegarde » : la base est lue dans sa version actuelle, au format `pial-suivi/2`. Rien n'est modifié avant « Mettre à niveau ». Annuler laisse la base en v3 et l'espace fermé, avec un bandeau qui l'explique.
+- **Pendant :** dans la transaction de mise à niveau, `eleves`, `aesh`, `cours`, `affectations` et `versions` sont relus, traduits par `PialModele.migrerV4`, puis réécrits. Une erreur abandonne la transaction, et la base reste en v3. Une trace est écrite dans `parametres` (`migrationV4` : date et nombres).
+- **Après :** `rapports`, `imports`, `etablissements` et `correspondances` ne sont pas modifiés. Les références à une fiche supprimée avant la migration, qui ne subsistent que dans des versions, restent telles quelles ; la version garde son libellé.
+- **Tests :** migration du jeu d'exemple sous Node (tout reste relié, aller-retour exact, même proposition et même signature, réimport sans changement) et dans le navigateur.
 
 ### 9.3 Contraintes rappelées
 
@@ -637,6 +647,16 @@ Ordre de traitement : A (corrections), B (trous), E (grille AESH), puis C (fiche
 11. Glisser-déposer dans la grille élève, en plus du menu au clic (§7.1, Ergonomie). Pas encore dans la grille AESH.
 12. Fiches élève et AESH : **enregistrement automatique** (plus de bouton « Enregistrer la fiche »), retenu plutôt qu'un avertissement avant chaque action qui redessine la fiche : ces actions sont trop nombreuses (proposition, annulation, menu, glisser-déposer, état d'une matière, navigation) pour toutes les intercepter. Une case ou une liste s'enregistre au changement, un champ texte à la sortie ou après 0,8 s sans frappe. Chaque modification s'annule avec « ↶ Annuler » ; une frappe continue dans un même champ compte pour une seule action (pile de 20). Une saisie non encore enregistrée (frappe en cours, valeur invalide comme une plage horaire incomplète) est gardée à tout redessin de la fiche, y compris après un passage par une autre fiche ; une ligne d'état dit « Enregistré automatiquement à … » ou « Non enregistré : … ». Quitter la page avec une saisie en attente ou invalide déclenche l'avertissement du navigateur.
 13. Multi-départ à budget de temps (§5.3.5) : temps de recherche réglable, minimum 4 ordres, nombre essayé mémorisé avec la proposition (et la version validée) pour la reproductibilité, affiché dans le rapport.
+
+## 17. Décisions du 20/11/2026 (onglets « Élèves » et « AESH »)
+
+1. **Identifiant interne stable** pour les élèves et les AESH, plutôt qu'un recalcul en cascade quand la clé change (§3). Les clés restent des index uniques (import, rapprochement des rapports, collisions). Migration IndexedDB v3 → v4 avec une sauvegarde proposée avant, et des tests sur les exemples (§9.2). Le champ `parcours` prépare le suivi d'une année sur l'autre (phase 4).
+2. Archivage à une date passée ou du jour seulement. Un départ prévu sera traité avec les absences datées (second temps).
+3. Classe absente du référentiel : choix « Autre classe… » dans la liste, qui l'ajoute au référentiel.
+4. Saisie rapide : les lignes existantes sont modifiables, avec l'enregistrement automatique.
+5. Expérience tirée des rapports sur la fiche AESH : phase 4.
+6. Ouverture de l'espace PIAL sur le dernier onglet utilisé (Élèves par défaut).
+7. Absences des AESH (absence datée avec remplacement) et saisie des emplois du temps dans l'application : propositions retenues, à coder dans un second temps (EDT : en attente de la réponse sur les exports Pronote).
 
 ## 15. Sujets ouverts
 

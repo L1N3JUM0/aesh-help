@@ -42,7 +42,8 @@ function lireFichierTexte(fichier) {
    explicite, avec un libellé de bouton non ambigu). "extra" (optionnel :
    {libelle, cb}) ajoute un troisième bouton qui déclenche une action (ex.
    export de sauvegarde) SANS fermer la modale, pour laisser l'utilisateur
-   confirmer ou annuler ensuite en connaissance de cause. */
+   confirmer ou annuler ensuite en connaissance de cause. extra.annuler
+   (optionnel) est appelé si l'utilisateur annule. */
 function confirmationForte(message, libelleBouton, cb, extra) {
   var voile = $("voile-confirmation"), btnOk = $("modale-confirmer"), btnAnnuler = $("modale-annuler"), btnExtra = $("modale-extra");
   $("modale-message").textContent = message;
@@ -57,7 +58,7 @@ function confirmationForte(message, libelleBouton, cb, extra) {
     btnExtra.removeEventListener("click", surExtra);
   }
   function surConfirmer() { nettoyer(); cb(); }
-  function surAnnuler() { nettoyer(); }
+  function surAnnuler() { nettoyer(); if (extra && extra.annuler) extra.annuler(); }
   function surExtra() { extra.cb(); }
   btnOk.addEventListener("click", surConfirmer);
   btnAnnuler.addEventListener("click", surAnnuler);
@@ -881,16 +882,33 @@ $("form-changer-mdp").addEventListener("submit", function (evt) {
 
 /* =============== réglages : sauvegarde / restauration =============== */
 /* pial-suivi/2 = pial-suivi/1 + magasins du module Affectations (élèves,
-   AESH, emplois du temps, affectations, versions...). Les fichiers
-   pial-suivi/1 restent restaurables : ils ne remplacent alors que les
-   rapports et l'historique des imports. */
+   AESH, emplois du temps, affectations, versions...). pial-suivi/3 : même
+   contenu, avec les identifiants internes des élèves et des AESH (schéma
+   v4) ; un fichier pial-suivi/2 est migré à la restauration
+   (PialModele.migrerV4). Les fichiers pial-suivi/1 restent restaurables :
+   ils ne remplacent alors que les rapports et l'historique des imports. */
+var FORMATS_SAUVEGARDE = ["pial-suivi/1", "pial-suivi/2", "pial-suivi/3"];
+function telechargerSauvegarde(donnees, format) {
+  var contenu = { format: format, exporte_le: isoJour(new Date()) };
+  Object.keys(donnees).forEach(function (k) { contenu[k] = donnees[k]; });
+  telecharger("sauvegarde-pial-" + isoJour(new Date()) + ".json", JSON.stringify(contenu, null, 2), "application/json");
+  toast("Sauvegarde téléchargée.");
+}
 function exporterSauvegarde() {
-  return PialDB.exporterTout().then(function (donnees) {
-    var contenu = { format: "pial-suivi/2", exporte_le: isoJour(new Date()) };
-    Object.keys(donnees).forEach(function (k) { contenu[k] = donnees[k]; });
-    telecharger("sauvegarde-pial-" + isoJour(new Date()) + ".json", JSON.stringify(contenu, null, 2), "application/json");
-    toast("Sauvegarde téléchargée.");
-  });
+  return PialDB.exporterTout().then(function (donnees) { telechargerSauvegarde(donnees, "pial-suivi/3"); });
+}
+// avant la mise à niveau v3 -> v4 : la base est lue dans sa version actuelle
+function exporterSauvegardeAvantMiseANiveau() {
+  return PialDB.exporterAvantMiseANiveau().then(function (donnees) { telechargerSauvegarde(donnees, "pial-suivi/2"); },
+    function () { toast("La sauvegarde n'a pas pu être lue."); });
+}
+// sauvegarde antérieure au schéma v4 : identifiants internes attribués
+function migrerSauvegarde(donnees) {
+  if (donnees.format !== "pial-suivi/2" || !Array.isArray(donnees.eleves)) return donnees;
+  var m = PialModele.migrerV4(donnees), out = {};
+  Object.keys(donnees).forEach(function (k) { out[k] = donnees[k]; });
+  ["eleves", "aesh", "cours", "affectations", "versions"].forEach(function (k) { if (Array.isArray(donnees[k])) out[k] = m[k]; });
+  return out;
 }
 $("btn-exporter-sauvegarde").addEventListener("click", exporterSauvegarde);
 $("btn-restaurer-sauvegarde").addEventListener("click", function () { $("entree-restauration").click(); });
@@ -900,7 +918,7 @@ $("entree-restauration").addEventListener("change", function () {
     var donnees;
     try { donnees = JSON.parse(texte); } catch (e) { toast("Ce fichier n'est pas une sauvegarde valide."); return; }
     if (!donnees || !Array.isArray(donnees.rapports)
-      || (donnees.format && donnees.format !== "pial-suivi/1" && donnees.format !== "pial-suivi/2")) {
+      || (donnees.format && FORMATS_SAUVEGARDE.indexOf(donnees.format) < 0)) {
       toast("Ce fichier n'est pas une sauvegarde valide.");
       return;
     }
@@ -917,7 +935,7 @@ $("entree-restauration").addEventListener("change", function () {
       message + ". Cette action est irréversible.",
       "Remplacer",
       function () {
-        PialDB.remplacerTout(donnees).then(function () {
+        PialDB.remplacerTout(migrerSauvegarde(donnees)).then(function () {
           return Promise.all([rafraichirCache(), rafraichirImports(), PialAffectations.recharger()]);
         }).then(function () {
           initialiserFiltres(); initialiserPurge(); rendreRapports(); rendreImports(); rendreIndicateurs();
@@ -926,7 +944,7 @@ $("entree-restauration").addEventListener("change", function () {
           PialAffectations.viderAnnulation();
           if (typeof PialAffectations.surChangement === "function") PialAffectations.surChangement();
           toast("Sauvegarde restaurée.");
-        });
+        }).catch(function () { toast("La sauvegarde n'a pas pu être restaurée : les données actuelles sont inchangées."); });
       }
     );
   });
@@ -974,15 +992,36 @@ PialDB.surVersionPerimee = function () {
 };
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function () {});
 rendreStockage();
-Promise.all([rafraichirCache(), rafraichirImports(), PialAffectations.recharger()]).then(function () {
-  PialAffectations.initialiser({ toast: toast, confirmationForte: confirmationForte, telecharger: telecharger, vue: vue, exporterSauvegarde: exporterSauvegarde });
-  initialiserFiltres();
-  initialiserPurge();
-  rendreRapports();
-  rendreImports();
-  rendreIndicateurs();
-  initialiserFiltresStats();
-  rendreStats();
+function demarrer(migration) {
+  return Promise.all([rafraichirCache(), rafraichirImports(), PialAffectations.recharger()]).then(function () {
+    PialAffectations.initialiser({ toast: toast, confirmationForte: confirmationForte, telecharger: telecharger, vue: vue, exporterSauvegarde: exporterSauvegarde });
+    initialiserFiltres();
+    initialiserPurge();
+    rendreRapports();
+    rendreImports();
+    rendreIndicateurs();
+    initialiserFiltresStats();
+    rendreStats();
+    if (migration) toast("Base mise à niveau : " + PialAffectations.compteurs().eleves + " élève(s) et " + PialAffectations.compteurs().aesh + " AESH conservés.");
+  }, function () {
+    $("bandeau-base").textContent = "La base de données n'a pas pu être ouverte. Rechargez la page ; si le problème persiste, restaurez une sauvegarde.";
+    $("bandeau-base").hidden = false;
+  });
+}
+/* mise à niveau v3 -> v4 (identifiants internes, spec §3) : une sauvegarde
+   est proposée avant ; la base n'est modifiée qu'après « Mettre à niveau » */
+PialDB.etatMiseANiveau().then(function (info) {
+  if (!info.aMigrer) { demarrer(false); return; }
+  var c = info.compteurs;
+  confirmationForte("Mise à niveau de la base de l'espace PIAL : chaque élève et chaque AESH reçoit un identifiant interne qui ne changera plus, "
+    + "pour pouvoir ensuite changer une classe, un établissement ou un nom sans rien perdre. Sont concernés " + c.eleves + " élève(s), " + c.aesh + " AESH, "
+    + c.affectations + " affectation(s) (brouillon et versions) et " + c.versions + " version(s) validée(s) ; les rapports et l'historique des imports ne sont pas modifiés. "
+    + "Exportez une sauvegarde avant de continuer : elle reste restaurable après la mise à niveau.",
+    "Mettre à niveau", function () { demarrer(true); },
+    { libelle: "Exporter une sauvegarde", cb: exporterSauvegardeAvantMiseANiveau, annuler: function () {
+      $("bandeau-base").textContent = "Mise à niveau de la base non effectuée : l'espace PIAL ne peut pas s'ouvrir sans elle. Rechargez la page pour la proposer à nouveau.";
+      $("bandeau-base").hidden = false;
+    } });
 });
 
 })();

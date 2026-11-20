@@ -483,7 +483,7 @@ var PialImport = (function () {
     return {
       avertissements: avert,
       objet: {
-        id: [eleveId, jour, debut, fin, semaine, M.normaliser(v.matiere), M.normaliser(v.groupe)].join("|"),
+        id: M.idCours({ eleveId: eleveId, jour: jour, debut: debut, fin: fin, semaine: semaine, matiere: v.matiere, groupe: v.groupe }),
         annee: options.annee, eleveId: eleveId, eleveCle: cle, etablissement: etabId, etablissementNom: v.etablissement.replace(/\s+/g, " "),
         classe: v.classe.replace(/\s+/g, " "), jour: jour, debut: debut, fin: fin, matiere: v.matiere, semaine: semaine, groupe: v.groupe, etat: etat
       }

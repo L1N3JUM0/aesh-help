@@ -12,12 +12,16 @@
        etablissements, eleves, aesh, cours, affectations, versions,
        correspondances, parametres. Migration additive : rapports et
        imports ne sont jamais touchés.
+     - v4 (spec §3, §9.2) : identifiant interne stable des élèves et des
+       AESH (PialModele.migrerV4, dans la transaction de mise à niveau) ;
+       index uniques eleves.anneeCle ([annee, cle]) et aesh.cle, index
+       eleves.parcours. Rapports et imports ne sont pas touchés.
    API façon promesses, exposée sur l'objet global PialDB.
    ===================================================================== */
 var PialDB = (function () {
 
   var NOM_BASE = "pial-suivi";
-  var VERSION = 3;
+  var VERSION = 4;
   var promesseBase = null;
 
   // magasins du module Affectations : {nom: [keyPath, [index...]]}
@@ -32,6 +36,37 @@ var PialDB = (function () {
     parametres: ["cle", []]
   };
   var NOMS_V3 = Object.keys(MAGASINS_V3);
+  // magasins dont les identifiants changent en v4
+  var MIGRES_V4 = ["eleves", "aesh", "cours", "affectations", "versions"];
+
+  /* v3 -> v4, dans la transaction de mise à niveau : tout est relu, traduit
+     par PialModele.migrerV4, puis réécrit. Une erreur abandonne la
+     transaction : la base reste en v3, intacte. */
+  function migrerVersV4(t) {
+    var lu = {}, reste = MIGRES_V4.length;
+    MIGRES_V4.forEach(function (nom) {
+      var r = t.objectStore(nom).getAll();
+      r.onsuccess = function () {
+        lu[nom] = r.result;
+        if (--reste) return;
+        if (typeof PialModele === "undefined") { t.abort(); return; }
+        var m = PialModele.migrerV4(lu);
+        MIGRES_V4.forEach(function (n) {
+          var s = t.objectStore(n);
+          s.clear();
+          m[n].forEach(function (o) { s.put(o); });
+        });
+        t.objectStore("parametres").put({ cle: "migrationV4", valeur: { date: new Date().toISOString(),
+          eleves: m.eleves.length, aesh: m.aesh.length, cours: m.cours.length, affectations: m.affectations.length, versions: m.versions.length } });
+      };
+    });
+  }
+  function indexV4(t) {
+    var el = t.objectStore("eleves"), ae = t.objectStore("aesh");
+    if (!el.indexNames.contains("anneeCle")) el.createIndex("anneeCle", ["annee", "cle"], { unique: true });
+    if (!el.indexNames.contains("parcours")) el.createIndex("parcours", "parcours", { unique: false });
+    if (!ae.indexNames.contains("cle")) ae.createIndex("cle", "cle", { unique: true });
+  }
 
   function ouvrir() {
     if (promesseBase) return promesseBase;
@@ -73,6 +108,11 @@ var PialDB = (function () {
           var m = db.createObjectStore(nom, { keyPath: MAGASINS_V3[nom][0] });
           MAGASINS_V3[nom][1].forEach(function (idx) { m.createIndex(idx, idx, { unique: false }); });
         });
+        // v3 -> v4 : identifiants internes (une base plus ancienne n'a pas
+        // encore d'élève ni d'AESH : seuls les index sont ajoutés)
+        var t = evt.target.transaction;
+        if (evt.oldVersion === 3) migrerVersV4(t);
+        indexV4(t);
       };
       req.onsuccess = function () {
         var db = req.result;
@@ -307,6 +347,44 @@ var PialDB = (function () {
     });
   }
 
+  /* ---------- avant la mise à niveau v3 -> v4 ---------- */
+
+  // ouvre la base dans sa version actuelle, sans la mettre à niveau
+  function ouvrirSansMiseANiveau() {
+    return new Promise(function (resolve, reject) {
+      var req = indexedDB.open(NOM_BASE);
+      req.onsuccess = function () { resolve(req.result); };
+      req.onerror = function () { reject(req.error); };
+    });
+  }
+  /* la base doit-elle être migrée (v3 avec des élèves, des AESH ou des
+     affectations) ? Résout avec {aMigrer, version, compteurs} ; ne
+     modifie rien (une base absente est créée vide, sans magasin). */
+  function etatMiseANiveau() {
+    return ouvrirSansMiseANiveau().then(function (db) {
+      return new Promise(function (resolve) {
+        var v = db.version, noms = ["eleves", "aesh", "affectations", "versions"];
+        if (v !== 3 || noms.some(function (n) { return !db.objectStoreNames.contains(n); })) { db.close(); resolve({ aMigrer: false, version: v }); return; }
+        var t = db.transaction(noms, "readonly"), c = {};
+        noms.forEach(function (n) { var r = t.objectStore(n).count(); r.onsuccess = function () { c[n] = r.result; }; });
+        t.oncomplete = function () { db.close(); resolve({ aMigrer: c.eleves + c.aesh + c.affectations > 0, version: v, compteurs: c }); };
+        t.onabort = function () { db.close(); resolve({ aMigrer: false, version: v }); };
+      });
+    }, function () { return { aMigrer: false }; });
+  }
+  // tout le contenu de la base dans sa version actuelle (sauvegarde avant migration)
+  function exporterAvantMiseANiveau() {
+    return ouvrirSansMiseANiveau().then(function (db) {
+      var noms = ["rapports", "imports"].concat(NOMS_V3).filter(function (n) { return db.objectStoreNames.contains(n); });
+      return new Promise(function (resolve, reject) {
+        var t = db.transaction(noms, "readonly"), out = {};
+        noms.forEach(function (n) { var r = t.objectStore(n).getAll(); r.onsuccess = function () { out[n] = r.result; }; });
+        t.oncomplete = function () { db.close(); resolve(out); };
+        t.onabort = function () { db.close(); reject(t.error); };
+      });
+    });
+  }
+
   // remplace intégralement le contenu de la base (pas de fusion). Un
   // magasin absent de "donnees" (sauvegarde pial-suivi/1, antérieure au
   // module Affectations) est laissé tel quel plutôt que vidé.
@@ -335,6 +413,8 @@ var PialDB = (function () {
     purgerAvecPredicat: purgerAvecPredicat,
     purgerParEleve: purgerParEleve,
     exporterTout: exporterTout,
+    etatMiseANiveau: etatMiseANiveau,
+    exporterAvantMiseANiveau: exporterAvantMiseANiveau,
     remplacerTout: remplacerTout
   };
 })();

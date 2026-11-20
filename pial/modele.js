@@ -11,10 +11,11 @@
    Vocabulaire des objets manipulés :
    - établissement : {id, nom, type, alternance, recreations:[{debut,fin}],
        meridienne:{debut,fin}, pauseRepas:{debut,fin}, joursOuvres:[...]}
-   - élève : {id, cle, annee, nomCourt, classe, etablissement (id),
-       heuresInd, heuresMut, recreation, meridienne, etatsPeriscolaires,
-       besoins, finNotif...}
-   - AESH : {id, nom, prenom, quotite, etablissements:[id] (vide = tous),
+   - élève : {id (interne, « el-… »), cle, annee, parcours, nomCourt, classe,
+       etablissement (id), heuresInd, heuresMut, recreation, meridienne,
+       etatsPeriscolaires, besoins, finNotif...}
+   - AESH : {id (interne, « ae-… »), cle (nom|prenom), nom, prenom, quotite,
+       etablissements:[id] (vide = tous),
        indisponibilites:["mer","ven-pm"], ignorerIndispos, formations}
    - cours : {id, eleveId, etablissement, classe, jour, debut, fin,
        matiere, semaine:"A"|"B"|"", groupe, etat}
@@ -94,6 +95,153 @@ var PialModele = (function () {
   function idEleve(annee, cle) { return annee + "|" + cle; }
   function idAesh(nom, prenom) { return normaliser(nom) + "|" + normaliser(prenom); }
   function idEtablissement(nom) { return normaliser(nom); }
+
+  /* =============== identifiants internes (schéma v4, spec §3) ===============
+     Depuis le schéma v4, un élève et une AESH ont un identifiant interne
+     généré à la création et jamais modifié (« el-… », « ae-… », sans « | »).
+     Les clés restent des index uniques : annee|cle pour un élève
+     (idEleve), nom|prenom normalisés pour une AESH (champ cle, idAesh).
+     Elles servent à l'import, au rapprochement des rapports et à la
+     détection des collisions ; changer de classe, d'établissement ou de nom
+     ne modifie que des champs. parcours : identifiant commun aux fiches
+     d'un même élève d'une année sur l'autre (phase 4) ; vaut l'identifiant
+     de la fiche tant qu'aucun rapprochement n'est fait. */
+  var compteurIdentifiants = 0;
+  function nouvelIdentifiant(prefixe) {
+    compteurIdentifiants++;
+    return prefixe + "-" + Date.now().toString(36) + compteurIdentifiants.toString(36) + "-" + Math.floor(Math.random() * 2176782336).toString(36);
+  }
+  function estIdentifiantInterne(id) { return /^(el|ae)-[0-9a-z-]+$/.test(txt(id)); }
+  function cleAesh(a) { return idAesh(a.nom, a.prenom); }
+  // clé unique d'une fiche élève, avec l'année (ancienne forme de l'identifiant)
+  function cleFicheEleve(e) { return idEleve(e.annee, e.cle); }
+  function idCours(c) { return [c.eleveId, c.jour, c.debut, c.fin, c.semaine || "", normaliser(c.matiere), normaliser(c.groupe)].join("|"); }
+  function copie(o) { var c = {}; Object.keys(o).forEach(function (k) { c[k] = o[k]; }); return c; }
+  function possede(carte, k) { return Object.prototype.hasOwnProperty.call(carte, k); }
+  // identifiant d'une affectation du moteur : [vN|]mo|<AESH>|<créneau>.
+  // L'AESH en fait partie : on la traduit avec la carte (identifiant interne
+  // sans « | », ou clé nom|prenom avec un « | »).
+  function idAffectationTraduit(id, carte) {
+    var m = /^((?:v\d+\|)?mo\|)(.*)$/.exec(txt(id));
+    if (!m) return id;
+    var p = m[2].split("|");
+    for (var n = 1; n <= 2 && n < p.length; n++) {
+      var k = p.slice(0, n).join("|");
+      if (possede(carte, k)) return m[1] + carte[k] + "|" + p.slice(n).join("|");
+    }
+    return id;
+  }
+  // table de passage identifiant interne <-> clé, pour les élèves et AESH donnés
+  function tableCles(eleves, aesh) {
+    var t = { versCle: {}, versId: {} };
+    (eleves || []).forEach(function (e) { var k = cleFicheEleve(e); t.versCle[e.id] = k; t.versId[k] = e.id; });
+    (aesh || []).forEach(function (a) { var k = a.cle || cleAesh(a); t.versCle[a.id] = k; t.versId[k] = a.id; });
+    return t;
+  }
+  // traduit en profondeur les chaînes (et clés d'objet) qui sont des identifiants
+  function traduireIds(x, carte) {
+    if (typeof x === "string") return possede(carte, x) ? carte[x] : idAffectationTraduit(x, carte);
+    if (Array.isArray(x)) return x.map(function (v) { return traduireIds(v, carte); });
+    if (x && typeof x === "object") {
+      var o = {};
+      Object.keys(x).forEach(function (k) { o[possede(carte, k) ? carte[k] : k] = traduireIds(x[k], carte); });
+      return o;
+    }
+    return x;
+  }
+  /* données du moteur avec les clés à la place des identifiants internes :
+     le moteur départage les égalités par l'ordre des identifiants (spec
+     §5.3.5) ; lui donner les clés garde cet ordre (et les résultats)
+     indépendant des identifiants internes, identique au schéma v3.
+     Renvoie {donnees, versId} : versId sert à traduire le résultat
+     (traduireIds(resultat, versId)). */
+  function donneesParCles(d) {
+    var t = tableCles(d.eleves, d.aesh), vc = t.versCle;
+    function id(x) { return possede(vc, x) ? vc[x] : x; }
+    var out = copie(d);
+    out.eleves = (d.eleves || []).map(function (e) { var c = copie(e); c.id = id(e.id); delete c.parcours; return c; });
+    out.aesh = (d.aesh || []).map(function (a) {
+      var c = copie(a); c.id = id(a.id); delete c.cle;
+      if (a.elevesExclus) c.elevesExclus = a.elevesExclus.map(id);
+      return c;
+    });
+    out.cours = (d.cours || []).map(function (co) { var c = copie(co); c.eleveId = id(co.eleveId); c.id = idCours(c); return c; });
+    out.affectations = (d.affectations || []).map(function (a) {
+      var c = copie(a); c.aeshId = id(a.aeshId); c.eleves = (a.eleves || []).map(id); c.id = idAffectationTraduit(a.id, vc);
+      return c;
+    });
+    return { donnees: out, versId: t.versId, versCle: vc };
+  }
+  /* migration v3 -> v4 (IndexedDB, et restauration d'une sauvegarde
+     pial-suivi/2). d : {eleves, aesh, cours, affectations, versions}.
+     Chaque élève et chaque AESH reçoit un identifiant interne ; toutes les
+     références suivent (cours, affectations du brouillon et des versions,
+     élèves à ne pas affecter, libellés des versions). Une référence à un
+     élève ou une AESH supprimé reste telle quelle (la version garde son
+     libellé). Idempotente : une donnée déjà migrée n'est pas modifiée.
+     Renvoie les mêmes listes, plus carte {ancien id: nouvel id}. */
+  function migrerV4(d) {
+    var carte = {};
+    var eleves = (d.eleves || []).map(function (e) {
+      var c = JSON.parse(JSON.stringify(e));
+      if (!estIdentifiantInterne(c.id)) { c.id = nouvelIdentifiant("el"); carte[e.id] = c.id; }
+      if (!c.parcours) c.parcours = c.id;
+      return c;
+    });
+    var aesh = (d.aesh || []).map(function (a) {
+      var c = JSON.parse(JSON.stringify(a));
+      if (!estIdentifiantInterne(c.id)) { c.id = nouvelIdentifiant("ae"); carte[a.id] = c.id; }
+      if (!c.cle) c.cle = cleAesh(c);
+      return c;
+    });
+    function id(x) { return possede(carte, x) ? carte[x] : x; }
+    aesh.forEach(function (a) { if (a.elevesExclus) a.elevesExclus = a.elevesExclus.map(id); });
+    var cours = (d.cours || []).map(function (co) {
+      var c = JSON.parse(JSON.stringify(co));
+      c.eleveId = id(c.eleveId); c.id = idCours(c);
+      return c;
+    });
+    var affectations = (d.affectations || []).map(function (a) {
+      var c = JSON.parse(JSON.stringify(a));
+      c.aeshId = id(c.aeshId); c.eleves = (c.eleves || []).map(id); c.id = idAffectationTraduit(c.id, carte);
+      return c;
+    });
+    var versions = (d.versions || []).map(function (v) {
+      var c = JSON.parse(JSON.stringify(v));
+      if (c.libelles) ["eleves", "aesh"].forEach(function (k) {
+        var l = c.libelles[k] || {}, n = {};
+        Object.keys(l).forEach(function (ancien) { n[id(ancien)] = l[ancien]; });
+        c.libelles[k] = n;
+      });
+      return c;
+    });
+    return { eleves: eleves, aesh: aesh, cours: cours, affectations: affectations, versions: versions, carte: carte };
+  }
+  /* import : les objets validés portent l'ancienne forme d'identifiant
+     (annee|cle, nom|prenom ; cours : élève sous cette forme). Une fiche
+     existante de même clé garde son identifiant (et son parcours), une
+     nouvelle en reçoit un. type : "eleves" | "aesh" | "edt" ; existants :
+     fiches du même type en base ; eleves : élèves en base (pour l'EDT). */
+  function attribuerIdentifiants(type, objets, existants, eleves) {
+    if (type === "edt") {
+      var versId = tableCles(eleves || existants, []).versId;
+      return objets.map(function (o) {
+        var c = copie(o);
+        if (possede(versId, o.eleveId)) c.eleveId = versId[o.eleveId];
+        c.id = idCours(c);
+        return c;
+      });
+    }
+    var parCle = {};
+    (existants || []).forEach(function (e) { parCle[type === "aesh" ? (e.cle || cleAesh(e)) : cleFicheEleve(e)] = e; });
+    return objets.map(function (o) {
+      var c = copie(o), k = type === "aesh" ? cleAesh(o) : cleFicheEleve(o), ex = parCle[k];
+      c.id = ex ? ex.id : nouvelIdentifiant(type === "aesh" ? "ae" : "el");
+      if (type === "aesh") c.cle = k;
+      else c.parcours = ex ? (ex.parcours || ex.id) : c.id;
+      return c;
+    });
+  }
 
   // renvoie les clés présentes plusieurs fois : {cle: [indices]}
   function collisions(cles) {
@@ -817,6 +965,9 @@ var PialModele = (function () {
     REGLAGES_DEFAUT: REGLAGES_DEFAUT, JOURS: JOURS, NIVEAUX: NIVEAUX,
     normaliser: normaliser, abregerNom: abregerNom, nomCourt: nomCourt, cleEleve: cleEleve,
     idEleve: idEleve, idAesh: idAesh, idEtablissement: idEtablissement, collisions: collisions,
+    nouvelIdentifiant: nouvelIdentifiant, estIdentifiantInterne: estIdentifiantInterne, cleAesh: cleAesh, cleFicheEleve: cleFicheEleve,
+    idCours: idCours, idAffectationTraduit: idAffectationTraduit, tableCles: tableCles, traduireIds: traduireIds,
+    donneesParCles: donneesParCles, migrerV4: migrerV4, attribuerIdentifiants: attribuerIdentifiants,
     anneeScolaire: anneeScolaire, niveauClasse: niveauClasse, typeEtablissement: typeEtablissement,
     etablissementParDefaut: etablissementParDefaut,
     jourNormalise: jourNormalise, minutes: minutes, hhmm: hhmm, heureNormalisee: heureNormalisee,

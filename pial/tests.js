@@ -1611,6 +1611,45 @@ var PialTests = (function () {
       var inv = M.operationsInverses(ops, { parametres: [{ cle: "classes", valeur: { a: 0 } }] });
       egal(inv, [{ magasin: "parametres", supprimer: ["reglages"], enregistrer: [] }, { magasin: "parametres", supprimer: [], enregistrer: [{ cle: "classes", valeur: { a: 0 } }] }]);
     });
+    t("archivage : opérations (créneaux du brouillon retirés, versions gardées, rétablissement)", function () {
+      var e1 = eleve("el-1", "Lucas", "Martin", "5B", "Collège A"), e2 = eleve("el-2", "Zoé", "Petit", "5B", "Collège A");
+      var a1 = { id: "ae-1", elevesExclus: ["el-1", "el-2"] };
+      var d = { eleves: [e1, e2], aesh: [a1], cours: [{ id: "c1", eleveId: "el-1" }, { id: "c2", eleveId: "el-2" }],
+        affectations: [{ id: "x", version: 0, aeshId: "ae-1", eleves: ["el-1"] }, { id: "y", version: 0, aeshId: "ae-1", eleves: ["el-1", "el-2"] },
+          { id: "v1|x", version: 1, aeshId: "ae-1", eleves: ["el-1"] }] };
+      vrai(M.dateArchivageValide("2026-11-20", "2026-11-20") && M.dateArchivageValide("2026-09-01", "2026-11-20"), "aujourd'hui et passé acceptés");
+      vrai(!M.dateArchivageValide("2026-11-21", "2026-11-20") && !M.dateArchivageValide("", "2026-11-20") && !M.dateArchivageValide("2026-13-40", "2026-11-20"), "futur, vide, invalide refusés");
+      var r = M.operationsArchivage("eleves", ["el-1"], "2026-11-20", "  déménagement  ", d);
+      egal(r.fiches.map(function (f) { return [f.id, f.archiveLe, f.archiveMotif]; }), [["el-1", "2026-11-20", "déménagement"]]);
+      egal([r.effets.supprimees, r.effets.modifiees.map(function (a) { return [a.id, a.eleves]; }), r.effets.versions, r.effets.cours], [["x"], [["y", ["el-2"]]], [1], 1]);
+      egal(r.ops[1], { magasin: "affectations", supprimer: ["x"], enregistrer: r.effets.modifiees });
+      vrai(!("archiveLe" in e1), "fiche d'origine intacte");
+      // un archivé n'est pas archivé deux fois ; rétablissement : la date et le motif partent
+      e1.archiveLe = "2026-11-20"; e1.archiveMotif = "x";
+      egal(M.operationsArchivage("eleves", ["el-1"], "2026-11-21", "", d).fiches, [], "déjà archivé");
+      var b = M.operationsRetablissement("eleves", ["el-1", "el-2"], d);
+      egal(b.fiches.map(function (f) { return [f.id, "archiveLe" in f, "archiveMotif" in f]; }), [["el-1", false, false]], "seuls les archivés");
+      // réimport « Mettre à jour » : une fiche archivée le reste (élève comme AESH)
+      var fichier = { id: "el-1", nomCourt: "Lucas M.", classe: "5B", heuresInd: 6 };
+      egal([M.fusionEleve({ id: "el-1", archiveLe: "2026-11-20", archiveMotif: "x" }, fichier, true, "eleves").archiveLe, M.fusionEleve({ id: "el-1", archiveLe: "2026-11-20" }, fichier, true, "eleves").heuresInd], ["2026-11-20", 6]);
+      egal(M.fusionEleve({ id: "ae-1", archiveLe: "2026-11-20", archiveMotif: "fin de contrat" }, { id: "ae-1", quotite: 20 }, true, "aesh").archiveMotif, "fin de contrat");
+    });
+    t("suppression définitive : seulement un archivé ; cours, exclusions et créneaux du brouillon suivent, versions gardées", function () {
+      var e1 = eleve("el-1", "Lucas", "Martin", "5B", "Collège A"), e2 = eleve("el-2", "Zoé", "Petit", "5B", "Collège A");
+      e1.archiveLe = "2026-11-01";
+      var d = { eleves: [e1, e2], aesh: [{ id: "ae-1", elevesExclus: ["el-1", "el-2"] }, { id: "ae-2", elevesExclus: [] }],
+        cours: [{ id: "c1", eleveId: "el-1" }, { id: "c2", eleveId: "el-2" }, { id: "c3", eleveId: "el-1" }],
+        affectations: [{ id: "y", version: 0, aeshId: "ae-1", eleves: ["el-1", "el-2"] }, { id: "v1|y", version: 1, aeshId: "ae-1", eleves: ["el-1", "el-2"] }] };
+      var r = M.operationsSuppression("eleves", ["el-1", "el-2"], d);
+      egal(r.fiches.map(function (f) { return f.id; }), ["el-1"], "el-2 n'est pas archivé : épargné");
+      egal(r.ops[0], { magasin: "eleves", supprimer: ["el-1"] });
+      egal(r.ops[1], { magasin: "cours", supprimer: ["c1", "c3"] });
+      egal(r.ops[2].enregistrer.map(function (a) { return [a.id, a.elevesExclus]; }), [["ae-1", ["el-2"]]], "exclusion retirée");
+      egal(r.ops[3].enregistrer.map(function (a) { return [a.id, a.eleves]; }), [["y", ["el-2"]]], "groupe mutualisé : l'autre élève reste");
+      egal([r.effets.versions, r.effets.exclusions, r.effets.cours], [[1], 1, 2]);
+      vrai(!r.ops.some(function (o) { return o.magasin === "affectations" && (o.supprimer || []).indexOf("v1|y") > -1; }), "version validée intacte");
+      egal(M.operationsSuppression("eleves", ["el-2"], d).ops[0].supprimer, [], "rien si non archivé");
+    });
     t("archivage : données du moteur sans les fiches archivées", function () {
       var e1 = eleve("el-1", "A", "B", "5B", "Collège A"), e2 = eleve("el-2", "C", "D", "5B", "Collège A");
       var a1 = { id: "ae-1" }, a2 = { id: "ae-2", archiveLe: "2026-11-01" };

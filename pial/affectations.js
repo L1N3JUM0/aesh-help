@@ -34,6 +34,9 @@ var PialAffectations = (function () {
     affectations: [],          // brouillon (version 0) de l'année en cours
     affectationsVersions: [],  // copies figées des versions validées (version = numéro)
     versions: [], correspondances: {}, reglages: {},
+    // archivés (§17) : etat.eleves, etat.aesh et etat.cours ne contiennent que les fiches actives (moteur, grilles, menus) ;
+    // elevesTous, aeshTous et coursTous les gardent aussi (listes Élèves et AESH, collisions, import, annulation)
+    elevesTous: [], aeshTous: [], coursTous: [],
     classes: {}, classesParam: null // référentiel des classes enregistré (Réglages) : {annee: {etab: [classe]}} et sa ligne de paramètres
   };
 
@@ -49,9 +52,14 @@ var PialAffectations = (function () {
       PialDB.MAGASINS_AFFECTATIONS.forEach(function (nom, i) { parNom[nom] = r[i] || []; });
       var annee = anneeCourante();
       etat.etablissements = parNom.etablissements;
-      etat.eleves = parNom.eleves.filter(function (e) { return e.annee === annee; });
-      etat.aesh = parNom.aesh;
-      etat.cours = parNom.cours.filter(function (c) { return c.annee === annee; });
+      etat.elevesTous = parNom.eleves.filter(function (e) { return e.annee === annee; });
+      etat.eleves = M.actifs(etat.elevesTous);
+      etat.aeshTous = parNom.aesh;
+      etat.aesh = M.actifs(parNom.aesh);
+      var archives = {};
+      etat.elevesTous.forEach(function (e) { if (M.estArchive(e)) archives[e.id] = true; });
+      etat.coursTous = parNom.cours.filter(function (c) { return c.annee === annee; });
+      etat.cours = etat.coursTous.filter(function (c) { return !archives[c.eleveId]; });
       etat.affectations = parNom.affectations.filter(function (a) { return a.version === 0 && a.annee === annee; });
       etat.affectationsVersions = parNom.affectations.filter(function (a) { return a.version > 0; });
       etat.versions = parNom.versions;
@@ -173,13 +181,13 @@ var PialAffectations = (function () {
   /* =============== import : aperçu =============== */
   function elevesConnus() {
     var connus = {};
-    etat.eleves.forEach(function (e) { connus[e.cle] = true; });
+    etat.elevesTous.forEach(function (e) { connus[e.cle] = true; });
     return connus;
   }
   function existantsDuType(type) {
-    if (type === "eleves") return etat.eleves;
-    if (type === "aesh") return etat.aesh;
-    return etat.cours;
+    if (type === "eleves") return etat.elevesTous;
+    if (type === "aesh") return etat.aeshTous;
+    return etat.coursTous;
   }
   // conserve les champs saisis dans l'application lors d'une mise à jour
   function fusionnerObjet(type, existant, nouveau, garderAppli) {
@@ -213,10 +221,16 @@ var PialAffectations = (function () {
     imp.apercu = I.apercu(imp.type, imp.lignes.slice(1), imp.correspondance, { annee: anneeCourante(), elevesConnus: elevesConnus(),
       gererPeriscolaire: !!etat.reglages.gererPeriscolaire, specialites: M.contexte({ reglages: etat.reglages }).reglages.specialites });
     // identifiants internes (§3) : une fiche existante de même clé garde le sien
-    imp.apercu.valides = M.attribuerIdentifiants(imp.type, imp.apercu.valides, existantsDuType(imp.type), etat.eleves);
+    imp.apercu.valides = M.attribuerIdentifiants(imp.type, imp.apercu.valides, existantsDuType(imp.type), etat.elevesTous);
     var cleId = "id";
     imp.planMaj = I.planFusion(existantsDuType(imp.type), imp.apercu.valides, cleId, "maj");
     imp.planRemplacer = I.planFusion(existantsDuType(imp.type), imp.apercu.valides, cleId, "remplacer");
+    // fiches archivées présentes dans le fichier : restent archivées, sauf choix contraire (§17)
+    var archParId = {};
+    if (imp.type === "eleves" || imp.type === "aesh") existantsDuType(imp.type).forEach(function (e) { if (M.estArchive(e)) archParId[e.id] = e; });
+    imp.archivesFichier = imp.apercu.valides.filter(function (n) { return archParId[n.id]; }).map(function (n) { return n.id; });
+    imp.archivesSupprimees = imp.planRemplacer.supprimes.filter(function (s) { return archParId[s.id]; }).length;
+    imp.retablir = false;
     // élèves : valeurs modifiées dans l'application que le fichier écraserait
     imp.conflits = [];
     imp.garderAppli = true;
@@ -250,7 +264,9 @@ var PialAffectations = (function () {
       + (ap.exemples.length ? '<span><strong>' + ap.exemples.length + '</strong> ligne(s) d\'exemple du gabarit ignorée(s)</span>' : '')
       + '</div>'
       + '<p class="note">Mettre à jour : ' + imp.planMaj.ajouts.length + ' ajout(s), ' + imp.planMaj.modifies.length + ' modification(s), '
-      + imp.planMaj.inchanges.length + ' inchangé(s). Remplacer supprimerait en plus ' + imp.planRemplacer.supprimes.length + ' enregistrement(s) absent(s) du fichier.</p>'
+      + imp.planMaj.inchanges.length + ' inchangé(s). Remplacer supprimerait en plus ' + imp.planRemplacer.supprimes.length + ' enregistrement(s) absent(s) du fichier'
+      + (imp.archivesSupprimees ? ' (dont ' + imp.archivesSupprimees + ' archivé(s))' : '') + '.</p>'
+      + (imp.archivesFichier.length ? '<p class="note">' + pluriel(imp.archivesFichier.length, 'fiche archivée figure', 'fiches archivées figurent') + ' dans le fichier. Elles restent archivées (leurs données sont mises à jour). <label class="case"><input type="checkbox" id="imp-retablir"> Les rétablir</label></p>' : '')
       + (nouveauxEtabs.length ? '<p class="note">Nouvel(s) établissement(s) créé(s) à l\'import : ' + nouveauxEtabs.map(ech).join(", ") + '. Vérifiez ensuite leurs horaires dans Réglages.</p>' : '');
     var h = "";
     h += listeMotifs("Collisions : ces élèves ont la même clé (prénom, initiale, classe, établissement) et sont bloqués. Différenciez-les en écrivant une abréviation terminée par un point dans la colonne Nom (ex. « Ma. » et « Mo. »).",
@@ -291,6 +307,7 @@ var PialAffectations = (function () {
     if (ap.exemples.length) h += '<p class="aide">Lignes d\'exemple du gabarit ignorées : ' + ap.exemples.join(", ") + '.</p>';
     if (ap.doublons.length) h += '<p class="aide">Doublons ignorés (lignes identiques à une ligne précédente) : ' + ap.doublons.map(function (d) { return d.ligne; }).join(", ") + '.</p>';
     $("imp-details").innerHTML = h;
+    if ($("imp-retablir")) $("imp-retablir").addEventListener("change", function () { imp.retablir = this.checked; });
     Array.prototype.forEach.call($("imp-details").querySelectorAll('[name="imp-conflits"]'), function (r) {
       r.addEventListener("change", function () { if (this.checked) imp.garderAppli = this.value === "appli"; });
     });
@@ -306,13 +323,18 @@ var PialAffectations = (function () {
     var parId = {};
     existantsDuType(type).forEach(function (e) { parId[e.id] = e; });
     var aEnregistrer = plan.ajouts.concat(plan.modifies).map(function (n) { return fusionnerObjet(type, parId[n.id], n, imp.garderAppli !== false); });
+    if (imp.retablir) {
+      var aRetablir = {};
+      (imp.archivesFichier || []).forEach(function (id) { aRetablir[id] = true; });
+      aEnregistrer.forEach(function (o) { if (aRetablir[o.id]) { delete o.archiveLe; delete o.archiveMotif; } });
+    }
     var ops = [{ magasin: magasin, supprimer: plan.supprimes.map(function (s) { return s.id; }), enregistrer: aEnregistrer }];
     // élèves supprimés : leurs cours et leurs créneaux du brouillon partent avec eux
     var suppr = {};
     plan.supprimes.forEach(function (s) { suppr[s.id] = true; });
     var coursSuppr = [], affSuppr = [], affModif = [];
     if (type === "eleves" && plan.supprimes.length) {
-      coursSuppr = etat.cours.filter(function (c) { return suppr[c.eleveId]; }).map(function (c) { return c.id; });
+      coursSuppr = etat.coursTous.filter(function (c) { return suppr[c.eleveId]; }).map(function (c) { return c.id; });
       etat.affectations.forEach(function (a) {
         var restants = a.eleves.filter(function (id) { return !suppr[id]; });
         if (restants.length === a.eleves.length) return;
@@ -508,8 +530,8 @@ var PialAffectations = (function () {
     var i = aeshTriees().map(function (a) { return a.id; }).indexOf(id);
     return COULEURS_AESH[(i < 0 ? 0 : i) % COULEURS_AESH.length];
   }
-  function aeshParId(id) { return etat.aesh.filter(function (a) { return a.id === id; })[0]; }
-  function eleveParId(id) { return etat.eleves.filter(function (e) { return e.id === id; })[0]; }
+  function aeshParId(id) { return etat.aeshTous.filter(function (a) { return a.id === id; })[0]; }
+  function eleveParId(id) { return etat.elevesTous.filter(function (e) { return e.id === id; })[0]; }
   function nomAesh(a) { return a ? a.prenom + " " + a.nom : "AESH inconnue"; }
   function initialesAesh(a) { return a ? (txt(a.prenom).charAt(0) + txt(a.nom).charAt(0)).toUpperCase() : "?"; }
 
@@ -2050,8 +2072,8 @@ var PialAffectations = (function () {
   // libellés : ceux des versions comparées, puis les données actuelles
   function libellesPour(cles) {
     var l = { eleves: {}, aesh: {} };
-    etat.eleves.forEach(function (e) { l.eleves[e.id] = { nomCourt: e.nomCourt, classe: e.classe, etablissement: nomEtablissement(e.etablissement) }; });
-    etat.aesh.forEach(function (a) { l.aesh[a.id] = nomAesh(a); });
+    etat.elevesTous.forEach(function (e) { l.eleves[e.id] = { nomCourt: e.nomCourt, classe: e.classe, etablissement: nomEtablissement(e.etablissement) }; });
+    etat.aeshTous.forEach(function (a) { l.aesh[a.id] = nomAesh(a); });
     cles.forEach(function (c) {
       var v = c !== "brouillon" && versionParNumero(+c);
       if (!v || !v.libelles) return;
@@ -2194,7 +2216,7 @@ var PialAffectations = (function () {
   function enregistrerPuisRendre(ops, message, libelleAnnulation, cleFusion) {
     var haut = pileAnnulation[pileAnnulation.length - 1];
     if (libelleAnnulation && !(cleFusion && haut && haut.fusion === cleFusion)) {
-      pileAnnulation.push({ libelle: libelleAnnulation, fusion: cleFusion || "", ops: M.operationsInverses(ops, { affectations: etat.affectations, cours: etat.cours, eleves: etat.eleves, aesh: etat.aesh, parametres: etat.classesParam ? [etat.classesParam] : [] }) });
+      pileAnnulation.push({ libelle: libelleAnnulation, fusion: cleFusion || "", ops: M.operationsInverses(ops, { affectations: etat.affectations, cours: etat.coursTous, eleves: etat.elevesTous, aesh: etat.aeshTous, parametres: etat.classesParam ? [etat.classesParam] : [] }) });
       if (pileAnnulation.length > MAX_ANNULATION) pileAnnulation.shift();
     }
     return PialDB.appliquer(ops).then(recharger).then(function () {
@@ -2354,7 +2376,7 @@ var PialAffectations = (function () {
     jauge: jauge, jaugesEleve: jaugesEleve, titreAB: titreAB, LIB_ETAT_ELEVE: LIB_ETAT_ELEVE, LIB_ETAT_AESH: LIB_ETAT_AESH,
     contexte: function () { if (!ctxCourant) recalculer(); return ctxCourant; },
     rendreFicheEleve: rendreFicheEleve, rendreFicheAesh: rendreFicheAeshComplete, texteIndispo: texteIndispo,
-    enregistrerPuisRendre: enregistrerPuisRendre, annuler: annuler,
+    enregistrerPuisRendre: enregistrerPuisRendre, annuler: annuler, viderAnnulation: viderAnnulation,
     libelleAnnulation: function () { return pileAnnulation.length ? pileAnnulation[pileAnnulation.length - 1].libelle : ""; },
     surRendu: function (fn) { abonnesRendu.push(fn); },
     ui: function () { return ui; },

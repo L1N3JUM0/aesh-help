@@ -28,7 +28,7 @@ var PialProfils = (function () {
   function etablissementsTries() {
     return etat.etablissements.slice().sort(function (a, b) { return a.nom.localeCompare(b.nom, "fr"); });
   }
-  function referentiel() { return M.referentielClasses(M.classesEnregistrees(etat.classes, A.anneeCourante()), etat.eleves, etat.cours); }
+  function referentiel() { return M.referentielClasses(M.classesEnregistrees(etat.classes, A.anneeCourante()), etat.elevesTous, etat.coursTous); }
   // bouton « ↶ Annuler » de l'onglet : même pile que l'onglet Affectations
   function majAnnuler(id) {
     var b = $(id), lib = A.libelleAnnulation();
@@ -60,6 +60,7 @@ var PialProfils = (function () {
   var pe = { tri: { cle: "classe", sens: 1 }, ouvert: null };
   var LIB_MODALITE = { ind: "Individuel", mut: "Mutualisé", deux: "Individuel et mutualisé" };
   function proportion(cv) {
+    if (!cv) return 2; // archivé : après les élèves actifs
     var d = cv.ind.notifie + cv.mut.notifie;
     return d ? (Math.min(cv.ind.moy, cv.ind.notifie) + Math.min(cv.mut.moy, cv.mut.notifie)) / d : 1;
   }
@@ -74,8 +75,10 @@ var PialProfils = (function () {
   function filtresEleves() {
     var ctx = A.contexte(), etab = $("pe-etab").value, classe = $("pe-classe").value, niveau = $("pe-niveau").value,
       modalite = $("pe-modalite").value, couv = $("pe-couverture").value, mots = M.normaliser($("pe-recherche").value).split(" ").filter(Boolean);
-    var lignes = etat.eleves.map(function (e) { return { e: e, cv: M.couvertureEleve(e, ctx) }; }).filter(function (l) {
+    var lignes = etat.elevesTous.filter(function (e) { return $("pe-archives").checked || !M.estArchive(e); })
+      .map(function (e) { return { e: e, cv: M.estArchive(e) ? null : M.couvertureEleve(e, ctx) }; }).filter(function (l) {
       var e = l.e;
+      if (couv && !l.cv) return false;
       if (etab && e.etablissement !== etab) return false;
       if (classe && M.normaliser(e.classe) !== M.normaliser(classe)) return false;
       if (niveau && M.niveauClasse(e.classe) !== niveau) return false;
@@ -101,7 +104,7 @@ var PialProfils = (function () {
     var etab = $("pe-etab").value, ref = referentiel(), classes = [], niveaux = {};
     Object.keys(ref).forEach(function (id) { if (!etab || id === etab) ref[id].forEach(function (c) { if (classes.indexOf(c) < 0) classes.push(c); }); });
     classes.sort(M.comparerClasses);
-    etat.eleves.forEach(function (e) { if (!etab || e.etablissement === etab) niveaux[M.niveauClasse(e.classe)] = true; });
+    etat.elevesTous.forEach(function (e) { if (!etab || e.etablissement === etab) niveaux[M.niveauClasse(e.classe)] = true; });
     remplirSelect($("pe-classe"), classes.map(function (c) { return { valeur: c, libelle: c }; }), "Toutes");
     remplirSelect($("pe-niveau"), M.NIVEAUX.filter(function (n) { return niveaux[n]; }).map(function (n) { return { valeur: n, libelle: n }; }), "Tous");
   }
@@ -115,19 +118,21 @@ var PialProfils = (function () {
     majAnnuler("pe-annuler");
     var focus = document.activeElement, focusLigne = focus && focus.closest && focus.closest("#pe-table") && focus.getAttribute("data-eleve");
     var lignes = filtresEleves(), ctx = A.contexte();
-    $("pe-compte").textContent = etat.eleves.length ? (lignes.length === etat.eleves.length ? pluriel(etat.eleves.length, "élève") : lignes.length + " sur " + etat.eleves.length) + " · année " + A.anneeCourante() : "";
+    var baseE = $("pe-archives").checked ? etat.elevesTous.length : etat.eleves.length, masquesE = etat.elevesTous.length - etat.eleves.length;
+    $("pe-compte").textContent = baseE ? (lignes.length === baseE ? pluriel(baseE, "élève") : lignes.length + " sur " + baseE) + " · année " + A.anneeCourante()
+      + (!$("pe-archives").checked && masquesE ? " · " + pluriel(masquesE, "archivé masqué", "archivés masqués") : "") : (masquesE ? "Aucun élève actif · " + pluriel(masquesE, "archivé masqué", "archivés masqués") : "");
     var h = '<thead><tr>' + COLONNES_ELEVES.map(function (c) { return teteTriable(c, pe.tri); }).join("") + '</tr></thead><tbody>';
     if (!lignes.length) {
-      h += '<tr><td colspan="' + COLONNES_ELEVES.length + '" class="vide">' + (etat.eleves.length ? "Aucun élève ne correspond à ces critères."
+      h += '<tr><td colspan="' + COLONNES_ELEVES.length + '" class="vide">' + (baseE ? "Aucun élève ne correspond à ces critères."
         : "Aucun élève pour l'année " + ech(A.anneeCourante()) + ". Ajoutez-en un avec « + Nouvel élève », ou importez le fichier des élèves (onglet Importer).") + '</td></tr>';
     }
     lignes.forEach(function (l) {
-      var e = l.e, cv = l.cv;
-      h += '<tr data-eleve="' + ech(e.id) + '" tabindex="0"' + (pe.ouvert === e.id ? ' class="actif" aria-selected="true"' : "") + '>'
-        + '<td><strong>' + ech(e.nomCourt) + '</strong></td><td>' + ech(e.classe) + '</td>'
+      var e = l.e, cv = l.cv, cls = [pe.ouvert === e.id ? "actif" : "", M.estArchive(e) ? "archive" : ""].filter(Boolean).join(" ");
+      h += '<tr data-eleve="' + ech(e.id) + '" tabindex="0"' + (cls ? ' class="' + cls + '"' : "") + (pe.ouvert === e.id ? ' aria-selected="true"' : "") + '>'
+        + '<td><strong>' + ech(e.nomCourt) + '</strong>' + (M.estArchive(e) ? ' <span class="badge badge-archive">archivé</span>' : "") + '</td><td>' + ech(e.classe) + '</td>'
         + '<td class="col-secondaire">' + ech(A.nomEtablissement(e.etablissement)) + '</td>'
         + '<td class="col-secondaire">' + [e.heuresInd ? heures(e.heuresInd) + " ind." : "", e.heuresMut ? heures(e.heuresMut) + " mut." : ""].filter(Boolean).join(" · ") + '</td>'
-        + '<td class="col-jauges"><span class="pastille-etat e-' + cv.etat + '">' + A.LIB_ETAT_ELEVE[cv.etat] + '</span>' + A.jaugesEleve(e, cv) + '</td>'
+        + '<td class="col-jauges">' + (cv ? '<span class="pastille-etat e-' + cv.etat + '">' + A.LIB_ETAT_ELEVE[cv.etat] + '</span>' + A.jaugesEleve(e, cv) : '<span class="aide">archivé le ' + dateFr(e.archiveLe) + '</span>') + '</td>'
         + '<td class="col-secondaire">' + finNotif(e) + '</td></tr>';
     });
     $("pe-table").innerHTML = h + "</tbody>";
@@ -148,11 +153,12 @@ var PialProfils = (function () {
     $("pe-disposition").classList.toggle("avec-fiche", !!e);
     $("pe-panneau").hidden = !e;
     if (!e) { pe.ouvert = null; $("pe-fiche").innerHTML = ""; return; }
-    var cv = M.couvertureEleve(e, ctx);
+    var arch = M.estArchive(e), cv = arch ? null : M.couvertureEleve(e, ctx);
     $("pe-titre").textContent = e.nomCourt + " — " + e.classe;
     $("pe-sous-titre").textContent = A.nomEtablissement(e.etablissement)
       + (e.finNotif ? " · fin de notification le " + dateFr(e.finNotif) : "");
-    $("pe-jauges").innerHTML = '<span class="pastille-etat e-' + cv.etat + '">' + A.LIB_ETAT_ELEVE[cv.etat] + '</span>' + A.jaugesEleve(e, cv);
+    $("pe-jauges").innerHTML = cv ? '<span class="pastille-etat e-' + cv.etat + '">' + A.LIB_ETAT_ELEVE[cv.etat] + '</span>' + A.jaugesEleve(e, cv) : "";
+    boutonsArchivage("pe", e, arch);
     A.rendreFicheEleve(e, { hote: "pe-fiche", ouverte: true });
   }
   function ouvrirEleve(id) {
@@ -173,7 +179,9 @@ var PialProfils = (function () {
     $(id).addEventListener("change", function () { if (id === "pe-etab") remplirFiltresEleves(); rendreEleves(); });
   });
   $("pe-recherche").addEventListener("input", rendreEleves);
+  $("pe-archives").addEventListener("change", rendreEleves);
   $("pe-reinitialiser").addEventListener("click", function () {
+    $("pe-archives").checked = false;
     ["pe-recherche", "pe-etab", "pe-classe", "pe-niveau", "pe-modalite", "pe-couverture"].forEach(function (id) { $(id).value = ""; });
     remplirFiltresEleves(); rendreEleves();
   });
@@ -219,7 +227,7 @@ var PialProfils = (function () {
       apercu = 'Sera enregistré : <strong>' + ech(nc) + '</strong>' + (v.classe ? ' — ' + ech(v.classe) : "") + (v.etablissement ? ' — ' + ech(v.etablissement) : "")
         + (M.abregerNom(v.nom) !== v.nom.replace(/\s+/g, " ") ? ' <span class="aide">(le nom « ' + ech(v.nom) + ' » n\'est pas conservé)</span>' : "");
       if (v.classe && v.etablissement) {
-        collision = M.collisionEleve(etat.eleves, { annee: A.anneeCourante(), cle: M.cleEleve(nc, v.classe, l.etabId) });
+        collision = M.collisionEleve(etat.elevesTous, { annee: A.anneeCourante(), cle: M.cleEleve(nc, v.classe, l.etabId) });
       }
     }
     if (collision) erreurs.push("Un élève " + collision.nomCourt + " existe déjà en " + collision.classe + " dans cet établissement" + (M.estArchive(collision) ? " (archivé)" : "")
@@ -260,7 +268,7 @@ var PialProfils = (function () {
     ne.tente = true;
     var r = verifierNe();
     if (!r.ok) { var p = $("ne-erreurs"); if (!p.hidden) p.focus(); return; }
-    var objet = M.attribuerIdentifiants("eleves", [r.objet], etat.eleves)[0], ops = [];
+    var objet = M.attribuerIdentifiants("eleves", [r.objet], etat.elevesTous)[0], ops = [];
     if (r.nouvelEtab && !A.etablissementParId(M.idEtablissement(r.nouvelEtab))) ops.push({ magasin: "etablissements", enregistrer: [M.etablissementParDefaut(r.nouvelEtab)] });
     ops.push({ magasin: "eleves", enregistrer: [objet] });
     // « Autre classe… » : la classe entre dans le référentiel de l'établissement (§17)
@@ -316,12 +324,13 @@ var PialProfils = (function () {
   function filtresAesh() {
     var ctx = A.contexte(), etab = $("pa-etab").value, spec = $("pa-spec").value, charge = $("pa-charge").value,
       mots = M.normaliser($("pa-recherche").value).split(" ").filter(Boolean);
-    var lignes = etat.aesh.map(function (a) { return { a: a, ch: M.chargeAesh(a, ctx), n: elevesDeAesh(a) }; }).filter(function (l) {
+    var lignes = etat.aeshTous.filter(function (a) { return $("pa-archives").checked || !M.estArchive(a); })
+      .map(function (a) { return { a: a, ch: M.chargeAesh(a, ctx), n: elevesDeAesh(a) }; }).filter(function (l) {
       var a = l.a;
       if (etab === "__tous" && (a.etablissements || []).length) return false;
       if (etab && etab !== "__tous" && (a.etablissements || []).length && a.etablissements.indexOf(etab) < 0) return false;
       if (spec && !(a.formations || []).some(function (f) { return M.normaliser(f) === M.normaliser(spec); })) return false;
-      if (charge && l.ch.etat !== charge) return false;
+      if (charge && (M.estArchive(a) || l.ch.etat !== charge)) return false;
       if (mots.length) {
         var texte = M.normaliser([a.prenom, a.nom, a.email || "", nomsEtabs(a), (a.formations || []).join(" ")].join(" "));
         if (!mots.every(function (m) { return texte.indexOf(m) > -1; })) return false;
@@ -336,7 +345,7 @@ var PialProfils = (function () {
     remplirSelect($("pa-etab"), etablissementsTries().map(function (e) { return { valeur: e.id, libelle: e.nom }; })
       .concat([{ valeur: "__tous", libelle: "Sans restriction (tous établissements)" }]), "Tous");
     var specs = (A.contexte().reglages.specialites || []).map(function (s) { return s.nom; });
-    etat.aesh.forEach(function (a) { (a.formations || []).forEach(function (f) { if (!specs.some(function (s) { return M.normaliser(s) === M.normaliser(f); })) specs.push(f); }); });
+    etat.aeshTous.forEach(function (a) { (a.formations || []).forEach(function (f) { if (!specs.some(function (s) { return M.normaliser(s) === M.normaliser(f); })) specs.push(f); }); });
     remplirSelect($("pa-spec"), specs.map(function (s) { return { valeur: s, libelle: s }; }), "Toutes");
   }
   function rendreAesh() {
@@ -344,21 +353,25 @@ var PialProfils = (function () {
     majAnnuler("pa-annuler");
     var focus = document.activeElement, focusLigne = focus && focus.closest && focus.closest("#pa-table") && focus.getAttribute("data-aesh");
     var lignes = filtresAesh(), ctx = A.contexte();
-    $("pa-compte").textContent = etat.aesh.length ? (lignes.length === etat.aesh.length ? pluriel(etat.aesh.length, "AESH", "AESH") : lignes.length + " sur " + etat.aesh.length) : "";
+    var baseA = $("pa-archives").checked ? etat.aeshTous.length : etat.aesh.length, masqueesA = etat.aeshTous.length - etat.aesh.length;
+    $("pa-compte").textContent = baseA ? (lignes.length === baseA ? pluriel(baseA, "AESH", "AESH") : lignes.length + " sur " + baseA)
+      + (!$("pa-archives").checked && masqueesA ? " · " + pluriel(masqueesA, "archivée masquée", "archivées masquées") : "") : (masqueesA ? "Aucune AESH active · " + pluriel(masqueesA, "archivée masquée", "archivées masquées") : "");
     var h = '<thead><tr>' + COLONNES_AESH.map(function (c) { return teteTriable(c, pa.tri); }).join("") + '</tr></thead><tbody>';
     if (!lignes.length) {
-      h += '<tr><td colspan="' + COLONNES_AESH.length + '" class="vide">' + (etat.aesh.length ? "Aucune AESH ne correspond à ces critères."
+      h += '<tr><td colspan="' + COLONNES_AESH.length + '" class="vide">' + (baseA ? "Aucune AESH ne correspond à ces critères."
         : "Aucune AESH. Ajoutez-en une avec « + Nouvelle AESH », ou importez le fichier des AESH (onglet Importer).") + '</td></tr>';
     }
     lignes.forEach(function (l) {
       var a = l.a, ch = l.ch;
       var titre = A.LIB_ETAT_AESH[ch.etat] + (ch.A !== ch.B ? " — semaine A : " + heures(ch.A) + ", semaine B : " + heures(ch.B) : "");
-      h += '<tr data-aesh="' + ech(a.id) + '" tabindex="0"' + (pa.ouvert === a.id ? ' class="actif" aria-selected="true"' : "") + '>'
+      var arch = M.estArchive(a), cls = [pa.ouvert === a.id ? "actif" : "", arch ? "archive" : ""].filter(Boolean).join(" ");
+      h += '<tr data-aesh="' + ech(a.id) + '" tabindex="0"' + (cls ? ' class="' + cls + '"' : "") + (pa.ouvert === a.id ? ' aria-selected="true"' : "") + '>'
         + '<td><span class="puce-aesh" style="background:' + A.couleurAesh(a.id) + '">' + ech(A.initialesAesh(a)) + '</span> <strong>' + ech(A.nomAesh(a)) + '</strong>'
+        + (arch ? ' <span class="badge badge-archive">archivée</span>' : "")
         + (a.ignorerIndispos ? ' <span class="badge-ignore" title="Indisponibilités et établissements possibles ignorés">indispos ignorées</span>' : "") + '</td>'
         + '<td class="col-secondaire col-texte">' + ech(nomsEtabs(a)) + '</td>'
         + '<td>' + heures(a.quotite || 0) + '</td>'
-        + '<td class="col-jauges"><span class="pastille-etat e-' + ch.etat + '">' + A.LIB_ETAT_AESH[ch.etat] + '</span>' + A.jauge("Charge", ch.moy, ch.quotite, ch.etat, titre) + '</td>'
+        + '<td class="col-jauges">' + (arch ? '<span class="aide">archivée le ' + dateFr(a.archiveLe) + '</span>' : '<span class="pastille-etat e-' + ch.etat + '">' + A.LIB_ETAT_AESH[ch.etat] + '</span>' + A.jauge("Charge", ch.moy, ch.quotite, ch.etat, titre)) + '</td>'
         + '<td class="col-secondaire">' + l.n + '</td>'
         + '<td class="col-secondaire col-texte">' + ech((a.formations || []).join(", ")) + '</td></tr>';
     });
@@ -385,8 +398,10 @@ var PialProfils = (function () {
     $("pa-titre").textContent = A.nomAesh(a);
     $("pa-sous-titre").textContent = (a.email ? a.email + " · " : "") + "établissements : " + nomsEtabs(a)
       + ((a.indisponibilites || []).length ? " · indisponible : " + a.indisponibilites.map(A.texteIndispo).join(", ") : "");
-    $("pa-jauges").innerHTML = '<span class="pastille-etat e-' + ch.etat + '">' + A.LIB_ETAT_AESH[ch.etat] + '</span>' + A.jauge("Charge", ch.moy, ch.quotite, ch.etat, titre)
+    var archA = M.estArchive(a);
+    $("pa-jauges").innerHTML = archA ? "" : '<span class="pastille-etat e-' + ch.etat + '">' + A.LIB_ETAT_AESH[ch.etat] + '</span>' + A.jauge("Charge", ch.moy, ch.quotite, ch.etat, titre)
       + '<p class="aide" style="margin:4px 0 0">' + pluriel(elevesDeAesh(a), "élève accompagné", "élèves accompagnés") + ' dans le brouillon.</p>';
+    boutonsArchivage("pa", a, archA);
     A.rendreFicheAesh(a, { hote: "pa-fiche", ouverte: true });
   }
   function ouvrirAesh(id) {
@@ -404,7 +419,9 @@ var PialProfils = (function () {
   }
   ["pa-etab", "pa-spec", "pa-charge"].forEach(function (id) { $(id).addEventListener("change", rendreAesh); });
   $("pa-recherche").addEventListener("input", rendreAesh);
+  $("pa-archives").addEventListener("change", rendreAesh);
   $("pa-reinitialiser").addEventListener("click", function () {
+    $("pa-archives").checked = false;
     ["pa-recherche", "pa-etab", "pa-spec", "pa-charge"].forEach(function (id) { $(id).value = ""; });
     rendreAesh();
   });
@@ -426,7 +443,7 @@ var PialProfils = (function () {
   }
   function verifierNa() {
     var l = lireNa(), v = l.v, r = I.validerLigne("aesh", v, { annee: A.anneeCourante(), specialites: A.contexte().reglages.specialites });
-    var erreurs = [], collision = v.nom && v.prenom ? M.collisionAesh(etat.aesh, { nom: v.nom, prenom: v.prenom }) : null;
+    var erreurs = [], collision = v.nom && v.prenom ? M.collisionAesh(etat.aeshTous, { nom: v.nom, prenom: v.prenom }) : null;
     $("na-apercu").innerHTML = v.nom && v.prenom ? 'Sera enregistrée : <strong>' + ech(v.prenom.replace(/\s+/g, " ") + " " + v.nom.replace(/\s+/g, " ")) + '</strong>'
       + (v.quotite ? ' — ' + ech(v.quotite.replace(".", ",")) + ' h par semaine' : "") + ' — ' + (l.etabs.length ? ech(l.etabs.map(A.nomEtablissement).join(", ")) : "tous établissements") : "";
     if (collision) erreurs.push("Une AESH " + A.nomAesh(collision) + " existe déjà" + (M.estArchive(collision) ? " (archivée)" : "") + " : deux AESH ne peuvent pas avoir le même nom et le même prénom.");
@@ -458,7 +475,7 @@ var PialProfils = (function () {
     na.tente = true;
     var r = verifierNa();
     if (!r.ok) { if (!$("na-erreurs").hidden) $("na-erreurs").focus(); return; }
-    var objet = M.attribuerIdentifiants("aesh", [r.objet], etat.aesh)[0];
+    var objet = M.attribuerIdentifiants("aesh", [r.objet], etat.aeshTous)[0];
     A.enregistrerPuisRendre([{ magasin: "aesh", enregistrer: [objet] }], A.nomAesh(objet) + " ajoutée.", "la création de " + A.nomAesh(objet)).then(function () {
       if (encore) {
         na.tente = false;
@@ -495,7 +512,7 @@ var PialProfils = (function () {
       h += '<div class="etab-param" data-classes-etab="' + ech(e.id) + '"><h3>' + ech(e.nom) + '</h3>';
       if (!classes.length) h += '<p class="aide">Aucune classe.</p>';
       classes.forEach(function (c, k) {
-        var eleves = M.elevesDeClasse(etat.eleves, e.id, c), arch = eleves.filter(M.estArchive).length, id = "cl-" + k + "-" + ech(e.id);
+        var eleves = M.elevesDeClasse(etat.elevesTous, e.id, c), arch = eleves.filter(M.estArchive).length, id = "cl-" + k + "-" + ech(e.id);
         h += '<div class="classe-ligne" data-classe="' + ech(c) + '"><input type="text" id="' + id + '" value="' + ech(c) + '" maxlength="30" aria-label="Nom de la classe ' + ech(c) + '" data-classe-nom>'
           + '<button type="button" class="btn btn-vide" data-classe-renommer disabled>Renommer</button>'
           + '<button type="button" class="btn btn-vide" data-classe-retirer' + (eleves.length ? ' disabled title="Cette classe a des élèves : changez-les de classe d\'abord."' : "") + '>Retirer</button>'
@@ -527,14 +544,14 @@ var PialProfils = (function () {
       "Classe " + c + " ajoutée.", "l'ajout de la classe " + c);
   }
   function retirerClasse(etab, classe) {
-    if (M.elevesDeClasse(etat.eleves, etab, classe).length) { A.ui().toast("La classe " + classe + " a des élèves : elle ne se retire pas."); return; }
+    if (M.elevesDeClasse(etat.elevesTous, etab, classe).length) { A.ui().toast("La classe " + classe + " a des élèves : elle ne se retire pas."); return; }
     A.enregistrerPuisRendre([{ magasin: "parametres", enregistrer: [tableClasses(M.classesSansClasse(etat.classes, A.anneeCourante(), etab, classe))] }],
       "Classe " + classe + " retirée.", "le retrait de la classe " + classe);
   }
   function renommerClasse(etab, de, saisie) {
     var vers = M.classeNette(saisie);
     if (!vers || vers === de) return;
-    var r = M.renommerClasse(etat.eleves, etat.cours, etab, de, vers);
+    var r = M.renommerClasse(etat.elevesTous, etat.coursTous, etab, de, vers);
     if (r.collisions.length) {
       A.ui().toast("Renommage impossible : " + pluriel0(r.collisions.length, "élève porterait", "élèves porteraient") + " le même nom court qu'un élève déjà en " + vers + " ("
         + r.collisions.slice(0, 3).map(function (c) { return c.eleve.nomCourt; }).join(", ") + (r.collisions.length > 3 ? "…" : "") + "). Écrivez une abréviation terminée par un point dans l'une des deux fiches, puis réessayez.");
@@ -550,6 +567,107 @@ var PialProfils = (function () {
       + (r.cours.length ? " et " + pluriel0(r.cours.length, "cours suit", "cours suivent") + " leur classe" : "") + ". Leurs affectations et leurs rapports sont conservés."
       + (fusion ? " La classe " + vers + " existe déjà : les deux classes seront réunies." : "") + " Vous pourrez annuler.", "Renommer", faire);
   }
+
+  /* =============== archivage, rétablissement, suppression définitive (§17) =============== */
+  function donneesRetrait() {
+    return { eleves: etat.elevesTous, aesh: etat.aeshTous, cours: etat.coursTous, affectations: etat.affectations.concat(etat.affectationsVersions) };
+  }
+  function nomFiche(type, f) { return type === "aesh" ? A.nomAesh(f) : f.nomCourt + " (" + f.classe + ")"; }
+  function fichesDe(type, ids) {
+    return ids.map(function (id) { return type === "aesh" ? A.aeshParId(id) : A.eleveParId(id); }).filter(Boolean);
+  }
+  function listeNoms(type, fiches) {
+    var noms = fiches.slice(0, 5).map(function (f) { return nomFiche(type, f); });
+    return noms.join(", ") + (fiches.length > 5 ? " et " + (fiches.length - 5) + " autre(s)" : "");
+  }
+  // boutons du panneau selon l'état de la fiche (prefixe : "pe" ou "pa")
+  function boutonsArchivage(prefixe, f, arch) {
+    $(prefixe + "-archiver").hidden = arch;
+    $(prefixe + "-retablir").hidden = !arch;
+    $(prefixe + "-supprimer").hidden = !arch;
+    $(prefixe + "-edt").hidden = arch;
+    var n = $(prefixe + "-archive-note");
+    n.hidden = !arch;
+    if (arch) n.textContent = (prefixe === "pa" ? "Archivée" : "Archivé") + " le " + dateFr(f.archiveLe) + (f.archiveMotif ? " — " + f.archiveMotif : "")
+      + ". Hors des listes actives, du calcul des affectations et des menus de créneau ; les versions validées sont inchangées.";
+  }
+
+  var ar = { type: null, ids: [], retour: null };
+  function resumeArchivage() {
+    var r = M.operationsArchivage(ar.type, ar.ids, A.aujourdhui(), "", donneesRetrait()), e = r.effets, f = r.fiches, aesh = ar.type === "aesh";
+    if (!f.length) return { r: r, html: '<p class="note alerte">' + (aesh ? "Ces AESH sont déjà archivées." : "Ces élèves sont déjà archivés.") + '</p>' };
+    var creneaux = e.supprimees.length + e.modifiees.length, h = '<p><strong>' + ech(listeNoms(ar.type, f)) + '</strong> '
+      + (f.length > 1 ? (aesh ? "seront archivées." : "seront archivés.") : (aesh ? "sera archivée." : "sera archivé.")) + '</p><ul class="liste-motifs">'
+      + '<li>' + (f.length > 1 ? (aesh ? "Elles sortent" : "Ils sortent") : (aesh ? "Elle sort" : "Il sort")) + ' des listes actives, du calcul des affectations et des menus de créneau.</li>'
+      + '<li>' + (creneaux ? pluriel(creneaux, "créneau du brouillon retiré", "créneaux du brouillon retirés")
+        + (e.mutualisees ? ", dont " + pluriel(e.mutualisees, "groupe mutualisé quitté", "groupes mutualisés quittés") + " (le créneau reste pour les autres élèves)" : "")
+        + (aesh ? " : les élèves concernés redeviennent à couvrir." : ".") : "Aucun créneau du brouillon à retirer.") + '</li>'
+      + (!aesh && e.cours ? '<li>' + pluriel(e.cours, "cours conservé", "cours conservés") + ' (ils reviennent avec le rétablissement).</li>' : "")
+      + (e.versions.length ? '<li>Versions validées inchangées (' + e.versions.join(", ") + ').</li>' : "")
+      + '</ul><p class="aide">Une seule action, annulable.</p>';
+    return { r: r, html: h };
+  }
+  function ouvrirArchivage(type, ids) {
+    ar.type = type; ar.ids = ids.slice(); ar.retour = document.activeElement;
+    var s = resumeArchivage();
+    $("ar-titre").textContent = type === "aesh" ? "Archiver cette AESH" : (ids.length > 1 ? "Archiver ces élèves" : "Archiver cet élève");
+    $("ar-resume").innerHTML = s.html;
+    $("ar-date").value = A.aujourdhui(); $("ar-date").max = A.aujourdhui();
+    $("ar-motif").value = "";
+    $("ar-erreur").hidden = true;
+    $("ar-confirmer").disabled = !s.r.fiches.length;
+    $("voile-archiver").hidden = false;
+    $("ar-date").focus();
+  }
+  function fermerArchivage() {
+    $("voile-archiver").hidden = true;
+    if (ar.retour && ar.retour.focus) ar.retour.focus();
+  }
+  function confirmerArchivage() {
+    var date = $("ar-date").value;
+    if (!M.dateArchivageValide(date, A.aujourdhui())) {
+      $("ar-erreur").textContent = "La date d'archivage doit être celle d'aujourd'hui ou une date passée.";
+      $("ar-erreur").hidden = false;
+      return;
+    }
+    var r = M.operationsArchivage(ar.type, ar.ids, date, $("ar-motif").value, donneesRetrait());
+    if (!r.fiches.length) { fermerArchivage(); return; }
+    var nom = r.fiches.length > 1 ? pluriel(r.fiches.length, ar.type === "aesh" ? "AESH" : "élève", ar.type === "aesh" ? "AESH" : "élèves") : nomFiche(ar.type, r.fiches[0]);
+    fermerArchivage();
+    A.enregistrerPuisRendre(r.ops, nom + (r.fiches.length > 1 ? " : archivage fait." : (ar.type === "aesh" ? " archivée." : " archivé(e).")), "l'archivage de " + nom);
+  }
+  function retablir(type, ids) {
+    var r = M.operationsRetablissement(type, ids, donneesRetrait());
+    if (!r.fiches.length) return;
+    var nom = r.fiches.length > 1 ? r.fiches.length + " fiches" : nomFiche(type, r.fiches[0]);
+    A.enregistrerPuisRendre(r.ops, nom + " rétabli(e). Les créneaux retirés à l'archivage ne sont pas remis : annulez tout de suite pour les retrouver.", "le rétablissement de " + nom);
+  }
+  function supprimerDefinitivement(type, ids) {
+    var r = M.operationsSuppression(type, ids, donneesRetrait()), e = r.effets, aesh = type === "aesh";
+    if (!r.fiches.length) return;
+    var creneaux = e.supprimees.length + e.modifiees.length, parties = [];
+    if (!aesh) parties.push(pluriel(e.cours, "cours", "cours"));
+    parties.push(pluriel(creneaux, "créneau du brouillon", "créneaux du brouillon") + (e.mutualisees ? " (dont " + pluriel(e.mutualisees, "groupe mutualisé quitté", "groupes mutualisés quittés") + ")" : ""));
+    if (!aesh && e.exclusions) parties.push(pluriel(e.exclusions, "mention dans une liste « ne pas affecter »", "mentions dans des listes « ne pas affecter »"));
+    var msg = "Supprimer définitivement " + listeNoms(type, r.fiches) + " ? Sont supprimés : la fiche, " + parties.join(", ") + ". "
+      + (e.versions.length ? "Les versions validées " + e.versions.join(", ") + " gardent ses créneaux et restent lisibles. " : "")
+      + "Les rapports déjà reçus ne sont pas touchés. Cette action est irréversible, et l'historique d'annulation est effacé : exportez une sauvegarde si vous hésitez.";
+    A.ui().confirmationForte(msg, "Supprimer définitivement", function () {
+      A.enregistrerPuisRendre(r.ops, r.fiches.length > 1 ? r.fiches.length + " fiches supprimées définitivement." : nomFiche(type, r.fiches[0]) + " supprimé(e) définitivement.").then(function () { A.viderAnnulation(); });
+    }, { libelle: "Exporter une sauvegarde", cb: A.ui().exporterSauvegarde });
+  }
+  $("pe-archiver").addEventListener("click", function () { if (pe.ouvert) ouvrirArchivage("eleves", [pe.ouvert]); });
+  $("pe-retablir").addEventListener("click", function () { if (pe.ouvert) retablir("eleves", [pe.ouvert]); });
+  $("pe-supprimer").addEventListener("click", function () { if (pe.ouvert) supprimerDefinitivement("eleves", [pe.ouvert]); });
+  $("pa-archiver").addEventListener("click", function () { if (pa.ouvert) ouvrirArchivage("aesh", [pa.ouvert]); });
+  $("pa-retablir").addEventListener("click", function () { if (pa.ouvert) retablir("aesh", [pa.ouvert]); });
+  $("pa-supprimer").addEventListener("click", function () { if (pa.ouvert) supprimerDefinitivement("aesh", [pa.ouvert]); });
+  $("ar-confirmer").addEventListener("click", confirmerArchivage);
+  $("ar-annuler").addEventListener("click", fermerArchivage);
+  $("voile-archiver").addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape") { ev.preventDefault(); fermerArchivage(); }
+    if (ev.key === "Enter" && ev.target.tagName === "INPUT") { ev.preventDefault(); confirmerArchivage(); }
+  });
 
   /* =============== ouverture, redessin =============== */
   function ouvrir(type) {

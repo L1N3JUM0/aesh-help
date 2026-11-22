@@ -409,6 +409,63 @@ var PialModele = (function () {
     return r;
   }
 
+  /* opérations d'archivage, de rétablissement et de suppression (§17).
+     type : "eleves" | "aesh" ; ids : identifiants ; d : {eleves, aesh, cours
+     (archivés compris), affectations (brouillon et versions validées)}.
+     Chaque fonction renvoie {ops (à passer à enregistrerPuisRendre), fiches
+     (fiches concernées), effets (effetsRetrait)}. */
+  function dateArchivageValide(date, aujourdhui) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(txt(date)) && !isNaN(new Date(date + "T12:00:00").getTime()) && date <= aujourdhui;
+  }
+  function fichesCibles(type, ids, d, archivees) {
+    var cible = {}, liste = type === "aesh" ? (d.aesh || []) : (d.eleves || []);
+    ids.forEach(function (id) { cible[id] = true; });
+    return liste.filter(function (x) { return cible[x.id] && estArchive(x) === archivees; });
+  }
+  function operationsArchivage(type, ids, date, motif, d) {
+    var magasin = type === "aesh" ? "aesh" : "eleves";
+    var fiches = fichesCibles(type, ids, d, false).map(function (x) {
+      var c = JSON.parse(JSON.stringify(x));
+      c.archiveLe = date;
+      if (txt(motif).trim()) c.archiveMotif = txt(motif).replace(/\s+/g, " ").trim(); else delete c.archiveMotif;
+      return c;
+    });
+    var effets = effetsRetrait(type, fiches.map(function (x) { return x.id; }), d), ops = [{ magasin: magasin, enregistrer: fiches }];
+    if (effets.supprimees.length || effets.modifiees.length) ops.push({ magasin: "affectations", supprimer: effets.supprimees, enregistrer: effets.modifiees });
+    return { ops: ops, fiches: fiches, effets: effets };
+  }
+  // le rétablissement ne ramène pas les créneaux retirés à l'archivage
+  function operationsRetablissement(type, ids, d) {
+    var magasin = type === "aesh" ? "aesh" : "eleves";
+    var fiches = fichesCibles(type, ids, d, true).map(function (x) {
+      var c = JSON.parse(JSON.stringify(x));
+      delete c.archiveLe; delete c.archiveMotif;
+      return c;
+    });
+    return { ops: [{ magasin: magasin, enregistrer: fiches }], fiches: fiches, effets: null };
+  }
+  // seulement depuis des fiches archivées ; irréversible. Un élève supprimé
+  // emporte ses cours ; il sort de la liste « ne pas affecter » des AESH. Les
+  // versions validées gardent ses identifiants (elles restent lisibles).
+  function operationsSuppression(type, ids, d) {
+    var magasin = type === "aesh" ? "aesh" : "eleves", fiches = fichesCibles(type, ids, d, true);
+    var cible = {}, suppr = fiches.map(function (x) { return x.id; });
+    suppr.forEach(function (id) { cible[id] = true; });
+    var effets = effetsRetrait(type, suppr, d), ops = [{ magasin: magasin, supprimer: suppr }];
+    if (type === "eleves") {
+      var cours = (d.cours || []).filter(function (c) { return cible[c.eleveId]; }).map(function (c) { return c.id; });
+      if (cours.length) ops.push({ magasin: "cours", supprimer: cours });
+      var aesh = (d.aesh || []).filter(function (a) { return (a.elevesExclus || []).some(function (id) { return cible[id]; }); }).map(function (a) {
+        var c = JSON.parse(JSON.stringify(a));
+        c.elevesExclus = c.elevesExclus.filter(function (id) { return !cible[id]; });
+        return c;
+      });
+      if (aesh.length) ops.push({ magasin: "aesh", enregistrer: aesh });
+    }
+    if (effets.supprimees.length || effets.modifiees.length) ops.push({ magasin: "affectations", supprimer: effets.supprimees, enregistrer: effets.modifiees });
+    return { ops: ops, fiches: fiches, effets: effets };
+  }
+
   // renvoie les clés présentes plusieurs fois : {cle: [indices]}
   function collisions(cles) {
     var vus = {}, out = {};
@@ -595,7 +652,8 @@ var PialModele = (function () {
   // même mécanisme pour la fiche AESH (§16) : champs aussi présents dans le
   // fichier des AESH, et champs propres à l'application
   var CHAMPS_FICHE_AESH = ["quotite", "email", "etablissements", "indisponibilites", "formations"];
-  var PROPRES = { eleves: ["commentaire", "etatsMatieres"], aesh: ["voeux", "elevesExclus", "ignorerIndispos", "alias"] };
+  // archiveLe et archiveMotif : un réimport « Mettre à jour » ne rétablit jamais une fiche archivée (§17)
+  var PROPRES = { eleves: ["commentaire", "etatsMatieres", "archiveLe", "archiveMotif"], aesh: ["voeux", "elevesExclus", "ignorerIndispos", "alias", "archiveLe", "archiveMotif"] };
   // champs modifiés dans l'application dont la valeur du fichier diffère
   function conflitsReimport(existant, nouveau) {
     var m = (existant && existant.modifiesAppli) || {};
@@ -1143,6 +1201,7 @@ var PialModele = (function () {
     classeNette: classeNette, memeClasse: memeClasse, classesEnregistrees: classesEnregistrees, classesAvecAjout: classesAvecAjout,
     classesSansClasse: classesSansClasse, classesRenommee: classesRenommee, elevesDeClasse: elevesDeClasse, renommerClasse: renommerClasse,
     estArchive: estArchive, actifs: actifs, donneesActives: donneesActives, effetsRetrait: effetsRetrait,
+    dateArchivageValide: dateArchivageValide, operationsArchivage: operationsArchivage, operationsRetablissement: operationsRetablissement, operationsSuppression: operationsSuppression,
     anneeScolaire: anneeScolaire, niveauClasse: niveauClasse, typeEtablissement: typeEtablissement,
     etablissementParDefaut: etablissementParDefaut,
     jourNormalise: jourNormalise, minutes: minutes, hhmm: hhmm, heureNormalisee: heureNormalisee,

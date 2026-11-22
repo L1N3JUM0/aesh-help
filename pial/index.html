@@ -191,6 +191,8 @@ label.case input{width:auto}
 .classe-ligne .btn{min-height:44px}
 .classe-ligne .aide{margin:0}
 .classe-ajout input[type=text]{width:220px}
+.tableau-profils tbody tr.archive td{color:var(--gris)}
+.badge-archive{background:#ECECEC;color:#5C6370}
 .etab-param .duo input{width:90px}
 .jours-ouvres{display:flex;flex-wrap:wrap;gap:10px;margin:8px 0}
 
@@ -740,6 +742,7 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
             <option value="">Tous les états</option><option value="sous">Sous-couverts</option><option value="partiel">Partiellement couverts</option>
             <option value="couvert">Couverts</option><option value="sur">Sur-couverts</option>
           </select></div>
+          <div class="champ" style="flex:none;align-self:center"><label class="case"><input type="checkbox" id="pe-archives"> Afficher les archivés</label></div>
           <div class="champ" style="flex:none;align-self:center"><button type="button" class="btn btn-vide" id="pe-reinitialiser">Réinitialiser</button></div>
         </div>
         <div class="tableau-conteneur"><table class="tableau tableau-profils" id="pe-table"></table></div>
@@ -751,7 +754,11 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
           <h3 id="pe-titre" tabindex="-1"></h3>
           <p class="aide" id="pe-sous-titre"></p>
           <div id="pe-jauges" class="pp-jauges"></div>
-          <div class="actions"><button type="button" class="btn btn-vide" id="pe-edt">Voir l'emploi du temps</button></div>
+          <p class="note" id="pe-archive-note" hidden></p>
+          <div class="actions"><button type="button" class="btn btn-vide" id="pe-edt">Voir l'emploi du temps</button>
+            <button type="button" class="btn btn-vide" id="pe-archiver">Archiver…</button>
+            <button type="button" class="btn btn-vide" id="pe-retablir" hidden>Rétablir</button>
+            <button type="button" class="btn btn-danger" id="pe-supprimer" hidden>Supprimer définitivement…</button></div>
         </div>
         <div id="pe-fiche"></div>
       </aside>
@@ -775,6 +782,7 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
           <div class="champ"><label for="pa-charge">Charge</label><select id="pa-charge">
             <option value="">Toutes</option><option value="depassement">En dépassement</option><option value="sous">Sous-utilisées</option><option value="complete">Charge complète</option>
           </select></div>
+          <div class="champ" style="flex:none;align-self:center"><label class="case"><input type="checkbox" id="pa-archives"> Afficher les archivées</label></div>
           <div class="champ" style="flex:none;align-self:center"><button type="button" class="btn btn-vide" id="pa-reinitialiser">Réinitialiser</button></div>
         </div>
         <div class="tableau-conteneur"><table class="tableau tableau-profils" id="pa-table"></table></div>
@@ -786,7 +794,11 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
           <h3 id="pa-titre" tabindex="-1"></h3>
           <p class="aide" id="pa-sous-titre"></p>
           <div id="pa-jauges" class="pp-jauges"></div>
-          <div class="actions"><button type="button" class="btn btn-vide" id="pa-edt">Voir l'emploi du temps</button></div>
+          <p class="note" id="pa-archive-note" hidden></p>
+          <div class="actions"><button type="button" class="btn btn-vide" id="pa-edt">Voir l'emploi du temps</button>
+            <button type="button" class="btn btn-vide" id="pa-archiver">Archiver…</button>
+            <button type="button" class="btn btn-vide" id="pa-retablir" hidden>Rétablir</button>
+            <button type="button" class="btn btn-danger" id="pa-supprimer" hidden>Supprimer définitivement…</button></div>
         </div>
         <div id="pa-fiche"></div>
       </aside>
@@ -1212,6 +1224,21 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
     <div class="actions"><button type="button" class="btn btn-plein" id="na-creer">Créer</button>
       <button type="button" class="btn btn-vide" id="na-creer-autre">Créer et en ajouter une autre</button>
       <button type="button" class="btn btn-vide" id="na-annuler">Annuler</button></div>
+  </div>
+</div>
+
+<div class="voile" id="voile-archiver" hidden>
+  <div class="modale modale-large" role="dialog" aria-modal="true" aria-labelledby="ar-titre">
+    <h3 id="ar-titre">Archiver</h3>
+    <div id="ar-resume"></div>
+    <div class="formulaire-fiche">
+      <div class="champ"><label for="ar-date">Date d'archivage</label><input type="date" id="ar-date"></div>
+      <div class="champ"><label for="ar-motif">Motif (facultatif)</label><input type="text" id="ar-motif" maxlength="120" autocomplete="off" placeholder="Ex. : déménagement, fin de contrat"></div>
+    </div>
+    <p class="aide">Aujourd'hui ou une date passée. N'écrivez rien de médical dans le motif.</p>
+    <div class="note alerte" id="ar-erreur" hidden aria-live="polite"></div>
+    <div class="actions"><button type="button" class="btn btn-plein" id="ar-confirmer">Archiver</button>
+      <button type="button" class="btn btn-vide" id="ar-annuler">Annuler</button></div>
   </div>
 </div>
 

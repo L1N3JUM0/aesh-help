@@ -42,8 +42,13 @@ PialTests.executer(env).then(function (bilan) {
     var marque = l.etat === "ok" ? "  ok    " : (l.etat === "ignore" ? "  --    " : "  ÉCHEC ");
     console.log(marque + l.nom + (l.message ? "\n          " + l.message : ""));
   });
-  console.log("\n" + bilan.reussis + " réussi(s), " + bilan.echecs.length + " échec(s), " + bilan.ignores + " ignoré(s).");
-  process.exitCode = bilan.echecs.length ? 1 : 0;
+  // fonction supprimée mais encore appelée, identifiant HTML disparu (garde-fou statique)
+  var apl = require("./verifier-appels.js").executer();
+  console.log("\n[appels et identifiants]");
+  apl.lignes.forEach(function (l) { console.log((l.etat === "ok" ? "  ok    " : "  ÉCHEC ") + l.nom + (l.message ? "\n          " + l.message : "")); });
+  var echecs = bilan.echecs.length + apl.echecs;
+  console.log("\n" + (bilan.reussis + apl.reussis) + " réussi(s), " + echecs + " échec(s), " + bilan.ignores + " ignoré(s).");
+  process.exitCode = echecs ? 1 : 0;
 }, function (err) {
   console.error(err);
   process.exitCode = 1;

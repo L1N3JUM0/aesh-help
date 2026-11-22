@@ -368,6 +368,12 @@ L'onglet existant est étendu avec une section « Affectations ».
 - Réutiliser `graphiques.js` (SVG fait main), sans aucune bibliothèque.
 - Chaque tableau est exportable en CSV et imprimable.
 
+**Livré (22/11/2026)** : onglet Statistiques, bouton « Affectations » (à côté de « Rapports »). Calcul pur dans `pial/stats-affectations.js` (`PialStatsAff.creer(PialModele)`), interface dans `pial/stats-aff-ui.js`.
+   - Filtres : année, version (brouillon ou version validée), établissement, niveau, classe, AESH, modalité, semaine A/B (sans choix : moyenne des deux semaines).
+   - Heures couvertes d'un élève = heures affectées plafonnées à ses heures notifiées, par modalité ; taux = couvertes / notifiées. Avec un filtre AESH, les élèves sont ceux qu'elle accompagne et la couverture ne compte que ses affectations. Les fiches archivées sont écartées.
+   - Indicateurs : taux global, heures notifiées / couvertes / non couvertes, élèves par état de couverture, couverture par établissement, niveau et classe (individuel et mutualisé séparés), charge des AESH (état de sous-utilisation ou de dépassement seulement sans filtre d'établissement, de niveau, de classe ni de modalité), nombre moyen d'AESH par élève, changements d'établissement dans une même journée par AESH et par semaine, part des heures sur cours prioritaires (créneau qui recouvre un cours « prioritaire »), heures de récréation et de pause méridienne (si gérées), évolution de la couverture version après version.
+   - Graphiques SVG de `graphiques.js` ; chaque tableau s'exporte en CSV (`;`, virgule décimale, BOM, pas de formule exécutable) ; impression de la sélection (blocs cochés).
+
 ### 7.5 Onglets « Élèves » et « AESH » (§17)
 
 Les profils se renseignent dans l'application. L'import CSV reste disponible pour la rentrée et les gros volumes. Code : `pial/profils.js`, qui passe par `PialAffectations.interne` : mêmes données, même fiche, même pile d'annulation.

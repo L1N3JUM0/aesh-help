@@ -621,6 +621,9 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
   }
   .entete-impression-stats .ei-etab{font-family:var(--serif);font-size:13pt;font-weight:700}
   .entete-impression-stats .ei-periode,.entete-impression-stats .ei-date{font-size:9pt}
+  .impression-stats table{border-collapse:collapse;width:100%;font-size:8.5pt;margin:4pt 0}
+  .impression-stats th,.impression-stats td{border:1px solid #999;padding:2pt 4pt;text-align:left}
+  .impression-stats .tableau-conteneur{overflow:visible}
   .bloc-impression-stat{border:1pt solid var(--seyes);padding:8pt 10pt 10pt;margin:0 0 10pt;break-inside:avoid}
   .bloc-impression-stat h3{
     margin:0 -10pt 8pt;padding:4pt 10pt;background:#EDEFF3;color:var(--encre);
@@ -1082,6 +1085,13 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
 
   <!-- ============ VUE : STATISTIQUES ============ -->
   <section id="vue-stats" class="masque">
+    <div class="carte" style="padding-bottom:10px">
+      <div class="actions" role="group" aria-label="Type de statistiques" style="margin:0">
+        <button type="button" class="btn btn-plein" id="s-onglet-rapports" aria-pressed="true">Rapports</button>
+        <button type="button" class="btn btn-vide" id="s-onglet-aff" aria-pressed="false">Affectations</button>
+      </div>
+    </div>
+    <div id="s-bloc-rapports">
     <div class="carte">
       <h2>Statistiques</h2>
       <p class="chapeau">Les filtres ci-dessous recalculent tous les graphiques de cet onglet.</p>
@@ -1167,6 +1177,102 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
         <div id="s-invest-evolution"></div>
         <p class="note-sous-graphique" id="s-invest-evolution-note"></p>
       </div>
+    </div>
+    </div>
+
+    <div id="s-bloc-aff" hidden>
+    <div class="carte">
+      <h2>Statistiques des affectations</h2>
+      <p class="chapeau">Couverture des heures notifiées, charge des AESH et déplacements, pour l'année et la version choisies. Les filtres recalculent tous les blocs ; chaque tableau s'exporte en CSV.</p>
+      <p class="note alerte" id="s2-vide" hidden>Aucun élève n'est encore importé : importez les élèves, les AESH et les emplois du temps (onglet Importer).</p>
+      <div class="ligne-filtres">
+        <div class="champ etroit"><label for="s2-annee">Année scolaire</label><select id="s2-annee"></select></div>
+        <div class="champ"><label for="s2-version">Version</label><select id="s2-version"></select></div>
+        <div class="champ"><label for="s2-etab">Établissement</label><select id="s2-etab"></select></div>
+        <div class="champ etroit"><label for="s2-niveau">Niveau</label><select id="s2-niveau"></select></div>
+        <div class="champ etroit"><label for="s2-classe">Classe</label><select id="s2-classe"></select></div>
+        <div class="champ"><label for="s2-aesh">AESH</label><select id="s2-aesh"></select></div>
+        <div class="champ etroit"><label for="s2-modalite">Modalité</label>
+          <select id="s2-modalite"><option value="">Toutes</option><option value="individuel">Individuel</option><option value="mutualise">Mutualisé</option></select></div>
+        <div class="champ etroit"><label for="s2-semaine">Semaine</label>
+          <select id="s2-semaine"><option value="">A et B (moyenne)</option><option value="A">Semaine A</option><option value="B">Semaine B</option></select></div>
+      </div>
+      <p class="note" id="s2-resume"></p>
+      <div class="actions">
+        <button type="button" class="btn btn-vide" id="s2-reinitialiser">Réinitialiser les filtres</button>
+        <button type="button" class="btn btn-plein" id="s2-imprimer">Imprimer la sélection</button>
+      </div>
+    </div>
+
+    <div class="carte carte-graphique" data-imp>
+      <div class="entete-graphique"><input type="checkbox" checked aria-label="Imprimer ce bloc"><h2>Chiffres clés</h2></div>
+      <div class="grille-chiffres" id="s2-cles"></div>
+      <p class="note-sous-graphique">Heures couvertes = heures affectées, dans la limite des heures notifiées de chaque élève (un surplus ne compense pas un manque ailleurs).</p>
+    </div>
+
+    <div class="grille-cartes">
+      <div class="carte carte-graphique" data-imp>
+        <div class="entete-graphique"><input type="checkbox" checked aria-label="Imprimer ce bloc"><h2>Élèves par état de couverture</h2></div>
+        <div id="s2-etats"></div>
+        <p class="note-sous-graphique">Sous-couvert : au moins 1 h de manque ; partiellement couvert : moins d'1 h ; sur-couvert : plus d'heures affectées que notifiées.</p>
+      </div>
+      <div class="carte carte-graphique" data-imp>
+        <div class="entete-graphique"><input type="checkbox" checked aria-label="Imprimer ce bloc"><h2>Évolution de la couverture, version après version</h2></div>
+        <div id="s2-evolution"></div>
+        <div id="s2-evolution-tab"></div>
+        <div class="actions"><button type="button" class="btn btn-vide" data-csv="evolution">Exporter en CSV</button></div>
+      </div>
+    </div>
+
+    <div class="carte carte-graphique" data-imp>
+      <div class="entete-graphique"><input type="checkbox" checked aria-label="Imprimer ce bloc"><h2>Taux de couverture par établissement (%)</h2></div>
+      <div id="s2-etab-graph"></div>
+      <div id="s2-etab-tab"></div>
+      <div class="actions"><button type="button" class="btn btn-vide" data-csv="couverture-etablissements">Exporter en CSV</button></div>
+    </div>
+
+    <div class="carte carte-graphique" data-imp>
+      <div class="entete-graphique"><input type="checkbox" checked aria-label="Imprimer ce bloc"><h2>Taux de couverture par niveau (%)</h2></div>
+      <div id="s2-niveaux"></div>
+      <div id="s2-niveaux-tab"></div>
+      <div class="actions"><button type="button" class="btn btn-vide" data-csv="couverture-niveaux">Exporter en CSV</button></div>
+    </div>
+
+    <div class="carte carte-graphique" data-imp>
+      <div class="entete-graphique"><input type="checkbox" checked aria-label="Imprimer ce bloc"><h2>Taux de couverture par classe (%)</h2></div>
+      <div id="s2-classes"></div>
+      <div id="s2-classes-tab"></div>
+      <div class="actions"><button type="button" class="btn btn-vide" data-csv="couverture-classes">Exporter en CSV</button></div>
+    </div>
+
+    <div class="carte carte-graphique" data-imp>
+      <div class="entete-graphique"><input type="checkbox" checked aria-label="Imprimer ce bloc"><h2>Charge des AESH (heures par semaine)</h2></div>
+      <div id="s2-charge"></div>
+      <p class="note-sous-graphique" id="s2-charge-note"></p>
+      <div id="s2-charge-tab"></div>
+      <div class="actions"><button type="button" class="btn btn-vide" data-csv="charge-aesh">Exporter en CSV</button></div>
+    </div>
+
+    <div class="grille-cartes">
+      <div class="carte carte-graphique" data-imp>
+        <div class="entete-graphique"><input type="checkbox" checked aria-label="Imprimer ce bloc"><h2>Nombre d'AESH par élève</h2></div>
+        <div id="s2-aesh-eleve"></div>
+        <div class="actions"><button type="button" class="btn btn-vide" data-csv="aesh-par-eleve">Exporter en CSV</button></div>
+      </div>
+      <div class="carte carte-graphique" data-imp>
+        <div class="entete-graphique"><input type="checkbox" checked aria-label="Imprimer ce bloc"><h2>Changements d'établissement dans une journée</h2></div>
+        <div id="s2-changements"></div>
+        <div class="actions"><button type="button" class="btn btn-vide" data-csv="changements-etablissement">Exporter en CSV</button></div>
+      </div>
+      <div class="carte carte-graphique" data-imp>
+        <div class="entete-graphique"><input type="checkbox" checked aria-label="Imprimer ce bloc"><h2>Cours prioritaires</h2></div>
+        <p id="s2-prio" class="chapeau"></p>
+      </div>
+      <div class="carte carte-graphique" data-imp id="s2-peri-carte" hidden>
+        <div class="entete-graphique"><input type="checkbox" checked aria-label="Imprimer ce bloc"><h2>Récréation et pause méridienne</h2></div>
+        <p id="s2-peri" class="chapeau"></p>
+      </div>
+    </div>
     </div>
   </section>
 
@@ -1489,6 +1595,7 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
 <script src="moteur.js"></script>
 <script src="zip.js"></script>
 <script src="dossier.js"></script>
+<script src="stats-affectations.js"></script>
 <script src="chiffrement.js"></script>
 <script src="../rapprochement.js" onerror="void 0"></script>
 <script src="import-fichiers.js"></script>
@@ -1496,6 +1603,7 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
 <script src="profils.js"></script>
 <script src="saisie-rapide.js"></script>
 <script src="app.js"></script>
+<script src="stats-aff-ui.js"></script>
 <script>
 /* Service worker commun à toute l'application (portée : dossier racine),
    pour que l'espace PIAL reste utilisable hors ligne même si la page

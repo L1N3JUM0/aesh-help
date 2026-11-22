@@ -4,7 +4,7 @@
    Incrémenter CACHE_VERSION à chaque déploiement pour forcer la mise à
    jour du cache chez les utilisateurs (les anciens caches sont supprimés
    automatiquement dans "activate"). */
-var CACHE_VERSION = "v32";
+var CACHE_VERSION = "v33";
 var CACHE_NOM = "suivi-aesh-" + CACHE_VERSION;
 
 var FICHIERS = [
@@ -25,12 +25,14 @@ var FICHIERS = [
   "pial/zip.js",
   "pial/chiffrement.js",
   "pial/dossier.js",
+  "pial/stats-affectations.js",
   "rapprochement.js",
   "pial/import-fichiers.js",
   "pial/affectations.js",
   "pial/profils.js",
   "pial/saisie-rapide.js",
-  "pial/app.js"
+  "pial/app.js",
+  "pial/stats-aff-ui.js"
 ];
 
 // jamais mis en cache : données d'exemple et outils de développement

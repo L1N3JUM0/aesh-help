@@ -98,7 +98,7 @@ function ouvrirOngletNav(nom) {
   if (nom === "vue-eleves") PialProfils.ouvrir("eleves");
   if (nom === "vue-aesh") PialProfils.ouvrir("aesh");
   if (nom === "vue-affectations") PialAffectations.ouvrirOnglet();
-  if (nom === "vue-stats") { initialiserFiltresStats(); rendreStats(); }
+  if (nom === "vue-stats") { initialiserFiltresStats(); rendreStats(); if (typeof PialStatsUI !== "undefined") PialStatsUI.afficher(); }
   if (nom === "vue-import") rendreRattachement();
 }
 function rouvrirDernierOnglet() {

@@ -46,10 +46,15 @@ PialTests.executer(env).then(function (bilan) {
   var apl = require("./verifier-appels.js").executer();
   console.log("\n[appels et identifiants]");
   apl.lignes.forEach(function (l) { console.log((l.etat === "ok" ? "  ok    " : "  ÉCHEC ") + l.nom + (l.message ? "\n          " + l.message : "")); });
-  var echecs = bilan.echecs.length + apl.echecs;
-  console.log("\n" + (bilan.reussis + apl.reussis) + " réussi(s), " + echecs + " échec(s), " + bilan.ignores + " ignoré(s).");
-  process.exitCode = echecs ? 1 : 0;
-}, function (err) {
+  // test de fumée : chaque onglet de l'espace PIAL et chaque vue de l'application AESH s'ouvrent sans exception
+  return require("./test-fumee.js").executer().then(function (fum) {
+    console.log("\n[test de fumée : les deux applications exécutées]");
+    fum.lignes.forEach(function (l) { console.log((l.etat === "ok" ? "  ok    " : "  ÉCHEC ") + l.nom + (l.message ? "\n          " + l.message : "")); });
+    var echecs = bilan.echecs.length + apl.echecs + fum.echecs;
+    console.log("\n" + (bilan.reussis + apl.reussis + fum.reussis) + " réussi(s), " + echecs + " échec(s), " + bilan.ignores + " ignoré(s).");
+    process.exitCode = echecs ? 1 : 0;
+  });
+}).then(null, function (err) {
   console.error(err);
   process.exitCode = 1;
 });

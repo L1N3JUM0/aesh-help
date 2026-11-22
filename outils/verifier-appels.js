@@ -236,7 +236,7 @@ function executer() {
   return { reussis: lignes.length - echecs, echecs: echecs, lignes: lignes };
 }
 
-module.exports = { executer: executer, analyserPage: analyserPage, nettoyer: nettoyer, declarations: declarations, appels: appels };
+module.exports = { executer: executer, scriptsDePage: scriptsDePage, analyserPage: analyserPage, nettoyer: nettoyer, declarations: declarations, appels: appels };
 
 if (require.main === module) {
   var b = executer();

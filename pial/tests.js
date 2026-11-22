@@ -525,6 +525,12 @@ var PialTests = (function () {
       var g = M.fusionEleve(existant, fichier, true, "aesh");
       egal([g.quotite, g.indisponibilites, g.voeux, g.elevesExclus, g.ignorerIndispos], [20, ["ven"], { demiJournees: ["mer"] }, ["x"], true]);
       egal(M.fusionEleve(existant, fichier, false, "aesh").quotite, 24);
+      // e-mail : champ de la fiche, protégé au réimport comme la quotité
+      var avecMail = { id: "a", quotite: 20, email: "moi@exemple.fr", etablissements: [], indisponibilites: [], formations: [], modifiesAppli: { email: true } };
+      var fichierMail = { id: "a", quotite: 20, email: "fichier@exemple.fr", etablissements: [], indisponibilites: [], formations: [] };
+      egal(M.conflitsReimport(avecMail, fichierMail), ["email"]);
+      egal(M.fusionEleve(avecMail, fichierMail, true, "aesh").email, "moi@exemple.fr");
+      egal(M.fusionEleve(avecMail, fichierMail, false, "aesh").email, "fichier@exemple.fr");
     });
     t("glisser-déposer : violations d'une affectation simulée", function () {
       var f = fixture(M), e = f.e;

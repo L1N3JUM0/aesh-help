@@ -1762,6 +1762,99 @@ var PialTests = (function () {
     });
   }
 
+  /* =============== dossier d'envoi par AESH (phase 3) =============== */
+  function testsDossier(t, D, Z) {
+    function donnees(extra) {
+      var d = {
+        annee: "2026-2027", version: { numero: 3, dateEffet: "2026-11-23" }, genereLe: "2026-11-18",
+        etablissements: [{ id: "e1", nom: "Collège Paul Gauthier" }, { id: "e2", nom: "École Test" }],
+        eleves: [
+          { id: "el-1", parcours: "p-1", cle: "lucas m.|5b|college paul gauthier", nomCourt: "Lucas M.", classe: "5B", etablissement: "e1", heuresInd: 6, heuresMut: 0 },
+          { id: "el-2", cle: "lea d.|5b|college paul gauthier", nomCourt: "Léa D.", classe: "5B", etablissement: "e1", heuresInd: 0, heuresMut: 4 },
+          { id: "el-3", cle: "tom l.|6a|college paul gauthier", nomCourt: "Tom L.", classe: "6A", etablissement: "e1", heuresInd: 2, heuresMut: 0 }
+        ],
+        aesh: [{ id: "ae-1", nom: "Durand", prenom: "Sophie", email: "sophie@example.org", quotite: 24 },
+          { id: "ae-2", nom: "Leroy", prenom: "Marc" }, { id: "ae-3", nom: "Sans", prenom: "Affectation" }],
+        cours: [{ eleveId: "el-1", jour: "lundi", debut: "08:00", fin: "09:00", matiere: "Mathématiques", semaine: "" },
+          { eleveId: "el-2", jour: "lundi", debut: "09:00", fin: "10:00", matiere: "Français", semaine: "A" }],
+        affectations: [
+          { id: "a1", aeshId: "ae-1", creneau: { etab: "e1", jour: "lundi", debut: "08:00", fin: "08:55", semaine: "toutes" }, modalite: "individuel", eleves: ["el-1"] },
+          { id: "a2", aeshId: "ae-1", creneau: { etab: "e1", jour: "lundi", debut: "09:00", fin: "10:00", semaine: "A" }, modalite: "mutualise", eleves: ["el-2"] },
+          { id: "a3", aeshId: "ae-1", creneau: { etab: "e1", jour: "mardi", debut: "12:00", fin: "12:30", semaine: "toutes" }, modalite: "periscolaire", periscolaire: "meridienne", eleves: ["el-3"] },
+          { id: "a4", aeshId: "ae-2", creneau: { etab: "e1", jour: "jeudi", debut: "10:00", fin: "11:00", semaine: "toutes" }, modalite: "individuel", eleves: ["el-3"] }
+        ]
+      };
+      Object.keys(extra || {}).forEach(function (k) { d[k] = extra[k]; });
+      return d;
+    }
+    t("dossier : affectation.json au format pial-affectation/1", function () {
+      var j = D.affectationAesh(donnees(), "ae-1");
+      egal([j.format, j.annee, j.version, j.date_effet, j.aesh, j.eleves.length], ["pial-affectation/1", "2026-2027", 3, "2026-11-23", "Sophie D.", 3]);
+      var lucas = j.eleves.filter(function (e) { return e.eleveNom === "Lucas M."; })[0];
+      egal([lucas.eleveId, lucas.cle, lucas.classe, lucas.etablissement, lucas.modalite, lucas.heures],
+        ["p-1", "lucas m.|5b|college paul gauthier", "5B", "Collège Paul Gauthier", "individuel", 6], "identifiant stable du parcours");
+      egal(lucas.creneaux, [{ jour: "lundi", debut: "08:00", fin: "08:55", semaine: "toutes", matiere: "Mathématiques" }]);
+      var lea = j.eleves.filter(function (e) { return e.eleveNom === "Léa D."; })[0];
+      egal([lea.eleveId, lea.modalite, lea.heures, lea.creneaux[0].matiere, lea.creneaux[0].semaine], ["el-2", "mutualise", 4, "Français", "A"], "sans parcours : identifiant de la fiche");
+      var tom = j.eleves.filter(function (e) { return e.eleveNom === "Tom L."; })[0];
+      egal([tom.modalite, tom.heures, tom.creneaux[0].type, tom.creneaux[0].matiere], ["periscolaire", 0, "periscolaire", "Pause méridienne"]);
+      vrai(JSON.stringify(j).indexOf("commentaire") < 0 && JSON.stringify(j).indexOf("etatsMatieres") < 0, "rien de la fiche interne");
+    });
+    t("dossier : signature stable, sensible aux changements, les AESH sans affectation sont écartées", function () {
+      var d = donnees(), s1 = D.signature(D.affectationAesh(d, "ae-1"));
+      d.genereLe = "2027-01-01";
+      egal(D.signature(D.affectationAesh(d, "ae-1")), s1, "la date de génération ne compte pas");
+      d.affectations[0].creneau.fin = "09:00";
+      vrai(D.signature(D.affectationAesh(d, "ae-1")) !== s1, "un créneau modifié change la signature");
+      egal(D.aeshConcernees(donnees()).map(function (a) { return a.id; }), ["ae-1", "ae-2"]);
+    });
+    t("dossier : « seulement celles dont l'affectation a changé »", function () {
+      var d = donnees(), prec = donnees({ version: { numero: 2, dateEffet: "2026-10-01" } });
+      prec.affectations = prec.affectations.filter(function (a) { return a.id !== "a4"; });
+      var r = D.etatsAesh(d, {}, prec);
+      egal(r.map(function (x) { return [x.aesh.id, x.changee, x.source]; }), [["ae-1", false, "version précédente"], ["ae-2", true, "version précédente"]],
+        "ae-2 est nouvelle dans la version, ae-1 inchangée");
+      var exp = { "ae-1": { signature: "autre" }, "ae-2": { signature: D.signature(D.affectationAesh(d, "ae-2")) } };
+      r = D.etatsAesh(d, exp, prec);
+      egal(r.map(function (x) { return [x.aesh.id, x.changee, x.source]; }), [["ae-1", true, "dernier export"], ["ae-2", false, "dernier export"]],
+        "le dernier export prime sur la version précédente");
+      r = D.etatsAesh(d, {}, null);
+      egal(r.map(function (x) { return x.changee; }), [true, true], "ni export ni version précédente : tout est à envoyer");
+    });
+    t("dossier : message, .eml (brouillon), emploi du temps autonome, récapitulatif", function () {
+      var d = donnees(), m = D.message(d, "ae-1", { changee: true });
+      egal(m.destinataire, "sophie@example.org");
+      vrai(m.objet.indexOf("version n° 3") >= 0 && m.objet.indexOf("23/11/2026") >= 0, m.objet);
+      vrai(m.corps.indexOf("Bonjour Sophie,") === 0 && m.corps.indexOf("affectation.json") > 0 && m.corps.indexOf("Lucas M. (5B") > 0 && m.corps.indexOf("a changé") > 0);
+      var e = D.eml(d, "ae-1");
+      vrai(e.indexOf("X-Unsent: 1\r\n") === 0 && e.indexOf("To: sophie@example.org") > 0, "en-têtes du brouillon");
+      vrai(/Subject: =\?UTF-8\?B\?[A-Za-z0-9+\/=]+\?=/.test(e), "objet accentué encodé");
+      vrai(e.indexOf("filename=\"emploi-du-temps.html\"") > 0 && e.indexOf("filename=\"affectation.json\"") > 0, "pièces jointes");
+      var corps = e.split("Content-Transfer-Encoding: base64\r\n\r\n")[1].split("\r\n--")[0].replace(/\r\n/g, "");
+      vrai(Buffer.from(corps, "base64").toString("utf8").indexOf("Bonjour Sophie") === 0, "corps lisible une fois décodé");
+      var h = D.edtHtml(d, "ae-1");
+      vrai(h.indexOf("<!DOCTYPE html>") === 0 && h.indexOf("Semaine A") > 0 && h.indexOf("Lucas M. (5B)") > 0 && h.indexOf("<style>") > 0, "page autonome");
+      vrai(!/(src|href)=["']?https?:|<link |<script/.test(h), "aucune ressource externe");
+      var csv = D.recapitulatifCsv(d);
+      vrai(csv.charAt(0) === "﻿" && csv.indexOf("Sophie Durand;24;3;") > 0 && csv.indexOf("Marc Leroy;;1;2;") > 0, csv);
+      egal(D.message(donnees({ affectations: [] }), "ae-3").corps.indexOf("Aucun élève ne vous est affecté") > 0, true);
+    });
+    t("dossier : ZIP (un dossier par AESH, récapitulatif à la racine)", function () {
+      if (!Z) throw new Ignore("PialZip absent");
+      var d = donnees(), f = D.fichiersDossier(d, null, {});
+      egal(f.map(function (x) { return x.nom; }), ["Sophie-Durand/message.txt", "Sophie-Durand/message.eml", "Sophie-Durand/emploi-du-temps.html", "Sophie-Durand/affectation.json",
+        "Marc-Leroy/message.txt", "Marc-Leroy/message.eml", "Marc-Leroy/emploi-du-temps.html", "Marc-Leroy/affectation.json", "recapitulatif.csv"]);
+      var seul = D.fichiersDossier(d, ["ae-2"], {});
+      egal(seul.length, 5, "une seule AESH choisie");
+      var zip = Z.ecrire(f, new Date(2026, 10, 18, 10, 0, 0));
+      return Z.lire(zip).then(function (lu) {
+        egal(Object.keys(lu).length, 9, "toutes les entrées relues, CRC vérifié");
+        var j = JSON.parse(new TextDecoder().decode(lu["Sophie-Durand/affectation.json"]));
+        egal([j.format, j.eleves.length], ["pial-affectation/1", 3]);
+      });
+    });
+  }
+
   /* =============== rapprochement (phase 3) =============== */
   function testsRapprochement(t, M, R) {
     var cand = function (id, nomCourt, classe, etab, extra) {
@@ -1896,6 +1989,7 @@ var PialTests = (function () {
     if (env.moteur && env.importFichiers) { groupeCourant = "migration"; testsMigration(t, env.moteur, env.modele, env.importFichiers, env); }
     if (env.importFichiers) { groupeCourant = "fiches"; testsFiches(t, env.modele, env.importFichiers, env); }
     groupeCourant = "protection"; testsProtection(t, env.modele, env.chiffrement);
+    if (env.dossier) { groupeCourant = "dossier"; testsDossier(t, env.dossier, env.zip); }
     if (env.rapprochement) { groupeCourant = "rapprochement"; testsRapprochement(t, env.modele, env.rapprochement); }
     var bilan = { reussis: 0, echecs: [], ignores: 0, lignes: [] };
     return tests.reduce(function (p, test) {

@@ -1370,6 +1370,22 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
   </div>
 </div>
 
+<div class="voile" id="voile-dossier" hidden>
+  <div class="modale modale-large" role="dialog" aria-modal="true" aria-labelledby="dos-titre">
+    <h3 id="dos-titre">Dossiers d'envoi par AESH</h3>
+    <p class="aide">Un ZIP avec, pour chaque AESH, un dossier : message.txt, message.eml (brouillon de mail), emploi-du-temps.html (à ouvrir ou imprimer) et affectation.json (pour mettre à jour ses fiches dans l'application AESH). Un récapitulatif.csv est à la racine. Rien n'est envoyé : vous gardez la main sur les mails.</p>
+    <div class="champ" style="max-width:360px"><label for="dos-version">Affectation à envoyer</label><select id="dos-version"></select></div>
+    <div class="champ">
+      <label><input type="radio" name="dos-choix" value="toutes" checked> Toutes les AESH</label>
+      <label><input type="radio" name="dos-choix" value="changees"> Seulement celles dont l'affectation a changé</label>
+    </div>
+    <div id="dos-liste"></div>
+    <p class="aide">Les fichiers .eml s'ouvrent comme brouillon dans Outlook ou Thunderbird, mais pas avec une messagerie web (Gmail, webmail) : dans ce cas, copiez message.txt et joignez les deux autres fichiers. Les dossiers téléchargés sont mémorisés comme envoyés : « a changé » se compare ensuite à cet envoi.</p>
+    <div class="actions"><button type="button" class="btn btn-plein" id="dos-generer">Télécharger le ZIP</button>
+      <button type="button" class="btn btn-vide" id="dos-fermer">Fermer</button></div>
+  </div>
+</div>
+
 <div class="voile" id="voile-versions" hidden>
   <div class="modale modale-large modale-rapport" role="dialog" aria-modal="true" aria-labelledby="vh-titre">
     <h3 id="vh-titre">Historique des versions</h3>
@@ -1472,6 +1488,7 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
 <script src="modele.js"></script>
 <script src="moteur.js"></script>
 <script src="zip.js"></script>
+<script src="dossier.js"></script>
 <script src="chiffrement.js"></script>
 <script src="../rapprochement.js" onerror="void 0"></script>
 <script src="import-fichiers.js"></script>

@@ -604,6 +604,7 @@ var PialAffectations = (function () {
       + (dernierRapport ? '<button type="button" class="btn btn-vide" id="aff-voir-rapport">Rapport</button>' : "")
       + '<button type="button" class="btn btn-vide" id="aff-desepingler"' + (nbEpinglees() ? "" : " disabled") + '>Tout désépingler</button>'
       + '<button type="button" class="btn btn-vide" id="aff-valider"' + (etat.affectations.length ? "" : " disabled") + '>Valider la version</button>'
+      + '<button type="button" class="btn btn-vide" id="aff-dossiers"' + (etat.versions.length || etat.affectations.length ? "" : " disabled") + '>Dossiers d\'envoi</button>'
       + '<button type="button" class="btn btn-vide" id="aff-historique">Historique' + (etat.versions.length ? " (" + etat.versions.length + ")" : "") + '</button>'
       + '</span>';
     Array.prototype.forEach.call($("aff-synthese").querySelectorAll("[data-semaine]"), function (b) {
@@ -613,6 +614,7 @@ var PialAffectations = (function () {
     $("aff-annuler").addEventListener("click", annuler);
     $("aff-valider").addEventListener("click", ouvrirValidation);
     $("aff-historique").addEventListener("click", ouvrirHistorique);
+    $("aff-dossiers").addEventListener("click", ouvrirDossier);
     if (dernierRapport) $("aff-voir-rapport").addEventListener("click", afficherRapport);
     $("aff-desepingler").addEventListener("click", toutDesepingler);
   }
@@ -2107,6 +2109,75 @@ var PialAffectations = (function () {
     });
     return l;
   }
+  /* =============== dossiers d'envoi par AESH (§8.1) =============== */
+  /* PialDossier fabrique les fichiers ; ici : choix de la version, des AESH
+     (toutes, ou celles dont l'affectation a changé depuis le dernier dossier
+     exporté, à défaut depuis la version validée précédente), ZIP, et
+     mémorisation de la signature exportée (parametres / exportsDossier). */
+  var dossierExports = {};
+  function donneesDossier(cle) {
+    var num = cle === "brouillon" ? 0 : +cle, v = num ? versionParNumero(num) : null;
+    return { annee: v ? v.annee : anneeCourante(), version: { numero: num, dateEffet: v ? v.dateEffet : "" }, genereLe: aujourdhui(),
+      etablissements: etat.etablissements, eleves: etat.elevesTous, aesh: etat.aeshTous, cours: etat.coursTous, affectations: affsDeVersion(cle) };
+  }
+  function clePrecedente(cle) {
+    var num = cle === "brouillon" ? Infinity : +cle, prec = null;
+    etat.versions.forEach(function (v) { if (v.numero < num && (prec === null || v.numero > prec)) prec = v.numero; });
+    return prec === null ? null : String(prec);
+  }
+  function etatsDossier() {
+    var cle = $("dos-version").value, prec = clePrecedente(cle);
+    return { cle: cle, donnees: donneesDossier(cle), etats: PialDossier.etatsAesh(donneesDossier(cle), dossierExports, prec ? donneesDossier(prec) : null) };
+  }
+  function aeshRetenues(r) {
+    var seulesChangees = document.querySelector('input[name="dos-choix"]:checked').value === "changees";
+    return r.etats.filter(function (x) { return !seulesChangees || x.changee; });
+  }
+  function rendreDossier() {
+    var r = etatsDossier(), retenues = aeshRetenues(r);
+    var lib = { "dernier export": "depuis le dernier dossier exporté", "version précédente": "depuis la version précédente" };
+    $("dos-liste").innerHTML = r.etats.length ? '<div class="tableau-conteneur"><table class="tableau"><thead><tr><th>AESH</th><th>Élèves</th><th>Affectation</th><th>Dans le ZIP</th></tr></thead><tbody>'
+      + r.etats.map(function (x) {
+        var n = PialDossier.affectationAesh(r.donnees, x.aesh.id).eleves.length;
+        return '<tr><td>' + ech(nomAesh(x.aesh)) + (x.aesh.email ? '' : ' <span class="aide">(pas d\'e-mail enregistré)</span>') + '</td><td>' + n + '</td><td>'
+          + (x.changee ? '<strong>changée</strong>' : 'inchangée') + ' <span class="aide">(' + (lib[x.source] || "aucun envoi ni version précédente") + ')</span></td><td>'
+          + (retenues.indexOf(x) >= 0 ? "oui" : "non") + '</td></tr>';
+      }).join("") + '</tbody></table></div>' : '<p class="aide">Aucune AESH n\'a d\'affectation dans cette version.</p>';
+    $("dos-generer").disabled = !retenues.length;
+    $("dos-generer").textContent = retenues.length ? "Télécharger le ZIP (" + pluriel(retenues.length, "AESH", "AESH") + ")" : "Aucune AESH à envoyer";
+  }
+  function ouvrirDossier() {
+    var vs = etat.versions.slice().sort(function (a, b) { return b.numero - a.numero; });
+    $("dos-version").innerHTML = vs.map(function (v) { return '<option value="' + v.numero + '">Version n° ' + v.numero + ' (' + dateFr(v.dateEffet) + ')</option>'; }).join("")
+      + '<option value="brouillon">Brouillon actuel (non validé)</option>';
+    PialDB.obtenir("parametres", "exportsDossier").then(function (l) {
+      dossierExports = (l && l.valeur) || {};
+      rendreDossier();
+      $("voile-dossier").hidden = false;
+      $("dos-generer").focus();
+    });
+  }
+  $("dos-version").addEventListener("change", rendreDossier);
+  Array.prototype.forEach.call(document.querySelectorAll('input[name="dos-choix"]'), function (r) { r.addEventListener("change", rendreDossier); });
+  $("dos-fermer").addEventListener("click", function () { $("voile-dossier").hidden = true; });
+  $("voile-dossier").addEventListener("click", function (ev) { if (ev.target === this) this.hidden = true; });
+  $("dos-generer").addEventListener("click", function () {
+    var r = etatsDossier(), retenues = aeshRetenues(r);
+    if (!retenues.length) return;
+    var changees = {}, ids = retenues.map(function (x) { changees[x.aesh.id] = x.changee && x.source !== "aucun export ni version précédente"; return x.aesh.id; });
+    var fichiers = PialDossier.fichiersDossier(r.donnees, ids, { changees: changees });
+    var zip = PialZip.ecrire(fichiers, new Date());
+    var nomZip = "dossiers-affectation-" + (r.donnees.version.numero ? "v" + r.donnees.version.numero : "brouillon") + "-" + aujourdhui() + ".zip";
+    var memo = JSON.parse(JSON.stringify(dossierExports));
+    retenues.forEach(function (x) { memo[x.aesh.id] = { signature: x.signature, date: aujourdhui(), version: r.donnees.version.numero }; });
+    ui.telecharger(nomZip, zip, "application/zip");
+    PialDB.appliquer([{ magasin: "parametres", enregistrer: [{ cle: "exportsDossier", valeur: memo }] }]).then(function () {
+      dossierExports = memo;
+      rendreDossier();
+      ui.toast("Dossiers téléchargés : " + pluriel(ids.length, "AESH", "AESH") + ". Ils sont maintenant considérés comme envoyés.");
+    });
+  });
+
   function ouvrirHistorique() { rendreHistorique(); $("vh-detail").innerHTML = ""; $("voile-versions").hidden = false; $("vh-fermer").focus(); }
   function fermerHistorique() { $("voile-versions").hidden = true; }
   $("vh-fermer").addEventListener("click", fermerHistorique);

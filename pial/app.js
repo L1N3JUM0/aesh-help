@@ -924,74 +924,195 @@ function migrerSauvegarde(donnees) {
   ["eleves", "aesh", "cours", "affectations", "versions"].forEach(function (k) { if (Array.isArray(donnees[k])) out[k] = m[k]; });
   return out;
 }
-$("btn-exporter-sauvegarde").addEventListener("click", exporterSauvegarde);
+$("btn-exporter-sauvegarde").addEventListener("click", function () { exporterSauvegarde(); });
+$("btn-exporter-chiffree").addEventListener("click", function () {
+  if (!PialChiffre.disponible()) { toast("Le chiffrement n'est pas disponible dans ce navigateur (ouvrez l'espace PIAL en https ou en local)."); return; }
+  demanderMotDePasse({
+    titre: "Sauvegarde chiffrée",
+    aide: "Choisissez un mot de passe d'au moins 8 caractères. Il n'est stocké nulle part : s'il est perdu, la sauvegarde est définitivement illisible, personne ne pourra la récupérer. Notez-le en lieu sûr.",
+    confirmer: true, libelle: "Chiffrer et télécharger"
+  }).then(function (mdp) {
+    if (mdp === null) return;
+    return PialDB.exporterTout().then(function (donnees) {
+      var contenu = { format: "pial-suivi/3", exporte_le: isoJour(new Date()) };
+      Object.keys(donnees).forEach(function (k) { contenu[k] = donnees[k]; });
+      return PialChiffre.chiffrer(JSON.stringify(contenu), mdp);
+    }).then(function (env) {
+      telecharger("sauvegarde-pial-" + isoJour(new Date()) + "-chiffree.json", JSON.stringify(env), "application/json");
+      toast("Sauvegarde chiffrée téléchargée. Gardez bien le mot de passe.");
+    }, function () { toast("La sauvegarde chiffrée n'a pas pu être créée."); });
+  });
+});
+
+/* saisie d'un mot de passe dans une fenêtre dédiée. opts : {titre, aide,
+   confirmer (deux saisies identiques, 8 caractères au moins), libelle,
+   verifier (facultatif) : function (mdp) -> Promise<texte d'erreur | null>}.
+   Résout avec le mot de passe, ou null si l'utilisateur annule. */
+function demanderMotDePasse(opts) {
+  return new Promise(function (resolve) {
+    var voile = $("voile-mdp"), form = $("mdp-form"), m1 = $("mdp-1"), m2 = $("mdp-2"), err = $("mdp-erreur");
+    $("mdp-titre").textContent = opts.titre || "Mot de passe";
+    $("mdp-aide").textContent = opts.aide || "";
+    $("mdp-ok").textContent = opts.libelle || "Valider";
+    $("mdp-2-champ").hidden = !opts.confirmer;
+    m1.value = ""; m2.value = ""; err.hidden = true;
+    voile.hidden = false; m1.focus();
+    function fin(v) {
+      voile.hidden = true; m1.value = ""; m2.value = "";
+      form.removeEventListener("submit", ok); $("mdp-annuler").removeEventListener("click", non);
+      resolve(v);
+    }
+    function montrer(msg) { err.textContent = msg; err.hidden = false; }
+    function ok(e) {
+      e.preventDefault();
+      var v = m1.value;
+      if (!v) { montrer("Saisissez le mot de passe."); return; }
+      if (opts.confirmer) {
+        if (v.length < 8) { montrer("Au moins 8 caractères."); return; }
+        if (v !== m2.value) { montrer("Les deux saisies ne sont pas identiques."); return; }
+      }
+      if (!opts.verifier) { fin(v); return; }
+      $("mdp-ok").disabled = true;
+      opts.verifier(v).then(function (refus) {
+        $("mdp-ok").disabled = false;
+        if (refus) { montrer(refus); m1.select(); } else fin(v);
+      });
+    }
+    function non() { fin(null); }
+    form.addEventListener("submit", ok); $("mdp-annuler").addEventListener("click", non);
+  });
+}
+
 $("btn-restaurer-sauvegarde").addEventListener("click", function () { $("entree-restauration").click(); });
 $("entree-restauration").addEventListener("change", function () {
   var fichier = this.files[0]; this.value = ""; if (!fichier) return;
   lireFichierTexte(fichier).then(function (texte) {
     var donnees;
     try { donnees = JSON.parse(texte); } catch (e) { toast("Ce fichier n'est pas une sauvegarde valide."); return; }
-    if (!donnees || !Array.isArray(donnees.rapports)
-      || (donnees.format && FORMATS_SAUVEGARDE.indexOf(donnees.format) < 0)) {
-      toast("Ce fichier n'est pas une sauvegarde valide.");
-      return;
+    if (PialChiffre.estChiffre(donnees)) {
+      var enveloppe = donnees, clair = null;
+      return demanderMotDePasse({
+        titre: "Sauvegarde chiffrée",
+        aide: "Saisissez le mot de passe choisi lors de la sauvegarde. Sans lui, le fichier est illisible.",
+        libelle: "Déchiffrer",
+        verifier: function (mdp) {
+          return PialChiffre.dechiffrer(enveloppe, mdp).then(function (t) { clair = t; return null; }, function (e) {
+            return e && e.message === "mot-de-passe" ? "Mot de passe incorrect, ou fichier abîmé." : "Ce fichier chiffré n'est pas lisible.";
+          });
+        }
+      }).then(function (mdp) {
+        if (mdp === null) return;
+        var d2;
+        try { d2 = JSON.parse(clair); } catch (e) { toast("Ce fichier n'est pas une sauvegarde valide."); return; }
+        proposerRestauration(d2);
+      });
     }
-    var complete = Array.isArray(donnees.eleves);
-    var message = "Restaurer cette sauvegarde remplacera intégralement les données actuelles (" + cache.length + " rapport(s) enregistrés ici, qui seront perdus s'ils ne figurent pas dans la sauvegarde)";
-    if (complete) {
-      message += ", ainsi que les élèves, AESH, emplois du temps et affectations (" + PialAffectations.compteurs().eleves + " élève(s) et "
-        + PialAffectations.compteurs().affectations + " affectation(s) ici ; " + donnees.eleves.length + " élève(s) et "
-        + (donnees.affectations || []).length + " affectation(s) dans la sauvegarde)";
-    } else {
-      message += ". Cette sauvegarde est antérieure au module Affectations : les élèves, AESH, emplois du temps et affectations actuels sont conservés";
+    proposerRestauration(donnees);
+  });
+});
+function proposerRestauration(donnees) {
+  if (!donnees || !Array.isArray(donnees.rapports)
+    || (donnees.format && FORMATS_SAUVEGARDE.indexOf(donnees.format) < 0)) {
+    toast("Ce fichier n'est pas une sauvegarde valide.");
+    return;
+  }
+  var complete = Array.isArray(donnees.eleves);
+  var message = "Restaurer cette sauvegarde remplacera intégralement les données actuelles (" + cache.length + " rapport(s) enregistrés ici, qui seront perdus s'ils ne figurent pas dans la sauvegarde)";
+  if (complete) {
+    message += ", ainsi que les élèves, AESH, emplois du temps et affectations (" + PialAffectations.compteurs().eleves + " élève(s) et "
+      + PialAffectations.compteurs().affectations + " affectation(s) ici ; " + donnees.eleves.length + " élève(s) et "
+      + (donnees.affectations || []).length + " affectation(s) dans la sauvegarde)";
+  } else {
+    message += ". Cette sauvegarde est antérieure au module Affectations : les élèves, AESH, emplois du temps et affectations actuels sont conservés";
+  }
+  confirmationForte(
+    message + ". Cette action est irréversible.",
+    "Remplacer",
+    function () {
+      PialDB.remplacerTout(migrerSauvegarde(donnees)).then(function () {
+        return Promise.all([rafraichirCache(), rafraichirImports(), PialAffectations.recharger()]);
+      }).then(function () {
+        initialiserFiltres(); initialiserPurge(); rendreRapports(); rendreImports(); rendreIndicateurs();
+        initialiserFiltresStats(); rendreStats();
+        PialAffectations.rendreReglages();
+        PialAffectations.viderAnnulation();
+        if (typeof PialAffectations.surChangement === "function") PialAffectations.surChangement();
+        toast("Sauvegarde restaurée.");
+      }).catch(function () { toast("La sauvegarde n'a pas pu être restaurée : les données actuelles sont inchangées."); });
     }
+  );
+}
+
+/* =============== réglages : purge =============== */
+/* Purge par année (spec §8.4) : tout ce qui est antérieur à l'année
+   choisie — rapports (datés par le début de leur période), élèves et leurs
+   cours, affectations, versions validées, classes de ces années. Les AESH,
+   les établissements, les réglages et l'historique des imports restent. */
+function seuilPurge() { return parseInt($("purge-annee").value, 10) || 0; }
+function libellePlanPurge(p) {
+  var morceaux = [];
+  function ajoute(n, un, plusieurs) { if (n) morceaux.push(n + " " + (n > 1 ? plusieurs : un)); }
+  ajoute(p.rapports.length, "rapport", "rapports");
+  ajoute(p.eleves.length, "élève (et ses cours)", "élèves (et leurs cours)");
+  ajoute(p.versions.length, "version validée", "versions validées");
+  ajoute(p.affectations.length, "affectation", "affectations");
+  return morceaux.join(", ");
+}
+function majApercuPurge() {
+  var hote = $("purge-apercu"), seuil = seuilPurge();
+  if (!seuil) { hote.textContent = ""; $("btn-purger").disabled = true; return Promise.resolve(); }
+  return PialDB.exporterTout().then(function (d) {
+    var p = PialModele.planPurge(d, seuil), lib = libellePlanPurge(p);
+    $("btn-purger").disabled = !lib;
+    hote.textContent = lib ? "Serait supprimé : " + lib + "." : "Rien à supprimer avant cette année scolaire.";
+  });
+}
+function initialiserPurge() {
+  return PialDB.exporterTout().then(function (d) {
+    var annees = PialModele.anneesPresentes(d);
+    $("purge-annee").innerHTML = annees.map(function (a) { return '<option value="' + a + '">' + a + '-' + (a + 1) + '</option>'; }).join("");
+    return majApercuPurge();
+  });
+}
+$("purge-annee").addEventListener("change", majApercuPurge);
+$("btn-purger").addEventListener("click", function () {
+  var seuil = seuilPurge();
+  if (!seuil) { toast("Aucune année disponible."); return; }
+  PialDB.exporterTout().then(function (d) {
+    var p = PialModele.planPurge(d, seuil), lib = libellePlanPurge(p);
+    if (!lib) { toast("Rien à supprimer avant cette année scolaire."); return; }
     confirmationForte(
-      message + ". Cette action est irréversible.",
-      "Remplacer",
+      "Seront supprimés définitivement de cet ordinateur, pour les années scolaires antérieures à " + seuil + "-" + (seuil + 1) + " : " + lib
+      + ". Les AESH, les établissements et les réglages sont conservés. Exportez d'abord une sauvegarde : cette action est irréversible.",
+      "Purger",
       function () {
-        PialDB.remplacerTout(migrerSauvegarde(donnees)).then(function () {
-          return Promise.all([rafraichirCache(), rafraichirImports(), PialAffectations.recharger()]);
+        var ops = [];
+        if (p.rapports.length) ops.push({ magasin: "rapports", supprimer: p.rapports });
+        if (p.eleves.length) ops.push({ magasin: "eleves", supprimer: p.eleves });
+        if (p.cours.length) ops.push({ magasin: "cours", supprimer: p.cours });
+        if (p.affectations.length) ops.push({ magasin: "affectations", supprimer: p.affectations });
+        if (p.versions.length) ops.push({ magasin: "versions", supprimer: p.versions });
+        if (p.classes.length) {
+          var ligne = (d.parametres || []).filter(function (x) { return x.cle === "classes"; })[0];
+          var valeur = JSON.parse(JSON.stringify(ligne.valeur));
+          p.classes.forEach(function (an) { delete valeur[an]; });
+          ops.push({ magasin: "parametres", enregistrer: [{ cle: "classes", valeur: valeur }] });
+        }
+        // une seule transaction : tout ou rien
+        PialDB.appliquer(ops).then(function () {
+          return Promise.all([rafraichirCache(), PialAffectations.recharger()]);
         }).then(function () {
-          initialiserFiltres(); initialiserPurge(); rendreRapports(); rendreImports(); rendreIndicateurs();
+          initialiserFiltres(); initialiserPurge(); rendreRapports(); rendreIndicateurs();
           initialiserFiltresStats(); rendreStats();
           PialAffectations.rendreReglages();
           PialAffectations.viderAnnulation();
           if (typeof PialAffectations.surChangement === "function") PialAffectations.surChangement();
-          toast("Sauvegarde restaurée.");
-        }).catch(function () { toast("La sauvegarde n'a pas pu être restaurée : les données actuelles sont inchangées."); });
-      }
+          toast("Purge effectuée : " + lib + ".");
+        }).catch(function () { toast("La purge n'a pas pu être effectuée : rien n'a été supprimé."); });
+      },
+      { libelle: "Exporter une sauvegarde", cb: exporterSauvegarde }
     );
   });
-});
-
-/* =============== réglages : purge =============== */
-function anneesScolairesPresentes() {
-  var vus = {};
-  cache.forEach(function (r) { vus[anneeScolaireDebut(r.creeJour)] = true; });
-  return Object.keys(vus).map(Number).sort(function (a, b) { return a - b; });
-}
-function initialiserPurge() {
-  var annees = anneesScolairesPresentes();
-  $("purge-annee").innerHTML = annees.map(function (a) { return '<option value="' + a + '">' + a + '-' + (a + 1) + '</option>'; }).join("");
-}
-$("btn-purger").addEventListener("click", function () {
-  var val = $("purge-annee").value;
-  if (!val) { toast("Aucune année disponible."); return; }
-  var seuil = parseInt(val, 10);
-  var predicat = function (r) { return anneeScolaireDebut(r.creeJour) < seuil; };
-  var n = cache.filter(predicat).length;
-  if (!n) { toast("Aucun rapport antérieur à cette année scolaire."); return; }
-  confirmationForte(
-    n + " rapport(s) antérieur(s) à l'année scolaire " + seuil + "-" + (seuil + 1) + " seront supprimés définitivement de cet ordinateur. Cette action est irréversible.",
-    "Purger",
-    function () {
-      PialDB.purgerAvecPredicat(predicat).then(function () { return rafraichirCache(); }).then(function () {
-        initialiserFiltres(); initialiserPurge(); rendreRapports(); rendreIndicateurs();
-        initialiserFiltresStats(); rendreStats();
-        toast(n + " rapport(s) purgé(s).");
-      });
-    }
-  );
 });
 
 /* =============== démarrage =============== */

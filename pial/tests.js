@@ -1762,6 +1762,54 @@ var PialTests = (function () {
     });
   }
 
+  /* =============== protection des données (phase 3) =============== */
+  function testsProtection(t, M, C) {
+    t("purge par année : ce qui est supprimé, ce qui reste", function () {
+      var d = {
+        rapports: [{ id: "r1", debut: "2024-10-01" }, { id: "r2", debut: "2025-09-02", creeJour: "2024-01-01" }, { id: "r3", debut: "2026-01-05" },
+          { id: "r4", creeJour: "2024-12-12" }, { id: "r5" }, { id: "r6", debut: "2025-07-31" }],
+        eleves: [{ id: "el-a", annee: "2024-2025" }, { id: "el-b", annee: "2025-2026" }, { id: "el-c", annee: "2026-2027" }],
+        cours: [{ id: "c1", eleveId: "el-a" }, { id: "c2", eleveId: "el-b" }, { id: "c3", eleveId: "el-c" }],
+        versions: [{ numero: 1, annee: "2024-2025" }, { numero: 2, annee: "2026-2027" }],
+        affectations: [{ id: "af1", annee: "2024-2025", version: 1 }, { id: "af2", version: 1 }, { id: "af3", version: 0, annee: "2026-2027" }, { id: "af4", version: 2 }],
+        parametres: [{ cle: "classes", valeur: { "2024-2025": {}, "2026-2027": {} } }, { cle: "reglages", valeur: {} }]
+      };
+      var p = M.planPurge(d, 2025);
+      egal(p.rapports, ["r1", "r4", "r6"], "rapports datés par le début de période (r5 sans date : jamais purgé)");
+      egal([p.eleves, p.cours, p.versions, p.affectations, p.classes], [["el-a"], ["c1"], [1], ["af1", "af2"], ["2024-2025"]]);
+      egal(M.planPurge(d, 2024).rapports, [], "rien d'antérieur à la plus ancienne année");
+      egal(M.anneesPresentes(d), [2024, 2025, 2026]);
+    });
+    t("chiffrement : aller-retour, mauvais mot de passe, fichier altéré", function () {
+      if (!C || !C.disponible()) throw new Ignore("crypto.subtle indisponible");
+      var texte = JSON.stringify({ format: "pial-suivi/3", rapports: [{ id: "r1", commentaire: "é à ç 😀" }] });
+      return C.chiffrer(texte, "Mot de passe 1").then(function (env) {
+        egal([env.format, env.iterations >= 200000, typeof env.sel, typeof env.iv], ["pial-suivi-chiffre/1", true, "string", "string"]);
+        vrai(env.donnees_b64.indexOf("rapports") < 0 && atob(env.donnees_b64).indexOf("commentaire") < 0, "rien de lisible dans le fichier");
+        return C.dechiffrer(env, "Mot de passe 1").then(function (clair) {
+          egal(clair, texte, "contenu identique");
+          return C.dechiffrer(env, "mot de passe 1").then(function () { throw new EchecAssertion("mauvais mot de passe accepté"); },
+            function (e) { egal(e.message, "mot-de-passe"); });
+        }).then(function () {
+          var alt = JSON.parse(JSON.stringify(env)), o = atob(alt.donnees_b64).split("");
+          o[3] = String.fromCharCode(o[3].charCodeAt(0) ^ 1); alt.donnees_b64 = btoa(o.join(""));
+          return C.dechiffrer(alt, "Mot de passe 1").then(function () { throw new EchecAssertion("fichier altéré accepté"); }, function (e) { egal(e.message, "mot-de-passe"); });
+        }).then(function () {
+          var faible = JSON.parse(JSON.stringify(env)); faible.iterations = 1000;
+          return C.dechiffrer(faible, "Mot de passe 1").then(function () { throw new EchecAssertion("itérations trop faibles acceptées"); }, function (e) { egal(e.message, "format"); });
+        }).then(function () {
+          return C.chiffrer(texte, "Mot de passe 1").then(function (autre) { vrai(autre.sel !== env.sel && autre.iv !== env.iv && autre.donnees_b64 !== env.donnees_b64, "sel et iv aléatoires"); });
+        });
+      });
+    });
+    t("chiffrement : enveloppe invalide, mot de passe vide", function () {
+      if (!C || !C.disponible()) throw new Ignore("crypto.subtle indisponible");
+      egal([C.estChiffre({ format: "pial-suivi/3" }), C.estChiffre(null), C.estChiffre({ format: "pial-suivi-chiffre/1" })], [false, false, true]);
+      return C.dechiffrer({ format: "pial-suivi-chiffre/1", sel: "!", iv: "x", iterations: 300000, donnees_b64: "y" }, "a").then(function () { throw new EchecAssertion("accepté"); }, function (e) { egal(e.message, "format"); })
+        .then(function () { return C.chiffrer("x", "").then(function () { throw new EchecAssertion("mot de passe vide accepté"); }, function () {}); });
+    });
+  }
+
   /* =============== exécution =============== */
   function executer(env) {
     var tests = [];
@@ -1773,6 +1821,7 @@ var PialTests = (function () {
     if (env.moteur && env.importFichiers) { groupeCourant = "moteur"; testsMoteur(t, env.moteur, env.modele, env); }
     if (env.moteur && env.importFichiers) { groupeCourant = "migration"; testsMigration(t, env.moteur, env.modele, env.importFichiers, env); }
     if (env.importFichiers) { groupeCourant = "fiches"; testsFiches(t, env.modele, env.importFichiers, env); }
+    groupeCourant = "protection"; testsProtection(t, env.modele, env.chiffrement);
     var bilan = { reussis: 0, echecs: [], ignores: 0, lignes: [] };
     return tests.reduce(function (p, test) {
       return p.then(function () {

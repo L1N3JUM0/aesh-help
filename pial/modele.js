@@ -1261,7 +1261,62 @@ var PialModele = (function () {
     return { lignes: lignes, resume: resume };
   }
 
+  /* =============== purge par année (spec §8.4, phase 3) =============== */
+  /* Année scolaire (entier de début) d'une date ISO ; null si elle n'est pas datable. */
+  function anneeDebutDe(iso) {
+    var a = anneeScolaire(txt(iso).slice(0, 10));
+    return a ? parseInt(a.slice(0, 4), 10) : null;
+  }
+  function anneeDebutChaine(annee) {
+    var n = parseInt(txt(annee).slice(0, 4), 10);
+    return n > 0 ? n : null;
+  }
+  /* Ce qu'une purge « tout ce qui est antérieur à l'année seuil » supprime
+     (seuil : année de début, ex. 2026 pour 2026-2027). Un rapport est daté
+     par le début de sa période (à défaut, son jour de création) ; un rapport
+     sans date lisible n'est jamais purgé. Les AESH, les établissements, les
+     réglages et l'historique des imports ne sont pas touchés. donnees :
+     {rapports, eleves, cours, affectations, versions, parametres}. Renvoie
+     les identifiants à supprimer par magasin, et les années de classes. */
+  function planPurge(donnees, seuil) {
+    var plan = { rapports: [], eleves: [], cours: [], affectations: [], versions: [], classes: [] };
+    (donnees.rapports || []).forEach(function (r) {
+      var a = anneeDebutDe(r.debut || r.creeJour);
+      if (a !== null && a < seuil) plan.rapports.push(r.id);
+    });
+    var elevesPurges = {};
+    (donnees.eleves || []).forEach(function (e) {
+      var a = anneeDebutChaine(e.annee);
+      if (a !== null && a < seuil) { plan.eleves.push(e.id); elevesPurges[e.id] = true; }
+    });
+    (donnees.cours || []).forEach(function (c) { if (elevesPurges[c.eleveId]) plan.cours.push(c.id); });
+    var anneeVersion = {};
+    (donnees.versions || []).forEach(function (v) {
+      anneeVersion[v.numero] = anneeDebutChaine(v.annee);
+      if (anneeVersion[v.numero] !== null && anneeVersion[v.numero] < seuil) plan.versions.push(v.numero);
+    });
+    (donnees.affectations || []).forEach(function (a) {
+      var an = anneeDebutChaine(a.annee);
+      if (an === null) an = anneeVersion[a.version] === undefined ? null : anneeVersion[a.version];
+      if (an !== null && an < seuil) plan.affectations.push(a.id);
+    });
+    (donnees.parametres || []).forEach(function (p) {
+      if (p.cle !== "classes" || !p.valeur) return;
+      Object.keys(p.valeur).forEach(function (an) { var n = anneeDebutChaine(an); if (n !== null && n < seuil) plan.classes.push(an); });
+    });
+    return plan;
+  }
+  /* années de début présentes dans les données (rapports, élèves, versions), croissantes */
+  function anneesPresentes(donnees) {
+    var vus = {};
+    (donnees.rapports || []).forEach(function (r) { var a = anneeDebutDe(r.debut || r.creeJour); if (a !== null) vus[a] = true; });
+    (donnees.eleves || []).forEach(function (e) { var a = anneeDebutChaine(e.annee); if (a !== null) vus[a] = true; });
+    (donnees.versions || []).forEach(function (v) { var a = anneeDebutChaine(v.annee); if (a !== null) vus[a] = true; });
+    return Object.keys(vus).map(Number).sort(function (x, y) { return x - y; });
+  }
+
   return {
+    anneeDebutDe: anneeDebutDe, planPurge: planPurge, anneesPresentes: anneesPresentes,
     REGLAGES_DEFAUT: REGLAGES_DEFAUT, JOURS: JOURS, NIVEAUX: NIVEAUX,
     normaliser: normaliser, abregerNom: abregerNom, nomCourt: nomCourt, cleEleve: cleEleve,
     idEleve: idEleve, idAesh: idAesh, idEtablissement: idEtablissement, collisions: collisions,

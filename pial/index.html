@@ -1205,8 +1205,10 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
     <div class="carte">
       <h2>Sauvegarde</h2>
       <p class="chapeau">Exportez une sauvegarde complète de temps en temps, notamment avant toute purge. Elle contient les rapports, les élèves, les AESH, les emplois du temps et les affectations.</p>
+      <p class="chapeau">Sur une clé USB, qui peut se perdre, préférez la sauvegarde chiffrée par mot de passe : sans le mot de passe, personne ne peut la lire, vous non plus.</p>
       <div class="actions">
         <button type="button" class="btn btn-vide" id="btn-exporter-sauvegarde">Exporter une sauvegarde complète (.json)</button>
+        <button type="button" class="btn btn-vide" id="btn-exporter-chiffree">Exporter une sauvegarde chiffrée</button>
         <button type="button" class="btn btn-vide" id="btn-restaurer-sauvegarde">Restaurer une sauvegarde</button>
         <input type="file" id="entree-restauration" accept="application/json,.json" hidden>
       </div>
@@ -1230,11 +1232,12 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
 
     <div class="carte">
       <h2>Purge</h2>
-      <p class="chapeau">Supprime définitivement tous les rapports antérieurs à l'année scolaire choisie.</p>
+      <p class="chapeau">Supprime définitivement tout ce qui est antérieur à l'année scolaire choisie : rapports, élèves et leurs cours, affectations, versions validées. Les AESH, les établissements et les réglages sont conservés. Exportez une sauvegarde avant.</p>
       <div class="champ" style="max-width:260px">
         <label for="purge-annee">Supprimer tout ce qui est antérieur à</label>
         <select id="purge-annee"></select>
       </div>
+      <p class="chapeau" id="purge-apercu" role="status"></p>
       <div class="actions"><button type="button" class="btn btn-danger" id="btn-purger">Purger</button></div>
     </div>
   </section>
@@ -1374,6 +1377,20 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
   </div>
 </div>
 
+<div class="voile" id="voile-mdp" hidden>
+  <form class="modale" id="mdp-form" role="dialog" aria-modal="true" aria-labelledby="mdp-titre">
+    <h3 id="mdp-titre">Mot de passe</h3>
+    <p class="chapeau" id="mdp-aide"></p>
+    <div class="champ"><label for="mdp-1">Mot de passe</label><input type="password" id="mdp-1" autocomplete="off"></div>
+    <div class="champ" id="mdp-2-champ"><label for="mdp-2">Confirmer le mot de passe</label><input type="password" id="mdp-2" autocomplete="off"></div>
+    <p class="erreur-verrou" id="mdp-erreur" hidden></p>
+    <div class="actions">
+      <button type="button" class="btn btn-vide" id="mdp-annuler">Annuler</button>
+      <button type="submit" class="btn btn-plein" id="mdp-ok">Valider</button>
+    </div>
+  </form>
+</div>
+
 <div class="voile" id="voile-confirmation" hidden>
   <div class="modale">
     <p id="modale-message"></p>
@@ -1436,6 +1453,7 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
 <script src="modele.js"></script>
 <script src="moteur.js"></script>
 <script src="zip.js"></script>
+<script src="chiffrement.js"></script>
 <script src="import-fichiers.js"></script>
 <script src="affectations.js"></script>
 <script src="profils.js"></script>

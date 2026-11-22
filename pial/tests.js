@@ -1855,6 +1855,114 @@ var PialTests = (function () {
     });
   }
 
+  /* =============== statistiques filtrables des affectations (spec §7.4) =============== */
+  function testsStatsAffectations(t, SA, M) {
+    var S = SA.creer(M);
+    function el(id, classe, etab, ind, mut, extra) {
+      var e = { id: id, annee: "2026-2027", nomCourt: id, classe: classe, etablissement: etab, heuresInd: ind, heuresMut: mut };
+      Object.keys(extra || {}).forEach(function (k) { e[k] = extra[k]; });
+      return e;
+    }
+    function aff(id, aeshId, etab, jour, debut, fin, semaine, modalite, eleves, peri) {
+      var a = { id: id, aeshId: aeshId, creneau: { etab: etab, jour: jour, debut: debut, fin: fin, semaine: semaine }, modalite: modalite, eleves: eleves };
+      if (peri) a.periscolaire = peri;
+      return a;
+    }
+    function donnees(extra) {
+      var d = {
+        etablissements: [{ id: "e1", nom: "Collège Alpha" }, { id: "e2", nom: "École Beta" }],
+        eleves: [el("el1", "5B", "e1", 6, 0), el("el2", "5B", "e1", 0, 4), el("el3", "6A", "e1", 4, 0), el("el4", "CP", "e2", 6, 0),
+          el("el6", "3A", "e1", 2, 0, { archiveLe: "2026-10-01" })],
+        aesh: [{ id: "ae1", nom: "Durand", prenom: "Sophie", quotite: 10 }, { id: "ae2", nom: "Leroy", prenom: "Marc", quotite: 12 }],
+        cours: [{ id: "c1", eleveId: "el1", etablissement: "e1", jour: "lundi", debut: "08:00", fin: "09:00", matiere: "Mathématiques", semaine: "", etat: "prioritaire" },
+          { id: "c2", eleveId: "el3", etablissement: "e1", jour: "lundi", debut: "08:00", fin: "09:00", matiere: "Français", semaine: "", etat: "normal" }],
+        affectations: [
+          aff("a1", "ae1", "e1", "lundi", "08:00", "12:00", "toutes", "individuel", ["el1"]),
+          aff("a2", "ae1", "e1", "mardi", "08:00", "10:00", "toutes", "individuel", ["el1"]),
+          aff("a3", "ae1", "e1", "mercredi", "08:00", "10:00", "A", "mutualise", ["el2"]),
+          aff("a4", "ae2", "e1", "lundi", "08:00", "10:00", "toutes", "individuel", ["el3"]),
+          aff("a5", "ae2", "e2", "lundi", "14:00", "17:00", "toutes", "individuel", ["el4"]),
+          aff("a6", "ae2", "e1", "jeudi", "08:00", "09:00", "toutes", "individuel", ["el3"]),
+          aff("a7", "ae2", "e1", "jeudi", "12:00", "12:30", "toutes", "periscolaire", ["el3"], "meridienne"),
+          aff("a8", "ae1", "e1", "vendredi", "08:00", "10:00", "toutes", "individuel", ["el6"])
+        ],
+        reglages: {}
+      };
+      Object.keys(extra || {}).forEach(function (k) { d[k] = extra[k]; });
+      return d;
+    }
+    var proj = function (l) { return l.map(function (g) { return [g.libelle, g.nbEleves, g.notifie, g.couvert, g.taux]; }); };
+
+    t("statistiques : couverture globale, par établissement, par niveau et par classe (fiches archivées écartées)", function () {
+      var r = S.calculer(donnees(), {});
+      egal([r.global.nbEleves, r.global.notifie, r.global.couvert, r.global.nonCouvert, r.global.taux], [4, 20, 13, 7, 65], "l'élève archivé (et son créneau) sort des chiffres");
+      egal(r.etats, { couvert: 1, partiel: 0, sous: 3, sur: 0 });
+      egal(proj(r.parEtab), [["Collège Alpha", 3, 14, 10, 71.43], ["École Beta", 1, 6, 3, 50]]);
+      egal(proj(r.parNiveau), [["CP", 1, 6, 3, 50], ["6e", 1, 4, 3, 75], ["5e", 2, 10, 7, 70]], "niveaux dans l'ordre scolaire");
+      egal(proj(r.parClasse).map(function (x) { return x[0]; }), ["CP — École Beta", "6A — Collège Alpha", "5B — Collège Alpha"].sort(M.comparerClasses), "classes triées ; établissement ajouté s'il y en a plusieurs");
+      var c5b = r.parClasse.filter(function (g) { return g.libelle.indexOf("5B") === 0; })[0];
+      egal([c5b.indNotifie, c5b.indCouvert, c5b.indTaux, c5b.mutNotifie, c5b.mutCouvert, c5b.mutTaux], [6, 6, 100, 4, 1, 25], "individuel et mutualisé séparés");
+    });
+    t("statistiques : charge des AESH, AESH par élève, changements d'établissement, cours prioritaires", function () {
+      var r = S.calculer(donnees(), {});
+      egal(r.charges.map(function (c) { return [c.libelle, c.charge, c.quotite, c.etat]; }), [["Sophie Durand", 7, 10, "sous"], ["Marc Leroy", 6, 12, "sous"]].sort(function (a, b) { return b[1] - a[1]; }).map(function (x) { return x; }), "charge moyenne A/B ; l'AESH de l'élève archivé garde sa charge réelle");
+      egal([r.chargeResume.nbAesh, r.chargeResume.total, r.chargeResume.moyenne, r.chargeResume.sous, r.chargeResume.evalue], [2, 13, 6.5, 2, true]);
+      egal(r.aeshParEleve, { moyenne: 1, nbEleves: 4, repartition: [{ nb: 1, eleves: 4 }] });
+      egal(r.changements.map(function (c) { return [c.libelle, c.A, c.B, c.moyenne]; }), [["Marc Leroy", 1, 1, 1]], "lundi : Collège Alpha puis École Beta");
+      egal(r.prioritaires, { heures: 4, total: 13, part: 30.77 }, "seul le créneau de lundi 8h–12h recouvre un cours prioritaire");
+      egal(r.periscolaire.active, false, "temps périscolaires non gérés : rien");
+    });
+    t("statistiques : chaque filtre recalcule (établissement, niveau, classe, AESH, modalité, semaine A/B)", function () {
+      var g = function (f) { var r = S.calculer(donnees(), f); return [r.global.nbEleves, r.global.notifie, r.global.couvert, r.global.taux]; };
+      egal(g({ etab: "e2" }), [1, 6, 3, 50]);
+      egal(g({ niveau: "5e" }), [2, 10, 7, 70]);
+      egal(g({ classe: "6A" }), [1, 4, 3, 75]);
+      egal(g({ aeshId: "ae1" }), [2, 10, 7, 70], "AESH : ses élèves, couverture de ses seules affectations");
+      egal(g({ aeshId: "ae2" }), [2, 10, 6, 60]);
+      egal(g({ modalite: "mutualise" }), [1, 4, 1, 25], "seuls les élèves concernés par la modalité");
+      egal(g({ modalite: "individuel" }), [3, 16, 12, 75]);
+      egal(g({ semaine: "A" }), [4, 20, 14, 70], "semaine A : le cours de la semaine A compte pour 2 h");
+      egal(g({ semaine: "B" }), [4, 20, 12, 60]);
+      egal(g({ etab: "e1", niveau: "5e", modalite: "mutualise", semaine: "A" }), [1, 4, 2, 50], "filtres cumulés");
+      egal(g({ etab: "inconnu" }), [0, 0, 0, null], "aucun élève : taux indéfini, pas de division par zéro");
+      var r = S.calculer(donnees(), { etab: "e2" });
+      egal([r.chargeResume.evalue, r.charges.filter(function (c) { return c.id === "ae2"; })[0].etat], [false, null], "charge partielle sous filtre : pas d'état de sous-utilisation");
+      egal(S.calculer(donnees(), { semaine: "A" }).changements[0].A, 1);
+    });
+    t("statistiques : une surcouverture ne compense pas un manque (heures couvertes plafonnées aux heures notifiées)", function () {
+      var d = donnees({ eleves: [el("s1", "4A", "e1", 2, 0), el("s2", "4A", "e1", 4, 0)],
+        affectations: [aff("b1", "ae1", "e1", "lundi", "08:00", "12:00", "toutes", "individuel", ["s1"]), aff("b2", "ae1", "e1", "mardi", "08:00", "10:00", "toutes", "individuel", ["s2"])] });
+      var r = S.calculer(d, {});
+      egal([r.global.notifie, r.global.couvert, r.global.nonCouvert, r.global.taux, r.etats.sur, r.etats.sous], [6, 4, 2, 66.67, 1, 1], "s1 : 4 h pour 2 h notifiées = 2 h utiles ; s2 : 2 h pour 4 h = manque de 2 h");
+    });
+    t("statistiques : heures de récréation et de pause méridienne (si les temps périscolaires sont gérés)", function () {
+      var d = donnees({ reglages: { gererPeriscolaire: true },
+        affectations: donnees().affectations.concat([aff("a9", "ae1", "e1", "mardi", "10:00", "10:15", "toutes", "periscolaire", ["el3"], "recreation")]) });
+      var r = S.calculer(d, {});
+      egal([r.periscolaire.active, r.periscolaire.meridienne, r.periscolaire.recreation], [true, 0.5, 0.25], "durée réelle des temps périscolaires");
+      egal(r.global.couvert, 13, "ils ne comptent pas dans la couverture");
+      egal(S.calculer(d, { modalite: "individuel" }).periscolaire.active, false);
+    });
+    t("statistiques : évolution de la couverture d'une version à l'autre", function () {
+      var d1 = donnees(), d2 = donnees();
+      d1.affectations = d1.affectations.filter(function (a) { return a.id !== "a2"; });
+      var ev = S.evolution([{ libelle: "Version 1", donnees: d1 }, { libelle: "Version 2", donnees: d2 }], {});
+      egal(ev.map(function (e) { return [e.libelle, e.couvert, e.taux]; }), [["Version 1", 11, 55], ["Version 2", 13, 65]]);
+      egal(S.evolution([{ libelle: "Version 1", donnees: d1 }, { libelle: "Version 2", donnees: d2 }], { etab: "e2" }).map(function (e) { return e.taux; }), [50, 50]);
+    });
+    t("statistiques : options des filtres et exports CSV (séparateur « ; », virgule décimale, BOM)", function () {
+      var o = S.options(donnees());
+      egal([o.etablissements.map(function (e) { return e.nom; }), o.niveaux, o.classes, o.aesh.map(function (a) { return a.nom; })],
+        [["Collège Alpha", "École Beta"], ["CP", "6e", "5e"], ["CP", "6A", "5B"], ["Marc Leroy", "Sophie Durand"]], "l'élève archivé (3A) n'apparaît pas");
+      var csv = S.tableauxCsv(S.calculer(donnees(), {}));
+      egal(Object.keys(csv), ["couverture-etablissements", "couverture-niveaux", "couverture-classes", "charge-aesh", "changements-etablissement", "aesh-par-eleve", "etats-de-couverture"]);
+      var l = csv["couverture-etablissements"].split("\r\n");
+      egal(l[0], "﻿Libellé;Élèves;Heures notifiées;Heures couvertes;Heures non couvertes;Taux de couverture (%);Individuel : notifiées;Individuel : couvertes;Individuel : taux (%);Mutualisé : notifiées;Mutualisé : couvertes;Mutualisé : taux (%)");
+      egal(l[1], "Collège Alpha;3;14;10;4;71,43;10;9;90;4;1;25");
+      egal(S.csv(["a"], [["=1+1"], ["x;y"], ['"q"']]), "﻿a\r\n'=1+1\r\n\"x;y\"\r\n\"\"\"q\"\"\"\r\n", "pas de formule exécutable, séparateurs échappés");
+    });
+  }
+
   /* =============== rapprochement (phase 3) =============== */
   function testsRapprochement(t, M, R) {
     var cand = function (id, nomCourt, classe, etab, extra) {
@@ -1990,6 +2098,7 @@ var PialTests = (function () {
     if (env.importFichiers) { groupeCourant = "fiches"; testsFiches(t, env.modele, env.importFichiers, env); }
     groupeCourant = "protection"; testsProtection(t, env.modele, env.chiffrement);
     if (env.dossier) { groupeCourant = "dossier"; testsDossier(t, env.dossier, env.zip); }
+    if (env.statsAff) { groupeCourant = "statistiques"; testsStatsAffectations(t, env.statsAff, env.modele); }
     if (env.rapprochement) { groupeCourant = "rapprochement"; testsRapprochement(t, env.modele, env.rapprochement); }
     var bilan = { reussis: 0, echecs: [], ignores: 0, lignes: [] };
     return tests.reduce(function (p, test) {

@@ -33,6 +33,7 @@ li:last-child{border-bottom:none}
 <script src="moteur.js" onerror="void 0"></script>
 <script src="chiffrement.js" onerror="void 0"></script>
 <script src="dossier.js" onerror="void 0"></script>
+<script src="stats-affectations.js" onerror="void 0"></script>
 <script src="../rapprochement.js" onerror="void 0"></script>
 <script src="tests.js"></script>
 <script>
@@ -46,6 +47,7 @@ li:last-child{border-bottom:none}
     moteur: window.PialMoteur || null,
     chiffrement: window.PialChiffre || null,
     dossier: window.PialDossier || null,
+    statsAff: window.PialStatsAff || null,
     rapprochement: window.Rapprochement || null,
     // les fichiers d'exemple ne sont lisibles que si la page est servie en
     // http(s) ; ouverte par double-clic (file://), ces tests sont ignorés.

@@ -28,6 +28,7 @@ var env = {
   chiffrement: charger("pial/chiffrement.js"),
   rapprochement: charger("rapprochement.js"),
   dossier: charger("pial/dossier.js"),
+  statsAff: charger("pial/stats-affectations.js"),
   lireExemple: function (nom) {
     var chemin = path.join(RACINE, "exemples", nom);
     return Promise.resolve(fs.existsSync(chemin) ? new Uint8Array(fs.readFileSync(chemin)) : null);

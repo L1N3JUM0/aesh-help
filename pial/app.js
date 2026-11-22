@@ -692,6 +692,13 @@ function moisDeLaPeriode(debut, fin) {
   return liste;
 }
 
+// années scolaires (entier de début) des rapports présents ; utilisée par les filtres des statistiques
+function anneesScolairesPresentes() {
+  var vus = {};
+  cache.forEach(function (r) { vus[anneeScolaireDebut(r.creeJour)] = true; });
+  return Object.keys(vus).map(Number).sort(function (a, b) { return a - b; });
+}
+
 function initialiserFiltresStats() {
   var annees = anneesScolairesPresentes();
   var selAnnee = $("s-periode-annee"), val = selAnnee.value;

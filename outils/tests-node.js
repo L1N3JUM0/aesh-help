@@ -26,6 +26,7 @@ var env = {
   importFichiers: charger("pial/import-fichiers.js"),
   moteur: charger("pial/moteur.js"),
   chiffrement: charger("pial/chiffrement.js"),
+  rapprochement: charger("rapprochement.js"),
   lireExemple: function (nom) {
     var chemin = path.join(RACINE, "exemples", nom);
     return Promise.resolve(fs.existsSync(chemin) ? new Uint8Array(fs.readFileSync(chemin)) : null);

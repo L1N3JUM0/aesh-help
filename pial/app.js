@@ -13,6 +13,7 @@ function anneeScolaireDebut(iso) {
   var y = d.getFullYear(), m = d.getMonth() + 1;
   return (m >= 8) ? y : y - 1;
 }
+function pluriel(n, un, plusieurs) { return n + " " + (n > 1 ? plusieurs : un); }
 function jourHeure(iso) {
   if (!iso) return "";
   var d = new Date(iso); if (isNaN(d)) return "";
@@ -98,6 +99,7 @@ function ouvrirOngletNav(nom) {
   if (nom === "vue-aesh") PialProfils.ouvrir("aesh");
   if (nom === "vue-affectations") PialAffectations.ouvrirOnglet();
   if (nom === "vue-stats") { initialiserFiltresStats(); rendreStats(); }
+  if (nom === "vue-import") rendreRattachement();
 }
 function rouvrirDernierOnglet() {
   var nom = null;
@@ -272,7 +274,72 @@ function rendreImports() {
       '<td class="numerique">' + imp.nbIgnores + '</td>';
     corps.appendChild(tr);
   });
+  rendreRattachement();
 }
+
+/* =============== rattachement des rapports aux élèves =============== */
+/* Un rapport importé porte l'identifiant de fiche de l'application AESH
+   (eleveId) et un nom court : on le relie à l'élève PIAL de même prénom,
+   initiale, classe et établissement (Rapprochement, tolérant). Les liens
+   « automatiques » sont recalculés à la volée, rien n'est écrit dans les
+   rapports. Seuls les choix de l'utilisateur (valider, choisir un autre
+   élève, ignorer) sont mémorisés, dans parametres / rattachements :
+   {liens: {eleveIdAesh: eleveIdPial}, ignores: {eleveIdAesh: true}}. */
+var ratMontrerTout = false;
+function libelleElevePial(e, nomsEtab) {
+  return e.nomCourt + " — " + (e.classe || "sans classe") + " — " + (nomsEtab[e.etablissement] || "") + " (" + e.annee + ")";
+}
+function ratEcrire(memoire) {
+  return PialDB.appliquer([{ magasin: "parametres", enregistrer: [{ cle: "rattachements", valeur: memoire }] }]).then(rendreRattachement);
+}
+function rendreRattachement() {
+  var hote = $("rat-corps");
+  if (!hote || typeof Rapprochement === "undefined") { if ($("carte-rattachement")) $("carte-rattachement").hidden = true; return Promise.resolve(); }
+  return Promise.all([PialDB.tous("eleves"), PialDB.tous("etablissements"), PialDB.obtenir("parametres", "rattachements")]).then(function (r) {
+    var eleves = r[0], nomsEtab = {}, ligne = r[2];
+    r[1].forEach(function (e) { nomsEtab[e.id] = e.nom; });
+    var memoire = (ligne && ligne.valeur) || {};
+    memoire = { liens: Object.assign({}, memoire.liens), ignores: Object.assign({}, memoire.ignores) };
+    var res = Rapprochement.rattacherRapports(cache, eleves, nomsEtab, memoire);
+    var c = res.compte, aTraiter = c.probable + c.ambigu + c.introuvable;
+    $("carte-rattachement").hidden = !res.groupes.length;
+    $("rat-resume").innerHTML = '<p>' + pluriel(res.groupes.length, "élève de l'application AESH", "élèves de l'application AESH") + ' (' + pluriel(res.rapports, "rapport", "rapports") + ') : '
+      + c.auto + ' rattaché(s) automatiquement, ' + c.lie + ' par vos soins, ' + c.ignore + ' ignoré(s)'
+      + (aTraiter ? ', <strong>' + aTraiter + ' à examiner</strong> (' + c.probable + ' probable(s), ' + c.ambigu + ' ambigu(s), ' + c.introuvable + ' introuvable(s))' : ', aucun à examiner') + '.</p>';
+    var liste = res.groupes.filter(function (g) { return ratMontrerTout || g.etat === "probable" || g.etat === "ambigu" || g.etat === "introuvable"; });
+    var tousTries = eleves.slice().sort(function (a, b) { return a.nomCourt.localeCompare(b.nomCourt, "fr") || txt(b.annee).localeCompare(txt(a.annee)); });
+    var etiquettes = { auto: "automatique", probable: "à valider", ambigu: "ambigu", introuvable: "introuvable", lie: "choisi", ignore: "ignoré" };
+    hote.innerHTML = liste.map(function (g) {
+      var opts = '<option value="">— choisir —</option>', deja = {};
+      g.candidats.forEach(function (x) { deja[x.cible.id] = true; opts += '<option value="' + ech(x.cible.id) + '"' + (g.choix && g.choix.id === x.cible.id ? ' selected' : '') + '>' + ech(libelleElevePial(x.cible.eleve, nomsEtab)) + '</option>'; });
+      if (g.etat === "lie" && g.choix && !deja[g.choix.id]) { deja[g.choix.id] = true; opts += '<option value="' + ech(g.choix.id) + '" selected>' + ech(libelleElevePial(g.choix.eleve, nomsEtab)) + '</option>'; }
+      opts += '<optgroup label="Tous les élèves">' + tousTries.filter(function (e) { return !deja[e.id]; }).map(function (e) { return '<option value="' + ech(e.id) + '">' + ech(libelleElevePial(e, nomsEtab)) + '</option>'; }).join("") + '</optgroup>';
+      opts += '<option value="__aucun">Aucun élève (ignorer)</option>';
+      var action = (g.etat === "lie" || g.etat === "ignore" || g.etat === "auto")
+        ? (g.etat === "auto" ? '' : '<button type="button" class="btn btn-vide" data-rat="defaire" data-src="' + ech(g.srcId) + '">Défaire</button>')
+        : '';
+      return '<tr><td>' + ech(g.eleveNom) + ' <span class="aide">(' + pluriel(g.nb, "rapport", "rapports") + ')</span></td><td>' + ech(g.classe) + '</td><td>' + ech(g.etablissement) + '</td><td>' + ech(g.aesh) + '</td>'
+        + '<td><span class="pastille-rat ' + g.etat + '">' + etiquettes[g.etat] + '</span></td>'
+        + '<td><select data-rat-choix="' + ech(g.srcId) + '" aria-label="Élève de l\'espace PIAL pour ' + ech(g.eleveNom) + '">' + opts + '</select></td>'
+        + '<td><button type="button" class="btn btn-plein" data-rat="valider" data-src="' + ech(g.srcId) + '">' + (g.etat === "lie" || g.etat === "ignore" || g.etat === "auto" ? 'Changer' : 'Valider') + '</button> ' + action + '</td></tr>';
+    }).join("");
+    $("rat-vide").hidden = !!liste.length;
+    $("rat-vide").textContent = ratMontrerTout ? "Aucun rapport à rattacher." : "Rien à examiner.";
+    $("rat-tout").textContent = ratMontrerTout ? "Masquer les rattachements automatiques et choisis" : "Afficher aussi les rattachements automatiques et choisis";
+    Array.prototype.forEach.call(hote.querySelectorAll("[data-rat]"), function (b) {
+      b.addEventListener("click", function () {
+        var src = this.dataset.src, m = { liens: Object.assign({}, memoire.liens), ignores: Object.assign({}, memoire.ignores) };
+        if (this.dataset.rat === "defaire") { delete m.liens[src]; delete m.ignores[src]; ratEcrire(m); return; }
+        var sel = hote.querySelector('[data-rat-choix="' + src.replace(/"/g, '\\"') + '"]');
+        if (!sel || !sel.value) { toast("Choisissez un élève, ou « Aucun élève »."); return; }
+        delete m.liens[src]; delete m.ignores[src];
+        if (sel.value === "__aucun") m.ignores[src] = true; else m.liens[src] = sel.value;
+        ratEcrire(m);
+      });
+    });
+  });
+}
+$("rat-tout").addEventListener("click", function () { ratMontrerTout = !ratMontrerTout; rendreRattachement(); });
 
 /* =============== filtres =============== */
 function valeursDistinctes(champ) {

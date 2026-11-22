@@ -1762,6 +1762,80 @@ var PialTests = (function () {
     });
   }
 
+  /* =============== rapprochement (phase 3) =============== */
+  function testsRapprochement(t, M, R) {
+    var cand = function (id, nomCourt, classe, etab, extra) {
+      var a = R.analyserNomCourt(nomCourt), p = R.profil(a.prenom, a.initiale, classe, etab);
+      p.id = id; Object.keys(extra || {}).forEach(function (k) { p[k] = extra[k]; });
+      return p;
+    };
+    t("rapprochement : normalisation des classes", function () {
+      egal(["5ème B", "5e B", "5 eme B", "5°B", "5B", " 5b "].map(R.normaliserClasse), ["5b", "5b", "5b", "5b", "5b", "5b"]);
+      egal([R.normaliserClasse("5E"), R.normaliserClasse("5e"), R.normaliserClasse("6ème"), R.normaliserClasse("3e1"), R.normaliserClasse("3ème 1")], ["5e", "5", "6", "31", "31"], "« 5E » collé = lettre de classe");
+      egal([R.normaliserClasse("Seconde 4"), R.normaliserClasse("2nde 4"), R.normaliserClasse("CM2 A"), R.normaliserClasse("")], ["2de4", "2de4", "cm2a", ""]);
+    });
+    t("rapprochement : noms courts et établissements", function () {
+      egal([R.analyserNomCourt("Lucas M."), R.analyserNomCourt("Jean-Pierre M."), R.analyserNomCourt("Lucas Martin"), R.analyserNomCourt("Lucas Ma.")],
+        [{ prenom: "lucas", initiale: "m" }, { prenom: "jean pierre", initiale: "m" }, { prenom: "lucas", initiale: "m" }, { prenom: "lucas", initiale: "ma" }]);
+      egal(R.jetonsEtablissement("Collège Paul Gauthier"), ["paul", "gauthier"]);
+      egal(R.jetonsEtablissement("COLLEGE  paul-gauthier"), ["paul", "gauthier"], "casse, accents, tirets");
+    });
+    t("rapprochement : auto, probable, ambigu, introuvable", function () {
+      var cs = [cand("a", "Lucas M.", "5B", "Collège Paul Gauthier"), cand("b", "Léa D.", "5B", "Collège Paul Gauthier"), cand("c", "Lucas M.", "4A", "Collège Paul Gauthier"),
+        cand("d", "Lucas M.", "5B", "Collège Autre Nom")];
+      var src = function (nom, cl, et) { return R.profilDeNomCourt(nom, cl, et); };
+      var r = R.rapprocher(src("lucas m.", "5ème B", "college paul gauthier"), cs);
+      egal(r.etat, "auto", "casse, accents et « 5ème B » ne gênent pas");
+      egal(r.choix.id, "a", "l'autre établissement est écarté");
+      r = R.rapprocher(src("Lucas M.", "5B", "Collège Paul Gauthier"), cs.slice(0, 2));
+      egal([r.etat, r.choix.id], ["auto", "a"]);
+      r = R.rapprocher(src("Lucas M.", "6B", "Collège Paul Gauthier"), [cs[0]]);
+      egal([r.etat, r.choix.id], ["probable", "a"], "classe différente : à valider");
+      r = R.rapprocher(src("Lucas M.", "5B", "Collège Paul Gauthier"), [cs[0], cand("a2", "Lucas M.", "5B", "Collège Paul Gauthier")]);
+      egal([r.etat, r.choix], ["ambigu", null], "doublon");
+      r = R.rapprocher(src("Zoé P.", "5B", "Collège Paul Gauthier"), cs);
+      egal(r.etat, "introuvable");
+      r = R.rapprocher(src("Lucsa M.", "5B", "Collège Paul Gauthier"), [cs[0]]);
+      egal([r.etat, r.candidats[0].comparaison.prenom], ["probable", "proche"], "faute de frappe : jamais automatique");
+      r = R.rapprocher(src("Lucas N.", "5B", "Collège Paul Gauthier"), [cs[0]]);
+      egal(r.etat, "introuvable", "initiale différente");
+      r = R.rapprocher(src("Lucas M.", "5B", ""), [cs[0]]);
+      egal(r.etat, "probable", "établissement manquant : à valider");
+    });
+    t("rapprochement : un même élève sur plusieurs années (parcours) compte une fois", function () {
+      var cs = [cand("n1", "Lucas M.", "5B", "Collège Paul Gauthier", { groupe: "p1", recence: "2025-2026" }),
+        cand("n2", "Lucas M.", "4B", "Collège Paul Gauthier", { groupe: "p1", recence: "2026-2027" })];
+      var r = R.rapprocher(R.profilDeNomCourt("Lucas M.", "5B", "Collège Paul Gauthier"), cs);
+      egal([r.etat, r.choix.id, r.candidats.length], ["auto", "n1", 1], "meilleur candidat du parcours");
+      r = R.rapprocher(R.profilDeNomCourt("Lucas M.", "5C", "Collège Paul Gauthier"), cs);
+      egal([r.etat, r.candidats.length], ["probable", 1]);
+    });
+    t("rattachement des rapports : par fiche d'AESH, mémorisé, sans toucher aux rapports", function () {
+      var rapports = [
+        { id: "r1", eleveId: "x1", eleveNom: "Lucas M.", classe: "5ème B", etablissement: "Collège Paul Gauthier", aesh: "Sophie D.", debut: "2026-09-14", commentaire: "a" },
+        { id: "r2", eleveId: "x1", eleveNom: "Lucas M.", classe: "5B", etablissement: "College Paul Gauthier", aesh: "Sophie D.", debut: "2026-10-12", commentaire: "b" },
+        { id: "r3", eleveId: "x2", eleveNom: "Léa D.", classe: "5B", etablissement: "", aesh: "Sophie D.", debut: "2026-10-12" },
+        { id: "r4", eleveId: "x3", eleveNom: "Zoé P.", classe: "6A", etablissement: "Collège Paul Gauthier", aesh: "Marc L.", creeJour: "2026-10-01" },
+        { id: "r5", eleveId: "x4", eleveNom: "Hugo P.", classe: "6A", etablissement: "Collège Paul Gauthier", aesh: "Marc L.", debut: "2026-10-01" },
+        { id: "r6", eleveId: "", eleveNom: "?", classe: "" }
+      ];
+      var avant = JSON.stringify(rapports);
+      var eleves = [{ id: "el-1", nomCourt: "Lucas M.", classe: "5B", etablissement: "e1", annee: "2026-2027", parcours: "el-1" },
+        { id: "el-2", nomCourt: "Léa D.", classe: "5B", etablissement: "e1", annee: "2026-2027", parcours: "el-2" },
+        { id: "el-3", nomCourt: "Hugo P.", classe: "6A", etablissement: "e1", annee: "2026-2027", parcours: "el-3" },
+        { id: "el-4", nomCourt: "Hugo P.", classe: "6A", etablissement: "e1", annee: "2026-2027", parcours: "el-4" }];
+      var noms = { e1: "Collège Paul Gauthier" };
+      var res = R.rattacherRapports(rapports, eleves, noms, {});
+      egal(res.groupes.map(function (g) { return [g.srcId, g.etat, g.nb]; }),
+        [["x1", "auto", 2], ["x2", "probable", 1], ["x3", "introuvable", 1], ["x4", "ambigu", 1]]);
+      egal([res.compte.auto, res.compte.probable, res.compte.ambigu, res.compte.introuvable, res.rapports], [1, 1, 1, 1, 5]);
+      var res2 = R.rattacherRapports(rapports, eleves, noms, { liens: { x4: "el-4", x3: "inconnu" }, ignores: { x3: true } });
+      egal(res2.groupes.map(function (g) { return [g.srcId, g.etat, g.choix && g.choix.id]; }),
+        [["x1", "auto", "el-1"], ["x2", "probable", "el-2"], ["x3", "ignore", null], ["x4", "lie", "el-4"]], "liaison manuelle mémorisée");
+      egal(JSON.stringify(rapports), avant, "aucun rapport modifié");
+    });
+  }
+
   /* =============== protection des données (phase 3) =============== */
   function testsProtection(t, M, C) {
     t("purge par année : ce qui est supprimé, ce qui reste", function () {
@@ -1822,6 +1896,7 @@ var PialTests = (function () {
     if (env.moteur && env.importFichiers) { groupeCourant = "migration"; testsMigration(t, env.moteur, env.modele, env.importFichiers, env); }
     if (env.importFichiers) { groupeCourant = "fiches"; testsFiches(t, env.modele, env.importFichiers, env); }
     groupeCourant = "protection"; testsProtection(t, env.modele, env.chiffrement);
+    if (env.rapprochement) { groupeCourant = "rapprochement"; testsRapprochement(t, env.modele, env.rapprochement); }
     var bilan = { reussis: 0, echecs: [], ignores: 0, lignes: [] };
     return tests.reduce(function (p, test) {
       return p.then(function () {

@@ -24,6 +24,7 @@ var FICHIERS = [
   "pial/moteur.js",
   "pial/zip.js",
   "pial/chiffrement.js",
+  "rapprochement.js",
   "pial/import-fichiers.js",
   "pial/affectations.js",
   "pial/profils.js",

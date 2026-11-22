@@ -193,6 +193,11 @@ label.case input{width:auto}
 .classe-ajout input[type=text]{width:220px}
 .tableau-profils tbody tr.archive td{color:var(--gris)}
 .profils-rapide[hidden]{display:none}
+.pastille-rat{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;background:#eee;color:var(--encre)}
+.pastille-rat.auto,.pastille-rat.lie{background:#E3F1E7;color:var(--couvert)}
+.pastille-rat.probable{background:#FFF3CD}
+.pastille-rat.ambigu,.pastille-rat.introuvable{background:#FBE5E0;color:var(--marge)}
+.pastille-rat.ignore{color:var(--gris)}
 .profils.mode-rapide{grid-template-columns:minmax(0,1fr)}
 .profils.mode-rapide > .profils-liste,.profils.mode-rapide > .profils-panneau{display:none}
 .tableau-rapide th.sr-num,.tableau-rapide td.sr-num{width:38px;text-align:right;color:var(--gris);font-weight:400;padding-right:8px}
@@ -738,6 +743,20 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
         </table>
       </div>
       <p class="vide" id="imports-vide" hidden>Aucun import pour l'instant.</p>
+    </div>
+
+    <div class="carte" id="carte-rattachement" hidden>
+      <h2>Rattachement des rapports aux élèves</h2>
+      <p class="chapeau">Chaque rapport importé est relié à l'élève de cet espace qui a le même prénom, la même initiale, la même classe et le même établissement (casse, accents et écritures comme « 5ème B » ou « 5B » ne comptent pas). Les rattachements sûrs sont automatiques ; les autres sont à valider ici. Aucun rapport n'est supprimé ni modifié : seul votre choix est mémorisé.</p>
+      <div id="rat-resume"></div>
+      <div class="tableau-conteneur">
+        <table class="tableau">
+          <thead><tr><th>Élève (application AESH)</th><th>Classe</th><th>Établissement</th><th>AESH</th><th>État</th><th>Élève de cet espace</th><th></th></tr></thead>
+          <tbody id="rat-corps"></tbody>
+        </table>
+      </div>
+      <p class="vide" id="rat-vide" hidden></p>
+      <div class="actions"><button type="button" class="btn btn-vide" id="rat-tout">Afficher aussi les rattachements automatiques et choisis</button></div>
     </div>
   </section>
 
@@ -1454,6 +1473,7 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
 <script src="moteur.js"></script>
 <script src="zip.js"></script>
 <script src="chiffrement.js"></script>
+<script src="../rapprochement.js" onerror="void 0"></script>
 <script src="import-fichiers.js"></script>
 <script src="affectations.js"></script>
 <script src="profils.js"></script>

@@ -186,6 +186,11 @@ label.case input{width:auto}
 .etab-param h3{margin:0 0 10px;font-size:15px;color:var(--encre)}
 .etab-param .grille{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px 14px}
 .etab-param .duo{display:flex;gap:6px;align-items:center}
+.classe-ligne{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 8px}
+.classe-ligne input[type=text]{width:130px;min-height:44px}
+.classe-ligne .btn{min-height:44px}
+.classe-ligne .aide{margin:0}
+.classe-ajout input[type=text]{width:220px}
 .etab-param .duo input{width:90px}
 .jours-ouvres{display:flex;flex-wrap:wrap;gap:10px;margin:8px 0}
 
@@ -1081,6 +1086,12 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
       <h2>Établissements</h2>
       <p class="chapeau">Créés automatiquement au premier import qui les mentionne. Vérifiez leurs horaires : ils servent aux temps périscolaires, à l'alternance des semaines A/B et à la pause repas des AESH.</p>
       <div id="reg-etablissements"></div>
+    </div>
+
+    <div class="carte">
+      <h2>Classes</h2>
+      <p class="chapeau">Les classes proposées quand vous créez un élève, par établissement, pour l'année en cours. Elles sont reprises des élèves et des emplois du temps importés ; vous pouvez en ajouter. Renommer une classe change la classe de tous ses élèves (leurs affectations et leurs emplois du temps sont conservés) ; une classe qui a des élèves ne se retire pas.</p>
+      <div id="reg-classes"></div>
     </div>
 
     <div class="carte">

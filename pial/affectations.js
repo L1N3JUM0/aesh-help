@@ -33,7 +33,8 @@ var PialAffectations = (function () {
     etablissements: [], eleves: [], aesh: [], cours: [],
     affectations: [],          // brouillon (version 0) de l'année en cours
     affectationsVersions: [],  // copies figées des versions validées (version = numéro)
-    versions: [], correspondances: {}, reglages: {}
+    versions: [], correspondances: {}, reglages: {},
+    classes: {}, classesParam: null // référentiel des classes enregistré (Réglages) : {annee: {etab: [classe]}} et sa ligne de paramètres
   };
 
   function aujourdhui() {
@@ -58,6 +59,9 @@ var PialAffectations = (function () {
       parNom.correspondances.forEach(function (c) { etat.correspondances[c.type] = c.colonnes; });
       var reg = parNom.parametres.filter(function (p) { return p.cle === "reglages"; })[0];
       etat.reglages = (reg && reg.valeur) || {};
+      var cl = parNom.parametres.filter(function (p) { return p.cle === "classes"; })[0];
+      etat.classesParam = cl || null;
+      etat.classes = (cl && cl.valeur) || {};
       // {signature, nbOrdres, ms, budget, date} : nombre d'ordres de la dernière proposition (§16)
       var prop = parNom.parametres.filter(function (p) { return p.cle === "proposition"; })[0];
       etat.proposition = (prop && prop.valeur) || null;
@@ -2190,7 +2194,7 @@ var PialAffectations = (function () {
   function enregistrerPuisRendre(ops, message, libelleAnnulation, cleFusion) {
     var haut = pileAnnulation[pileAnnulation.length - 1];
     if (libelleAnnulation && !(cleFusion && haut && haut.fusion === cleFusion)) {
-      pileAnnulation.push({ libelle: libelleAnnulation, fusion: cleFusion || "", ops: M.operationsInverses(ops, { affectations: etat.affectations, cours: etat.cours, eleves: etat.eleves, aesh: etat.aesh }) });
+      pileAnnulation.push({ libelle: libelleAnnulation, fusion: cleFusion || "", ops: M.operationsInverses(ops, { affectations: etat.affectations, cours: etat.cours, eleves: etat.eleves, aesh: etat.aesh, parametres: etat.classesParam ? [etat.classesParam] : [] }) });
       if (pileAnnulation.length > MAX_ANNULATION) pileAnnulation.shift();
     }
     return PialDB.appliquer(ops).then(recharger).then(function () {

@@ -92,7 +92,7 @@ function vue(nom) {
 }
 function ouvrirOngletNav(nom) {
   vue(nom);
-  if (nom === "vue-reglages") { rendreStockage(); PialAffectations.rendreReglages(); }
+  if (nom === "vue-reglages") { rendreStockage(); PialAffectations.rendreReglages(); PialProfils.ouvrir("reglages"); }
   if (nom === "vue-indicateurs") rendreIndicateurs();
   if (nom === "vue-eleves") PialProfils.ouvrir("eleves");
   if (nom === "vue-aesh") PialProfils.ouvrir("aesh");

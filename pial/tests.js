@@ -1581,6 +1581,36 @@ var PialTests = (function () {
       egal(M.referentielClasses({}, eleves, cours), { "college a": ["6A", "5b", "4C"], "ecole b": ["CE2"] });
       egal(M.referentielClasses({ "college a": ["5B", "3A"] }, eleves, cours)["college a"], ["6A", "5B", "4C", "3A"], "orthographe de la table gardée, classe sans élève gardée");
     });
+    t("classes : table enregistrée (ajout, retrait, renommage) sans modifier l'original", function () {
+      var A = M.idEtablissement("Collège A"), v = { "2026-2027": { x: ["6A"] } };
+      var v1 = M.classesAvecAjout(v, AN, A, " 5  b ");
+      egal(M.classesEnregistrees(v1, AN)[A], ["5 b"], "espaces réduits");
+      egal(M.classesEnregistrees(M.classesAvecAjout(v1, AN, A, "5 B"), AN)[A], ["5 b"], "doublon sans casse ignoré");
+      egal(v, { "2026-2027": { x: ["6A"] } }, "original intact");
+      egal(M.classesEnregistrees(M.classesSansClasse(v1, AN, A, "5 B"), AN)[A], [], "retrait sans casse");
+      egal(M.classesEnregistrees(M.classesRenommee(v1, AN, A, "5 b", "4A"), AN)[A], ["4A"]);
+      egal(M.classesEnregistrees({}, AN), {}, "année absente");
+    });
+    t("classes : renommer revient à changer de classe ses élèves (identifiants et cours suivent)", function () {
+      var e1 = eleve("el-1", "Lucas", "Martin", "5B", "Collège A"), e2 = eleve("el-2", "Zoé", "Petit", "5b", "Collège A"), e3 = eleve("el-3", "Inès", "Roux", "5B", "École B");
+      var cours = [{ id: "c1", eleveId: "el-1", eleveCle: e1.cle, classe: "5B", etablissement: e1.etablissement, etablissementNom: "Collège A" }, { id: "c2", eleveId: "el-3", eleveCle: e3.cle, classe: "5B", etablissement: e3.etablissement }];
+      var r = M.renommerClasse([e1, e2, e3], cours, e1.etablissement, "5B", "4A");
+      egal(r.collisions, []);
+      egal(r.eleves.map(function (e) { return [e.id, e.classe, e.cle]; }), [["el-1", "4A", "lucas m.|4a|college a"], ["el-2", "4A", "zoe p.|4a|college a"]], "élèves de l'autre établissement épargnés, casse ignorée");
+      egal(r.cours.map(function (c) { return [c.id, c.classe, c.eleveCle]; }), [["c1", "4A", "lucas m.|4a|college a"]], "cours de l'élève suivent");
+    });
+    t("classes : renommer vers une classe existante signale les collisions de clé", function () {
+      var e1 = eleve("el-1", "Lucas", "Martin", "5B", "Collège A"), e2 = eleve("el-2", "Lucas", "Moreau", "5C", "Collège A"), e3 = eleve("el-3", "Zoé", "Petit", "5B", "Collège A"), e4 = eleve("el-4", "Zoé", "Perrin", "5C", "Collège A");
+      var r = M.renommerClasse([e1, e2, e3, e4], [], e1.etablissement, "5B", "5C");
+      egal(r.collisions.map(function (c) { return [c.eleve.id, c.avec.id]; }), [["el-1", "el-2"], ["el-3", "el-4"]]);
+      var f = eleve("el-5", "Léo", "Roux", "5B", "Collège A"), g = eleve("el-6", "Léo", "Renaud", "5B", "Collège A");
+      egal(M.renommerClasse([f, g], [], f.etablissement, "5B", "4A").collisions.map(function (c) { return [c.eleve.id, c.avec.id]; }), [["el-6", "el-5"]], "deux élèves déplacés qui se rejoignent sur la même clé");
+    });
+    t("annulation : une écriture de paramètres se défait (clé « cle », pas d'« id »)", function () {
+      var ops = [{ magasin: "parametres", enregistrer: [{ cle: "classes", valeur: { a: 1 } }] }, { magasin: "parametres", enregistrer: [{ cle: "reglages", valeur: 2 }] }];
+      var inv = M.operationsInverses(ops, { parametres: [{ cle: "classes", valeur: { a: 0 } }] });
+      egal(inv, [{ magasin: "parametres", supprimer: ["reglages"], enregistrer: [] }, { magasin: "parametres", supprimer: [], enregistrer: [{ cle: "classes", valeur: { a: 0 } }] }]);
+    });
     t("archivage : données du moteur sans les fiches archivées", function () {
       var e1 = eleve("el-1", "A", "B", "5B", "Collège A"), e2 = eleve("el-2", "C", "D", "5B", "Collège A");
       var a1 = { id: "ae-1" }, a2 = { id: "ae-2", archiveLe: "2026-11-01" };

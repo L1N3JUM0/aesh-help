@@ -315,6 +315,48 @@ var PialModele = (function () {
     return out;
   }
 
+  /* table du référentiel enregistrée dans Réglages (magasin parametres,
+     clé « classes ») : {annee: {etablissement (id): [classe]}}. Les fonctions
+     rendent une copie ; rien n'est modifié sur place. */
+  function classeNette(c) { return txt(c).replace(/\s+/g, " ").trim(); }
+  function memeClasse(a, b) { return normaliser(classeNette(a)) === normaliser(classeNette(b)); }
+  function classesEnregistrees(valeur, annee) { return (valeur && valeur[annee]) || {}; }
+  function classesAvecAjout(valeur, annee, etab, classe) {
+    var out = JSON.parse(JSON.stringify(valeur || {})), c = classeNette(classe);
+    out[annee] = out[annee] || {}; out[annee][etab] = out[annee][etab] || [];
+    if (c && !out[annee][etab].some(function (x) { return memeClasse(x, c); })) out[annee][etab].push(c);
+    return out;
+  }
+  function classesSansClasse(valeur, annee, etab, classe) {
+    var out = JSON.parse(JSON.stringify(valeur || {}));
+    if (out[annee] && out[annee][etab]) out[annee][etab] = out[annee][etab].filter(function (x) { return !memeClasse(x, classe); });
+    return out;
+  }
+  function classesRenommee(valeur, annee, etab, de, vers) {
+    return classesAvecAjout(classesSansClasse(valeur, annee, etab, de), annee, etab, vers);
+  }
+  // élèves (archivés compris) d'une classe d'un établissement
+  function elevesDeClasse(eleves, etab, classe) {
+    return (eleves || []).filter(function (e) { return e.etablissement === etab && memeClasse(e.classe, classe); });
+  }
+  /* renommer une classe = changer de classe ses élèves (identifiants
+     inchangés ; cours qui suivent). Renvoie {eleves, cours, collisions:
+     [{eleve (nouvelle fiche), avec (fiche déjà en place)}]} ; il ne faut rien
+     écrire si collisions n'est pas vide. */
+  function renommerClasse(eleves, cours, etab, de, vers) {
+    var cible = elevesDeClasse(eleves, etab, de), ids = {}, modifs = [], vus = {}, collisionsTrouvees = [], coursModifies = [];
+    cible.forEach(function (e) { ids[e.id] = true; });
+    cible.forEach(function (e) {
+      var m = eleveModifie(e, { classe: vers }), k = cleFicheEleve(m);
+      var autre = (eleves || []).filter(function (x) { return !ids[x.id] && cleFicheEleve(x) === k; })[0] || vus[k];
+      if (autre) collisionsTrouvees.push({ eleve: m, avec: autre });
+      vus[k] = m;
+      modifs.push(m);
+      coursModifies = coursModifies.concat(coursSuivantEleve(cours, m));
+    });
+    return { eleves: modifs, cours: coursModifies, collisions: collisionsTrouvees };
+  }
+
   // archivé (§17) : sorti des listes actives et des propositions, gardé dans
   // l'historique et les versions. archiveLe : date ISO (aujourd'hui ou passée).
   function estArchive(x) { return !!(x && x.archiveLe); }
@@ -1021,17 +1063,20 @@ var PialModele = (function () {
     var inv = [];
     ops.forEach(function (op) {
       var parId = {}, vus = {}, remettre = [], supprimer = [];
-      (existants[op.magasin] || []).forEach(function (o) { parId[o.id] = o; });
+      // les paramètres n'ont pas d'« id » : leur clé d'enregistrement est « cle »
+      function ident(o) { return o.id !== undefined ? o.id : o.cle; }
+      (existants[op.magasin] || []).forEach(function (o) { parId[ident(o)] = o; });
       (op.supprimer || []).forEach(function (id) {
         if (vus[id]) return;
         vus[id] = true;
         if (parId[id]) remettre.push(JSON.parse(JSON.stringify(parId[id])));
       });
       (op.enregistrer || []).forEach(function (o) {
-        if (vus[o.id]) return;
-        vus[o.id] = true;
-        if (parId[o.id]) remettre.push(JSON.parse(JSON.stringify(parId[o.id])));
-        else supprimer.push(o.id);
+        var id = ident(o);
+        if (vus[id]) return;
+        vus[id] = true;
+        if (parId[id]) remettre.push(JSON.parse(JSON.stringify(parId[id])));
+        else supprimer.push(id);
       });
       inv.push({ magasin: op.magasin, supprimer: supprimer, enregistrer: remettre });
     });
@@ -1095,6 +1140,8 @@ var PialModele = (function () {
     decomposerNomCourt: decomposerNomCourt, eleveModifie: eleveModifie, aeshModifiee: aeshModifiee,
     collisionEleve: collisionEleve, collisionAesh: collisionAesh, coursSuivantEleve: coursSuivantEleve,
     comparerClasses: comparerClasses, referentielClasses: referentielClasses,
+    classeNette: classeNette, memeClasse: memeClasse, classesEnregistrees: classesEnregistrees, classesAvecAjout: classesAvecAjout,
+    classesSansClasse: classesSansClasse, classesRenommee: classesRenommee, elevesDeClasse: elevesDeClasse, renommerClasse: renommerClasse,
     estArchive: estArchive, actifs: actifs, donneesActives: donneesActives, effetsRetrait: effetsRetrait,
     anneeScolaire: anneeScolaire, niveauClasse: niveauClasse, typeEtablissement: typeEtablissement,
     etablissementParDefaut: etablissementParDefaut,

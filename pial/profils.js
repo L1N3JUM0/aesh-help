@@ -28,7 +28,7 @@ var PialProfils = (function () {
   function etablissementsTries() {
     return etat.etablissements.slice().sort(function (a, b) { return a.nom.localeCompare(b.nom, "fr"); });
   }
-  function referentiel() { return M.referentielClasses({}, etat.eleves, etat.cours); }
+  function referentiel() { return M.referentielClasses(M.classesEnregistrees(etat.classes, A.anneeCourante()), etat.eleves, etat.cours); }
   // bouton « ↶ Annuler » de l'onglet : même pile que l'onglet Affectations
   function majAnnuler(id) {
     var b = $(id), lib = A.libelleAnnulation();
@@ -263,6 +263,10 @@ var PialProfils = (function () {
     var objet = M.attribuerIdentifiants("eleves", [r.objet], etat.eleves)[0], ops = [];
     if (r.nouvelEtab && !A.etablissementParId(M.idEtablissement(r.nouvelEtab))) ops.push({ magasin: "etablissements", enregistrer: [M.etablissementParDefaut(r.nouvelEtab)] });
     ops.push({ magasin: "eleves", enregistrer: [objet] });
+    // « Autre classe… » : la classe entre dans le référentiel de l'établissement (§17)
+    if (!(referentiel()[objet.etablissement] || []).some(function (c) { return M.memeClasse(c, objet.classe); })) {
+      ops.push({ magasin: "parametres", enregistrer: [tableClasses(M.classesAvecAjout(etat.classes, A.anneeCourante(), objet.etablissement, objet.classe))] });
+    }
     A.enregistrerPuisRendre(ops, objet.nomCourt + " ajouté(e) en " + objet.classe + "." + (r.nouvelEtab ? " Établissement créé : vérifiez ses horaires dans Réglages." : ""),
       "la création de " + objet.nomCourt).then(function () {
       if (encore) {
@@ -478,14 +482,85 @@ var PialProfils = (function () {
     if (ev.key === "Enter" && ev.target.tagName === "INPUT" && ev.target.type !== "checkbox") { ev.preventDefault(); creerAesh(ev.ctrlKey || ev.metaKey); }
   });
 
+  /* =============== référentiel des classes (Réglages) =============== */
+  function tableClasses(valeur) { return { cle: "classes", valeur: valeur }; }
+  function pluriel0(n, un, plu) { return n + " " + (n > 1 ? plu : un); }
+  function rendreClasses() {
+    var hote = $("reg-classes");
+    if (!hote) return;
+    var ref = referentiel(), etabs = etablissementsTries(), h = "";
+    if (!etabs.length) { hote.innerHTML = '<p class="vide">Aucun établissement pour l\'instant : importez un fichier ou créez un élève.</p>'; return; }
+    etabs.forEach(function (e) {
+      var classes = ref[e.id] || [];
+      h += '<div class="etab-param" data-classes-etab="' + ech(e.id) + '"><h3>' + ech(e.nom) + '</h3>';
+      if (!classes.length) h += '<p class="aide">Aucune classe.</p>';
+      classes.forEach(function (c, k) {
+        var eleves = M.elevesDeClasse(etat.eleves, e.id, c), arch = eleves.filter(M.estArchive).length, id = "cl-" + k + "-" + ech(e.id);
+        h += '<div class="classe-ligne" data-classe="' + ech(c) + '"><input type="text" id="' + id + '" value="' + ech(c) + '" maxlength="30" aria-label="Nom de la classe ' + ech(c) + '" data-classe-nom>'
+          + '<button type="button" class="btn btn-vide" data-classe-renommer disabled>Renommer</button>'
+          + '<button type="button" class="btn btn-vide" data-classe-retirer' + (eleves.length ? ' disabled title="Cette classe a des élèves : changez-les de classe d\'abord."' : "") + '>Retirer</button>'
+          + '<span class="aide">' + (eleves.length ? pluriel0(eleves.length, "élève", "élèves") + (arch ? " (dont " + arch + " archivé" + (arch > 1 ? "s" : "") + ")" : "") : "aucun élève") + '</span></div>';
+      });
+      h += '<div class="classe-ligne classe-ajout"><input type="text" maxlength="30" placeholder="Nouvelle classe (ex. : 5B)" aria-label="Nouvelle classe de ' + ech(e.nom) + '" data-classe-nouvelle>'
+        + '<button type="button" class="btn btn-vide" data-classe-ajouter>Ajouter</button></div></div>';
+    });
+    hote.innerHTML = h;
+    chaque(hote, ".etab-param", function (bloc) {
+      var etab = bloc.getAttribute("data-classes-etab");
+      chaque(bloc, ".classe-ligne[data-classe]", function (ligne) {
+        var champ = ligne.querySelector("[data-classe-nom]"), bouton = ligne.querySelector("[data-classe-renommer]"), actuelle = ligne.getAttribute("data-classe");
+        champ.addEventListener("input", function () { bouton.disabled = !M.classeNette(champ.value) || M.classeNette(champ.value) === actuelle; });
+        champ.addEventListener("keydown", function (ev) { if (ev.key === "Enter" && !bouton.disabled) { ev.preventDefault(); renommerClasse(etab, actuelle, champ.value); } });
+        bouton.addEventListener("click", function () { renommerClasse(etab, actuelle, champ.value); });
+        ligne.querySelector("[data-classe-retirer]").addEventListener("click", function () { retirerClasse(etab, actuelle); });
+      });
+      var nouvelle = bloc.querySelector("[data-classe-nouvelle]");
+      nouvelle.addEventListener("keydown", function (ev) { if (ev.key === "Enter") { ev.preventDefault(); ajouterClasse(etab, nouvelle.value); } });
+      bloc.querySelector("[data-classe-ajouter]").addEventListener("click", function () { ajouterClasse(etab, nouvelle.value); });
+    });
+  }
+  function ajouterClasse(etab, saisie) {
+    var c = M.classeNette(saisie);
+    if (!c) { A.ui().toast("Écrivez le nom de la classe (ex. : 5B)."); return; }
+    if ((referentiel()[etab] || []).some(function (x) { return M.memeClasse(x, c); })) { A.ui().toast("La classe " + c + " existe déjà dans cet établissement."); return; }
+    A.enregistrerPuisRendre([{ magasin: "parametres", enregistrer: [tableClasses(M.classesAvecAjout(etat.classes, A.anneeCourante(), etab, c))] }],
+      "Classe " + c + " ajoutée.", "l'ajout de la classe " + c);
+  }
+  function retirerClasse(etab, classe) {
+    if (M.elevesDeClasse(etat.eleves, etab, classe).length) { A.ui().toast("La classe " + classe + " a des élèves : elle ne se retire pas."); return; }
+    A.enregistrerPuisRendre([{ magasin: "parametres", enregistrer: [tableClasses(M.classesSansClasse(etat.classes, A.anneeCourante(), etab, classe))] }],
+      "Classe " + classe + " retirée.", "le retrait de la classe " + classe);
+  }
+  function renommerClasse(etab, de, saisie) {
+    var vers = M.classeNette(saisie);
+    if (!vers || vers === de) return;
+    var r = M.renommerClasse(etat.eleves, etat.cours, etab, de, vers);
+    if (r.collisions.length) {
+      A.ui().toast("Renommage impossible : " + pluriel0(r.collisions.length, "élève porterait", "élèves porteraient") + " le même nom court qu'un élève déjà en " + vers + " ("
+        + r.collisions.slice(0, 3).map(function (c) { return c.eleve.nomCourt; }).join(", ") + (r.collisions.length > 3 ? "…" : "") + "). Écrivez une abréviation terminée par un point dans l'une des deux fiches, puis réessayez.");
+      return;
+    }
+    var fusion = (referentiel()[etab] || []).some(function (x) { return M.memeClasse(x, vers) && !M.memeClasse(x, de); });
+    var ops = [{ magasin: "parametres", enregistrer: [tableClasses(M.classesRenommee(etat.classes, A.anneeCourante(), etab, de, vers))] }];
+    if (r.eleves.length) ops.push({ magasin: "eleves", enregistrer: r.eleves });
+    if (r.cours.length) ops.push({ magasin: "cours", enregistrer: r.cours });
+    function faire() { A.enregistrerPuisRendre(ops, "Classe " + de + " renommée en " + vers + ".", "le renommage de la classe " + de + " en " + vers); }
+    if (!r.eleves.length) { faire(); return; }
+    A.ui().confirmationForte("Renommer " + de + " en " + vers + " (" + A.nomEtablissement(etab) + ") : " + pluriel0(r.eleves.length, "élève change", "élèves changent") + " de classe"
+      + (r.cours.length ? " et " + pluriel0(r.cours.length, "cours suit", "cours suivent") + " leur classe" : "") + ". Leurs affectations et leurs rapports sont conservés."
+      + (fusion ? " La classe " + vers + " existe déjà : les deux classes seront réunies." : "") + " Vous pourrez annuler.", "Renommer", faire);
+  }
+
   /* =============== ouverture, redessin =============== */
   function ouvrir(type) {
     if (type === "eleves") { remplirFiltresEleves(); rendreEleves(); }
     if (type === "aesh") { remplirFiltresAesh(); rendreAesh(); }
+    if (type === "reglages") rendreClasses();
   }
   A.surRendu(function () {
     if (!$("vue-eleves").classList.contains("masque")) { remplirFiltresEleves(); rendreEleves(); }
     if (!$("vue-aesh").classList.contains("masque")) { remplirFiltresAesh(); rendreAesh(); }
+    if (!$("vue-reglages").classList.contains("masque")) rendreClasses();
   });
 
   return { ouvrir: ouvrir };

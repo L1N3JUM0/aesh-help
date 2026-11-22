@@ -918,6 +918,22 @@ var PialProfils = (function () {
     });
   });
 
+  /* =============== export CSV (§17) =============== */
+  // au format des gabarits d'import (UTF-8 avec BOM, « ; ») : la sélection si elle existe, sinon la liste affichée (filtres compris)
+  function exporter(type) {
+    var eleves = type === "eleves", choisis = idsSel(type), fiches;
+    if (choisis.length) fiches = fichesDe(type, choisis);
+    else fiches = (eleves ? filtresEleves().map(function (l) { return l.e; }) : filtresAesh().map(function (l) { return l.a; }));
+    if (!fiches.length) { A.ui().toast("Rien à exporter : la liste est vide."); return; }
+    var etabs = {};
+    etat.etablissements.forEach(function (e) { etabs[e.id] = e.nom; });
+    var csv = I.exporterCSV(type, fiches, { etablissements: etabs, gererPeriscolaire: periGere() });
+    A.ui().telecharger(I.TYPES[type].fichier, csv, "text/csv");
+    A.ui().toast(pluriel(fiches.length, eleves ? "élève exporté" : "AESH exportée", eleves ? "élèves exportés" : "AESH exportées") + " dans " + I.TYPES[type].fichier + (choisis.length ? " (sélection)." : " (liste affichée)."));
+  }
+  $("pe-exporter").addEventListener("click", function () { exporter("eleves"); });
+  $("pa-exporter").addEventListener("click", function () { exporter("aesh"); });
+
   /* =============== ouverture, redessin =============== */
   function ouvrir(type) {
     if (type === "eleves") { remplirFiltresEleves(); rendreEleves(); }

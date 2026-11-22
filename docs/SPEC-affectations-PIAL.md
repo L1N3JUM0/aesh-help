@@ -377,7 +377,7 @@ Les profils se renseignent dans l'application. L'import CSV reste disponible pou
   - **Filtres** : établissement, classe (référentiel, §17), niveau, modalité (individuel, mutualisé, les deux) et état de couverture (§4.2).
   - **Tri** : clic sur un en-tête de colonne (`aria-sort`), puis tri par établissement, classe et nom.
   - **Colonnes** : élève, classe, établissement, heures notifiées, couverture (état et jauges de la vue d'ensemble), fin de notification (« échue », « dans N jours » sous 30 jours).
-  - **Clavier** : flèches haut et bas d'une ligne à l'autre, Entrée ou Espace pour ouvrir.
+  - **Clavier** : flèches haut et bas d'une ligne à l'autre, Entrée pour ouvrir, Espace pour cocher la ligne.
 - **Fiche** : un clic sur une ligne ouvre la fiche de l'élève dans un panneau à droite, en plein écran sous 980 px.
   - C'est le même composant que dans la grille (§7.1), avec l'enregistrement automatique et l'annulation. Il n'y en a qu'un à la fois dans la page : il passe d'un hôte à l'autre, la frappe en attente est enregistrée et le brouillon gardé.
   - Le bouton « Voir l'emploi du temps » ouvre la grille dans l'onglet Affectations. « ← Retour à la liste » ou Échap ferme le panneau.
@@ -389,6 +389,12 @@ Les profils se renseignent dans l'application. L'import CSV reste disponible pou
   - **Contrôle** : une collision de clé avec un élève de la même année, archivé compris, est signalée pendant la saisie et bloque la création. Les autres contrôles sont ceux de l'import (`PialImport.validerLigne`) et s'affichent au premier essai.
   - **Raccourcis** : Entrée crée ; « Créer et en ajouter un autre » (Ctrl+Entrée) garde l'établissement et la classe.
   - **Annulation** : la création est annulable, établissement créé compris.
+
+- **Classes (Réglages)** : bloc « Classes », par établissement, pour l'année en cours. Le référentiel est repris des élèves et des cours (archivés compris), complété par une table enregistrée (`parametres`, clé `classes` : `{annee: {etablissement: [classe]}}`). On peut ajouter une classe ; « Autre classe… » à la création d'un élève l'ajoute. Une classe qui a des élèves ne se retire pas. La renommer revient à changer de classe tous ses élèves (identifiants inchangés, cours qui suivent), après confirmation chiffrée, refusée en cas de collision de clé ; une classe existante est alors fusionnée.
+- **Archivage et suppression** (élèves et AESH) : « Archiver… » demande une date (aujourd'hui ou passée) et un motif libre facultatif (rien de médical). L'archivé sort des listes actives (visible avec « Afficher les archivés »), du moteur, des grilles et des menus de créneau ; ses créneaux du brouillon sont retirés dans la même action annulable (un groupe mutualisé est quitté, il reste aux autres) ; ses cours et les versions validées sont conservés. « Rétablir » ne remet pas les créneaux retirés. « Supprimer définitivement » n'existe que pour un archivé, derrière une confirmation chiffrée (cours, créneaux du brouillon, mentions « ne pas affecter », versions concernées, qui restent lisibles) avec proposition d'exporter une sauvegarde ; irréversible, l'historique d'annulation est vidé. Les rapports déjà reçus ne sont pas touchés. Un réimport « Mettre à jour » ne rétablit jamais un archivé (case « Les rétablir » dans l'aperçu) ; « Remplacer » compte les archivés absents du fichier.
+- **Actions groupées** : colonne de cases (Espace sur une ligne, Maj+clic pour une plage, « tout cocher » sur la liste affichée ; la sélection se limite aux lignes affichées). Élèves : archiver ; changer de classe (chacun reste dans son établissement) ; changer d'établissement (classe conservée ou nouvelle, établissement créé au besoin, créneaux du brouillon retirés) ; état d'une matière. AESH : archiver ; ajouter ou retirer un établissement possible (une AESH sans restriction est limitée aux autres établissements ; retirer le seul établissement est refusé) ; ajouter une spécialité. Les fiches archivées de la sélection sont ignorées. Chaque action affiche un aperçu chiffré, vérifie les collisions sur toute la sélection avant d'écrire, et s'annule en une seule fois.
+- **Saisie rapide** (`pial/saisie-rapide.js`) : tableau éditable aux colonnes des gabarits, ligne vide en bas. Une ligne complète et valide s'enregistre en quittant la cellule (mêmes contrôles que l'import, collisions de clé, établissements d'AESH existants) ; une ligne incomplète garde un « À compléter », une ligne invalide un bord rouge et son motif ; les lignes enregistrées sont modifiables (enregistrement automatique, annulable). Clavier : Tab, Entrée / Maj+Entrée, F2, Échap. Ctrl+V : une seule ligne remplit les cellules à partir de la cellule active ; plusieurs lignes passent par l'aperçu de l'import (composant partagé avec l'import de fichiers, sans « Remplacer »), en-têtes reconnus automatiquement ou colonnes lues dans l'ordre à partir de la cellule ; un collage s'annule en une action. Quitter avec des lignes non enregistrées demande confirmation.
+- **Export CSV** : « Exporter en CSV » écrit `eleves.csv` ou `aesh.csv` au format des gabarits (UTF-8 avec BOM, `;`), pour la sélection ou, à défaut, la liste affichée. Le nom de l'élève est l'initiale suivie d'un point, ce qui redonne la même clé à l'import (test Node : export puis import ne modifie rien).
 
 ---
 
@@ -465,7 +471,9 @@ pial/zip.js               lecture ZIP (XLSX) + écriture ZIP « store » (export
 pial/modele.js            fonctions pures : clés, durées, couverture, charge, contraintes
 pial/moteur.js            proposition d'affectations (glouton), raisons, rapport
 pial/affectations.js      onglet Affectations (vues, menus, annulation, alertes)
-pial/aesh.js              onglet AESH (fiches, rapprochement rapports)
+pial/profils.js           onglets Élèves et AESH (listes, fiches, création, archivage, actions groupées, export CSV, bloc Classes)
+pial/saisie-rapide.js     saisie rapide et collage depuis un tableur (élèves et AESH)
+pial/aesh.js              (non créé) rapprochement des rapports, phase 4
 pial/exports.js           ZIP par AESH, .eml, EDT HTML, pial-affectation/1, impressions
 pial/tests.js             assertions communes (navigateur et Node)
 pial/tests.html           lanceur navigateur des tests de modele.js, zip.js, import-fichiers.js et moteur.js

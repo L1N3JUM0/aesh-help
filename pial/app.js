@@ -77,7 +77,7 @@ function rafraichirCache() { return PialDB.tousLesRapports().then(function (r) {
 function rafraichirImports() { return PialDB.tousLesImports().then(function (r) { importsCache = r; return importsCache; }); }
 
 /* =============== navigation =============== */
-var VUES = ["vue-import", "vue-eleves", "vue-affectations", "vue-rapports", "vue-detail-rapport", "vue-fiche-eleve", "vue-indicateurs", "vue-stats", "vue-reglages"];
+var VUES = ["vue-import", "vue-eleves", "vue-aesh", "vue-affectations", "vue-rapports", "vue-detail-rapport", "vue-fiche-eleve", "vue-indicateurs", "vue-stats", "vue-reglages"];
 // dernier onglet utilisé, rouvert au prochain chargement (Élèves par défaut)
 var CLE_ONGLET = "pial-dernier-onglet";
 function vue(nom) {
@@ -95,6 +95,7 @@ function ouvrirOngletNav(nom) {
   if (nom === "vue-reglages") { rendreStockage(); PialAffectations.rendreReglages(); }
   if (nom === "vue-indicateurs") rendreIndicateurs();
   if (nom === "vue-eleves") PialProfils.ouvrir("eleves");
+  if (nom === "vue-aesh") PialProfils.ouvrir("aesh");
   if (nom === "vue-affectations") PialAffectations.ouvrirOnglet();
   if (nom === "vue-stats") { initialiserFiltresStats(); rendreStats(); }
 }

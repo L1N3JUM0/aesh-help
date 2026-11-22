@@ -626,6 +626,7 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
 <nav class="barre-nav" id="nav">
   <button type="button" data-vue="vue-import" aria-current="true">Importer</button>
   <button type="button" data-vue="vue-eleves">Élèves</button>
+  <button type="button" data-vue="vue-aesh">AESH</button>
   <button type="button" data-vue="vue-affectations">Affectations</button>
   <button type="button" data-vue="vue-rapports">Rapports</button>
   <button type="button" data-vue="vue-indicateurs">Indicateurs</button>
@@ -748,6 +749,41 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
           <div class="actions"><button type="button" class="btn btn-vide" id="pe-edt">Voir l'emploi du temps</button></div>
         </div>
         <div id="pe-fiche"></div>
+      </aside>
+    </div>
+  </section>
+
+  <section id="vue-aesh" class="masque">
+    <div class="profils" id="pa-disposition">
+      <div class="carte profils-liste">
+        <div class="profils-barre">
+          <h2>AESH <span class="profils-compte" id="pa-compte"></span></h2>
+          <div class="actions">
+            <button type="button" class="btn btn-vide" id="pa-annuler" disabled>↶ Annuler</button>
+            <button type="button" class="btn btn-plein" id="pa-nouveau">+ Nouvelle AESH</button>
+          </div>
+        </div>
+        <div class="ligne-filtres">
+          <div class="champ champ-recherche"><label for="pa-recherche">Rechercher</label><input type="search" id="pa-recherche" placeholder="Nom, prénom, e-mail, établissement…" autocomplete="off"></div>
+          <div class="champ"><label for="pa-etab">Établissement</label><select id="pa-etab"></select></div>
+          <div class="champ"><label for="pa-spec">Spécialité</label><select id="pa-spec"></select></div>
+          <div class="champ"><label for="pa-charge">Charge</label><select id="pa-charge">
+            <option value="">Toutes</option><option value="depassement">En dépassement</option><option value="sous">Sous-utilisées</option><option value="complete">Charge complète</option>
+          </select></div>
+          <div class="champ" style="flex:none;align-self:center"><button type="button" class="btn btn-vide" id="pa-reinitialiser">Réinitialiser</button></div>
+        </div>
+        <div class="tableau-conteneur"><table class="tableau tableau-profils" id="pa-table"></table></div>
+        <p class="aide" style="margin-top:10px">Cliquez sur une ligne (ou Entrée) pour ouvrir la fiche.</p>
+      </div>
+      <aside class="carte profils-panneau" id="pa-panneau" hidden aria-labelledby="pa-titre">
+        <div class="pp-tete">
+          <button type="button" class="btn-lien" id="pa-fermer">← Retour à la liste</button>
+          <h3 id="pa-titre" tabindex="-1"></h3>
+          <p class="aide" id="pa-sous-titre"></p>
+          <div id="pa-jauges" class="pp-jauges"></div>
+          <div class="actions"><button type="button" class="btn btn-vide" id="pa-edt">Voir l'emploi du temps</button></div>
+        </div>
+        <div id="pa-fiche"></div>
       </aside>
     </div>
   </section>
@@ -1145,6 +1181,26 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
     <div class="actions"><button type="button" class="btn btn-plein" id="ne-creer">Créer</button>
       <button type="button" class="btn btn-vide" id="ne-creer-autre">Créer et en ajouter un autre</button>
       <button type="button" class="btn btn-vide" id="ne-annuler">Annuler</button></div>
+  </div>
+</div>
+
+<div class="voile" id="voile-nouvelle-aesh" hidden>
+  <div class="modale modale-large" role="dialog" aria-modal="true" aria-labelledby="na-titre">
+    <h3 id="na-titre">Nouvelle AESH</h3>
+    <div class="formulaire-fiche">
+      <div class="champ"><label for="na-prenom">Prénom *</label><input type="text" id="na-prenom" autocomplete="off"></div>
+      <div class="champ"><label for="na-nom">Nom *</label><input type="text" id="na-nom" autocomplete="off"></div>
+      <div class="champ"><label for="na-quotite">Quotité hebdomadaire (h) *</label><input type="text" id="na-quotite" inputmode="decimal" placeholder="24"></div>
+      <div class="champ"><label for="na-email">E-mail</label><input type="text" id="na-email" inputmode="email" autocomplete="off"></div>
+      <div class="formulaire-pleine"><label>Établissements possibles</label><div class="fe-besoins" id="na-etabs"></div>
+        <p class="aide" style="margin:4px 0 0">Aucun établissement coché : l'AESH peut être affectée partout. Indisponibilités, vœux et spécialités se règlent ensuite dans la fiche.</p></div>
+    </div>
+    <p class="ne-apercu" id="na-apercu" aria-live="polite"></p>
+    <div class="note alerte" id="na-erreurs" hidden tabindex="-1" aria-live="polite"></div>
+    <p class="aide">Mêmes contrôles que l'import du fichier des AESH. Entrée : créer ; Ctrl+Entrée : créer et en ajouter une autre.</p>
+    <div class="actions"><button type="button" class="btn btn-plein" id="na-creer">Créer</button>
+      <button type="button" class="btn btn-vide" id="na-creer-autre">Créer et en ajouter une autre</button>
+      <button type="button" class="btn btn-vide" id="na-annuler">Annuler</button></div>
   </div>
 </div>
 

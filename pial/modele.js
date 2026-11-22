@@ -552,7 +552,7 @@ var PialModele = (function () {
   var CHAMPS_NOTIFICATION = ["heuresInd", "heuresMut", "debutNotif", "finNotif", "besoins"];
   // même mécanisme pour la fiche AESH (§16) : champs aussi présents dans le
   // fichier des AESH, et champs propres à l'application
-  var CHAMPS_FICHE_AESH = ["quotite", "etablissements", "indisponibilites", "formations"];
+  var CHAMPS_FICHE_AESH = ["quotite", "email", "etablissements", "indisponibilites", "formations"];
   var PROPRES = { eleves: ["commentaire", "etatsMatieres"], aesh: ["voeux", "elevesExclus", "ignorerIndispos", "alias"] };
   // champs modifiés dans l'application dont la valeur du fichier diffère
   function conflitsReimport(existant, nouveau) {

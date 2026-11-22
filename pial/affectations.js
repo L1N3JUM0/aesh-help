@@ -260,12 +260,13 @@ var PialAffectations = (function () {
     }
     if (imp.conflits && imp.conflits.length) {
       var LIB_CHAMP = { heuresInd: "heures individuelles", heuresMut: "heures mutualisées", debutNotif: "début de notification", finNotif: "fin de notification", besoins: "besoins",
-        quotite: "quotité", etablissements: "établissements possibles", indisponibilites: "indisponibilités", formations: "spécialités" };
+        quotite: "quotité", email: "e-mail", etablissements: "établissements possibles", indisponibilites: "indisponibilités", formations: "spécialités" };
       var valeur = function (k, v) {
         if (k === "besoins" || k === "formations") return (v || []).length ? v.join(", ") : "aucun";
         if (k === "heuresInd" || k === "heuresMut" || k === "quotite") return heures(v || 0);
         if (k === "etablissements") return (v || []).length ? v.map(nomEtablissement).join(", ") : "tous";
         if (k === "indisponibilites") return (v || []).length ? v.map(texteIndispo).join(", ") : "aucune";
+        if (k === "email") return v || "aucune";
         return v ? v.split("-").reverse().join("/") : "—";
       };
       var aeshImp = imp.type === "aesh";
@@ -1446,7 +1447,7 @@ var PialAffectations = (function () {
   }
   function lireDemiJournees(nom) {
     var coche = {};
-    Array.prototype.forEach.call($("ga-fiche").querySelectorAll("[data-" + nom + "]"), function (c) { if (c.checked) coche[c.getAttribute("data-" + nom)] = true; });
+    Array.prototype.forEach.call($(autoAesh.o.hote).querySelectorAll("[data-" + nom + "]"), function (c) { if (c.checked) coche[c.getAttribute("data-" + nom)] = true; });
     var out = [];
     joursClasse().forEach(function (j) {
       var a = coche[ABREV[j] + "-am"], p = coche[ABREV[j] + "-pm"];
@@ -1466,8 +1467,11 @@ var PialAffectations = (function () {
     return '<span class="fa-exclu" data-exclu="' + ech(e.id) + '">' + ech(e.nomCourt) + ' (' + ech(e.classe) + ')'
       + ' <button type="button" class="btn-lien" data-retirer-exclu aria-label="Retirer ' + ech(e.nomCourt) + '">×</button></span>';
   }
-  function rendreFicheAeshComplete(a) {
-    var hote = $("ga-fiche"), m = a.modifiesAppli || {}, table = ctxCourant.reglages.specialites || [], v = a.voeux || {};
+  // opts : {hote (défaut : grille de l'AESH), ouverte (fiche dépliée)}
+  function rendreFicheAeshComplete(a, opts) {
+    opts = opts || {};
+    hebergerFiche(autoAesh, opts.hote || "ga-fiche");
+    var hote = $(autoAesh.o.hote), m = a.modifiesAppli || {}, table = ctxCourant.reglages.specialites || [], v = a.voeux || {};
     // listes en cours de saisie (plages, élèves exclus) reprises dès la construction
     var av = avantRendu(autoAesh, a.id), br = av.brouillon;
     var plagesVues = br.plages !== undefined ? JSON.parse(br.plages).map(function (p) { return { jour: p[0], debut: p[1], fin: p[2] }; }) : (v.plages || []);
@@ -1478,10 +1482,11 @@ var PialAffectations = (function () {
     var autres = etat.eleves.filter(function (e) { return exclusIds.indexOf(e.id) < 0; })
       .sort(function (p, q) { return p.nomCourt.localeCompare(q.nomCourt, "fr") || txt(p.classe).localeCompare(txt(q.classe), "fr"); });
     var global = ctxCourant.reglages.respecterIndispos;
-    var h = '<details class="fiche-eleve" id="fa-details"' + (ficheAeshOuverte ? " open" : "") + '><summary>Fiche de l\'AESH'
-      + '<span class="aide"> — quotité, établissements, indisponibilités, vœux, élèves à ne pas affecter, spécialités</span></summary>'
+    var h = '<details class="fiche-eleve" id="fa-details"' + (ficheAeshOuverte || opts.ouverte ? " open" : "") + '><summary>Fiche de l\'AESH'
+      + '<span class="aide"> — quotité, e-mail, établissements, indisponibilités, vœux, élèves à ne pas affecter, spécialités</span></summary>'
       + '<div class="fe-corps"><div class="fe-colonne"><h4>Paramètres</h4><div class="fe-champs">'
-      + '<label>Quotité hebdomadaire (h)' + marque("quotite") + '<input type="text" inputmode="decimal" id="fa-quotite" data-champ="quotite" value="' + ech(String(a.quotite || 0).replace(".", ",")) + '"></label></div>'
+      + '<label>Quotité hebdomadaire (h)' + marque("quotite") + '<input type="text" inputmode="decimal" id="fa-quotite" data-champ="quotite" value="' + ech(String(a.quotite || 0).replace(".", ",")) + '"></label>'
+      + '<label>E-mail' + marque("email") + '<input type="text" inputmode="email" autocomplete="off" id="fa-email" data-champ="email" value="' + ech(a.email || "") + '"></label></div>'
       + '<h4>Établissements possibles' + marque("etablissements") + '</h4><div class="fe-besoins">'
       + etat.etablissements.slice().sort(function (p, q) { return p.nom.localeCompare(q.nom, "fr"); }).map(function (e) {
         return '<label class="pastille-case"><input type="checkbox" data-fa-etab="' + ech(e.id) + '" data-champ="etab-' + ech(e.id) + '"' + ((a.etablissements || []).indexOf(e.id) > -1 ? " checked" : "") + '> ' + ech(e.nom) + '</label>';
@@ -1511,7 +1516,7 @@ var PialAffectations = (function () {
       + '<p class="fe-statut" id="fa-statut" aria-live="polite"></p>'
       + '</div></div></details>';
     hote.innerHTML = h;
-    $("fa-details").addEventListener("toggle", function () { ficheAeshOuverte = this.open; });
+    if (!opts.ouverte) $("fa-details").addEventListener("toggle", function () { ficheAeshOuverte = this.open; });
     $("fa-ajouter-plage").addEventListener("click", function () {
       $("fa-plages").insertAdjacentHTML("beforeend", lignePlage());
       $("fa-plages").lastChild.querySelector("[data-plage-debut]").focus();
@@ -1548,6 +1553,7 @@ var PialAffectations = (function () {
   function lireFicheAesh(hote) {
     return {
       quotite: $("fa-quotite").value,
+      email: $("fa-email").value,
       plages: JSON.parse(plagesSaisies(hote)),
       etablissements: Array.prototype.filter.call(hote.querySelectorAll("[data-fa-etab]"), function (c) { return c.checked; }).map(function (c) { return c.dataset.faEtab; }),
       indisponibilites: lireDemiJournees("fa-indispo"),
@@ -1560,6 +1566,8 @@ var PialAffectations = (function () {
   function appliquerFicheAesh(a, s) {
     var q = nombreSaisi(s.quotite);
     if (isNaN(q) || !(q > 0) || q > 45) return { erreur: "quotité invalide (de 0,5 à 45 heures)." };
+    var email = txt(s.email).trim();
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { erreur: "adresse e-mail invalide." };
     var plages = [], erreur = "";
     s.plages.forEach(function (p) {
       var d = M.heureNormalisee(p[1]), f = M.heureNormalisee(p[2]);
@@ -1569,10 +1577,10 @@ var PialAffectations = (function () {
     });
     if (erreur) return { erreur: erreur };
     var b = JSON.parse(JSON.stringify(a));
-    var nouveau = { quotite: q, etablissements: s.etablissements, indisponibilites: s.indisponibilites, formations: s.formations };
+    var nouveau = { quotite: q, email: email, etablissements: s.etablissements, indisponibilites: s.indisponibilites, formations: s.formations };
     b.modifiesAppli = b.modifiesAppli || {};
     M.CHAMPS_FICHE_AESH.forEach(function (k) {
-      var avant = k === "quotite" ? (a.quotite || 0) : (a[k] || []);
+      var avant = k === "quotite" ? (a.quotite || 0) : (k === "email" ? (a.email || "") : (a[k] || []));
       if (JSON.stringify(avant) !== JSON.stringify(nouveau[k])) { b[k] = nouveau[k]; b.modifiesAppli[k] = true; }
     });
     if (!Object.keys(b.modifiesAppli).length) delete b.modifiesAppli;
@@ -1755,7 +1763,8 @@ var PialAffectations = (function () {
       + '<dt>Élèves (' + liste.length + ')</dt><dd>' + (liste.length ? liste.map(function (e) {
         return '<button type="button" class="btn-lien" data-grille-eleve="' + ech(e.id) + '">' + ech(e.nomCourt) + '</button> <span class="aide">(' + ech(e.classe) + ')</span>';
       }).join(", ") : "aucun") + '</dd></dl>';
-    rendreFicheAeshComplete(a);
+    // onglet AESH affiché : la fiche y est (la grille est masquée)
+    if (!ongletVisible("vue-aesh")) rendreFicheAeshComplete(a);
     $("ga-grille").innerHTML = '<div class="tableau-conteneur">' + grilleAeshHtml(a, semaineAffichee) + '</div>' + legendeGrilleAesh();
     Array.prototype.forEach.call($("aff-grille-aesh").querySelectorAll("[data-grille-eleve]"), function (bt) {
       bt.addEventListener("click", function (ev) { ev.stopPropagation(); ouvrirGrilleEleve(this.dataset.grilleEleve); });
@@ -2340,7 +2349,8 @@ var PialAffectations = (function () {
     nomAesh: nomAesh, initialesAesh: initialesAesh, couleurAesh: couleurAesh, aeshTriees: aeshTriees,
     jauge: jauge, jaugesEleve: jaugesEleve, titreAB: titreAB, LIB_ETAT_ELEVE: LIB_ETAT_ELEVE, LIB_ETAT_AESH: LIB_ETAT_AESH,
     contexte: function () { if (!ctxCourant) recalculer(); return ctxCourant; },
-    rendreFicheEleve: rendreFicheEleve, enregistrerPuisRendre: enregistrerPuisRendre, annuler: annuler,
+    rendreFicheEleve: rendreFicheEleve, rendreFicheAesh: rendreFicheAeshComplete, texteIndispo: texteIndispo,
+    enregistrerPuisRendre: enregistrerPuisRendre, annuler: annuler,
     libelleAnnulation: function () { return pileAnnulation.length ? pileAnnulation[pileAnnulation.length - 1].libelle : ""; },
     surRendu: function (fn) { abonnesRendu.push(fn); },
     ui: function () { return ui; },

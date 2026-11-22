@@ -293,12 +293,199 @@ var PialProfils = (function () {
     if (ev.key === "Enter" && ev.target.tagName === "INPUT" && ev.target.type !== "checkbox") { ev.preventDefault(); creerEleve(ev.ctrlKey || ev.metaKey); }
   });
 
+  /* =============== onglet AESH =============== */
+  var pa = { tri: { cle: "nom", sens: 1 }, ouvert: null };
+  function elevesDeAesh(a) {
+    var vus = {};
+    etat.affectations.forEach(function (x) { if (x.aeshId === a.id) x.eleves.forEach(function (id) { vus[id] = true; }); });
+    return Object.keys(vus).length;
+  }
+  function nomsEtabs(a) { return (a.etablissements || []).length ? a.etablissements.map(A.nomEtablissement).join(", ") : "tous"; }
+  var COLONNES_AESH = [
+    { cle: "nom", lib: "AESH", cmp: function (x, y) { return (x.a.nom + " " + x.a.prenom).localeCompare(y.a.nom + " " + y.a.prenom, "fr"); } },
+    { cle: "etab", lib: "Établissements possibles", classe: "col-secondaire", cmp: function (x, y) { return nomsEtabs(x.a).localeCompare(nomsEtabs(y.a), "fr"); } },
+    { cle: "quotite", lib: "Quotité", cmp: function (x, y) { return (x.a.quotite || 0) - (y.a.quotite || 0); } },
+    { cle: "charge", lib: "Charge", cmp: function (x, y) { return (x.ch.quotite ? x.ch.moy / x.ch.quotite : 0) - (y.ch.quotite ? y.ch.moy / y.ch.quotite : 0); } },
+    { cle: "eleves", lib: "Élèves", classe: "col-secondaire", cmp: function (x, y) { return x.n - y.n; } },
+    { cle: "spec", lib: "Spécialités", classe: "col-secondaire", cmp: function (x, y) { return (x.a.formations || []).join().localeCompare((y.a.formations || []).join(), "fr"); } }
+  ];
+  function filtresAesh() {
+    var ctx = A.contexte(), etab = $("pa-etab").value, spec = $("pa-spec").value, charge = $("pa-charge").value,
+      mots = M.normaliser($("pa-recherche").value).split(" ").filter(Boolean);
+    var lignes = etat.aesh.map(function (a) { return { a: a, ch: M.chargeAesh(a, ctx), n: elevesDeAesh(a) }; }).filter(function (l) {
+      var a = l.a;
+      if (etab === "__tous" && (a.etablissements || []).length) return false;
+      if (etab && etab !== "__tous" && (a.etablissements || []).length && a.etablissements.indexOf(etab) < 0) return false;
+      if (spec && !(a.formations || []).some(function (f) { return M.normaliser(f) === M.normaliser(spec); })) return false;
+      if (charge && l.ch.etat !== charge) return false;
+      if (mots.length) {
+        var texte = M.normaliser([a.prenom, a.nom, a.email || "", nomsEtabs(a), (a.formations || []).join(" ")].join(" "));
+        if (!mots.every(function (m) { return texte.indexOf(m) > -1; })) return false;
+      }
+      return true;
+    });
+    var col = COLONNES_AESH.filter(function (c) { return c.cle === pa.tri.cle; })[0] || COLONNES_AESH[0];
+    lignes.sort(function (x, y) { return (pa.tri.sens * col.cmp(x, y)) || COLONNES_AESH[0].cmp(x, y); });
+    return lignes;
+  }
+  function remplirFiltresAesh() {
+    remplirSelect($("pa-etab"), etablissementsTries().map(function (e) { return { valeur: e.id, libelle: e.nom }; })
+      .concat([{ valeur: "__tous", libelle: "Sans restriction (tous établissements)" }]), "Tous");
+    var specs = (A.contexte().reglages.specialites || []).map(function (s) { return s.nom; });
+    etat.aesh.forEach(function (a) { (a.formations || []).forEach(function (f) { if (!specs.some(function (s) { return M.normaliser(s) === M.normaliser(f); })) specs.push(f); }); });
+    remplirSelect($("pa-spec"), specs.map(function (s) { return { valeur: s, libelle: s }; }), "Toutes");
+  }
+  function rendreAesh() {
+    if ($("vue-aesh").classList.contains("masque")) return;
+    majAnnuler("pa-annuler");
+    var focus = document.activeElement, focusLigne = focus && focus.closest && focus.closest("#pa-table") && focus.getAttribute("data-aesh");
+    var lignes = filtresAesh(), ctx = A.contexte();
+    $("pa-compte").textContent = etat.aesh.length ? (lignes.length === etat.aesh.length ? pluriel(etat.aesh.length, "AESH", "AESH") : lignes.length + " sur " + etat.aesh.length) : "";
+    var h = '<thead><tr>' + COLONNES_AESH.map(function (c) { return teteTriable(c, pa.tri); }).join("") + '</tr></thead><tbody>';
+    if (!lignes.length) {
+      h += '<tr><td colspan="' + COLONNES_AESH.length + '" class="vide">' + (etat.aesh.length ? "Aucune AESH ne correspond à ces critères."
+        : "Aucune AESH. Ajoutez-en une avec « + Nouvelle AESH », ou importez le fichier des AESH (onglet Importer).") + '</td></tr>';
+    }
+    lignes.forEach(function (l) {
+      var a = l.a, ch = l.ch;
+      var titre = A.LIB_ETAT_AESH[ch.etat] + (ch.A !== ch.B ? " — semaine A : " + heures(ch.A) + ", semaine B : " + heures(ch.B) : "");
+      h += '<tr data-aesh="' + ech(a.id) + '" tabindex="0"' + (pa.ouvert === a.id ? ' class="actif" aria-selected="true"' : "") + '>'
+        + '<td><span class="puce-aesh" style="background:' + A.couleurAesh(a.id) + '">' + ech(A.initialesAesh(a)) + '</span> <strong>' + ech(A.nomAesh(a)) + '</strong>'
+        + (a.ignorerIndispos ? ' <span class="badge-ignore" title="Indisponibilités et établissements possibles ignorés">indispos ignorées</span>' : "") + '</td>'
+        + '<td class="col-secondaire col-texte">' + ech(nomsEtabs(a)) + '</td>'
+        + '<td>' + heures(a.quotite || 0) + '</td>'
+        + '<td class="col-jauges"><span class="pastille-etat e-' + ch.etat + '">' + A.LIB_ETAT_AESH[ch.etat] + '</span>' + A.jauge("Charge", ch.moy, ch.quotite, ch.etat, titre) + '</td>'
+        + '<td class="col-secondaire">' + l.n + '</td>'
+        + '<td class="col-secondaire col-texte">' + ech((a.formations || []).join(", ")) + '</td></tr>';
+    });
+    $("pa-table").innerHTML = h + "</tbody>";
+    chaque($("pa-table"), "[data-tri]", function (b) {
+      b.addEventListener("click", function () {
+        var k = this.dataset.tri;
+        pa.tri = { cle: k, sens: pa.tri.cle === k ? -pa.tri.sens : 1 };
+        rendreAesh();
+        var bt = $("pa-table").querySelector('[data-tri="' + k + '"]'); if (bt) bt.focus();
+      });
+    });
+    brancherLignes($("pa-table"), "data-aesh", ouvrirAesh);
+    if (focusLigne) { var tr = $("pa-table").querySelector('tr[data-aesh="' + focusLigne.replace(/"/g, '\\"') + '"]'); if (tr) tr.focus(); }
+    rendrePanneauAesh(ctx);
+  }
+  function rendrePanneauAesh(ctx) {
+    var a = pa.ouvert && A.aeshParId(pa.ouvert);
+    $("pa-disposition").classList.toggle("avec-fiche", !!a);
+    $("pa-panneau").hidden = !a;
+    if (!a) { pa.ouvert = null; $("pa-fiche").innerHTML = ""; return; }
+    var ch = M.chargeAesh(a, ctx);
+    var titre = A.LIB_ETAT_AESH[ch.etat] + (ch.A !== ch.B ? " — semaine A : " + heures(ch.A) + ", semaine B : " + heures(ch.B) : "");
+    $("pa-titre").textContent = A.nomAesh(a);
+    $("pa-sous-titre").textContent = (a.email ? a.email + " · " : "") + "établissements : " + nomsEtabs(a)
+      + ((a.indisponibilites || []).length ? " · indisponible : " + a.indisponibilites.map(A.texteIndispo).join(", ") : "");
+    $("pa-jauges").innerHTML = '<span class="pastille-etat e-' + ch.etat + '">' + A.LIB_ETAT_AESH[ch.etat] + '</span>' + A.jauge("Charge", ch.moy, ch.quotite, ch.etat, titre)
+      + '<p class="aide" style="margin:4px 0 0">' + pluriel(elevesDeAesh(a), "élève accompagné", "élèves accompagnés") + ' dans le brouillon.</p>';
+    A.rendreFicheAesh(a, { hote: "pa-fiche", ouverte: true });
+  }
+  function ouvrirAesh(id) {
+    pa.ouvert = id;
+    rendreAesh();
+    $("pa-panneau").scrollTop = 0;
+    $("pa-titre").focus();
+  }
+  function fermerAesh() {
+    var id = pa.ouvert;
+    pa.ouvert = null;
+    rendreAesh();
+    var tr = id && $("pa-table").querySelector('tr[data-aesh="' + id.replace(/"/g, '\\"') + '"]');
+    if (tr) tr.focus();
+  }
+  ["pa-etab", "pa-spec", "pa-charge"].forEach(function (id) { $(id).addEventListener("change", rendreAesh); });
+  $("pa-recherche").addEventListener("input", rendreAesh);
+  $("pa-reinitialiser").addEventListener("click", function () {
+    ["pa-recherche", "pa-etab", "pa-spec", "pa-charge"].forEach(function (id) { $(id).value = ""; });
+    rendreAesh();
+  });
+  $("pa-annuler").addEventListener("click", function () { A.annuler(); });
+  $("pa-fermer").addEventListener("click", fermerAesh);
+  $("pa-edt").addEventListener("click", function () { if (pa.ouvert) A.voirGrilleAesh(pa.ouvert); });
+  $("pa-panneau").addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape" && !/^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName)) { ev.preventDefault(); fermerAesh(); }
+  });
+
+  /* ---------- création d'une AESH ---------- */
+  var na = { tente: false, retour: null };
+  function lireNa() {
+    var etabs = [];
+    chaque($("na-etabs"), "[data-na-etab]", function (c) { if (c.checked) etabs.push(c.dataset.naEtab); });
+    var v = { nom: $("na-nom").value.trim(), prenom: $("na-prenom").value.trim(), quotite: $("na-quotite").value.trim(), email: $("na-email").value.trim(),
+      etablissements: etabs.map(A.nomEtablissement).join(" | "), indisponibilites: "", formations: "" };
+    return { v: v, etabs: etabs };
+  }
+  function verifierNa() {
+    var l = lireNa(), v = l.v, r = I.validerLigne("aesh", v, { annee: A.anneeCourante(), specialites: A.contexte().reglages.specialites });
+    var erreurs = [], collision = v.nom && v.prenom ? M.collisionAesh(etat.aesh, { nom: v.nom, prenom: v.prenom }) : null;
+    $("na-apercu").innerHTML = v.nom && v.prenom ? 'Sera enregistrée : <strong>' + ech(v.prenom.replace(/\s+/g, " ") + " " + v.nom.replace(/\s+/g, " ")) + '</strong>'
+      + (v.quotite ? ' — ' + ech(v.quotite.replace(".", ",")) + ' h par semaine' : "") + ' — ' + (l.etabs.length ? ech(l.etabs.map(A.nomEtablissement).join(", ")) : "tous établissements") : "";
+    if (collision) erreurs.push("Une AESH " + A.nomAesh(collision) + " existe déjà" + (M.estArchive(collision) ? " (archivée)" : "") + " : deux AESH ne peuvent pas avoir le même nom et le même prénom.");
+    if (na.tente && r.erreurs) erreurs = erreurs.concat(r.erreurs.map(function (m) { return m.charAt(0).toUpperCase() + m.slice(1) + "."; }));
+    $("na-erreurs").innerHTML = erreurs.length ? '<ul class="liste-motifs">' + erreurs.map(function (m) { return "<li>" + ech(m) + "</li>"; }).join("") + '</ul>' : "";
+    $("na-erreurs").hidden = !erreurs.length;
+    $("na-creer").disabled = $("na-creer-autre").disabled = !!collision;
+    // établissements cochés : leurs identifiants font foi
+    if (r.objet) { r.objet.etablissements = l.etabs; r.objet.etablissementsNoms = l.etabs.map(A.nomEtablissement); }
+    return { ok: !r.erreurs && !collision, objet: r.objet };
+  }
+  function ouvrirCreationAesh() {
+    na.tente = false;
+    na.retour = document.activeElement;
+    ["na-nom", "na-prenom", "na-quotite", "na-email"].forEach(function (id) { $(id).value = ""; });
+    var filtre = $("pa-etab").value;
+    $("na-etabs").innerHTML = etablissementsTries().map(function (e) {
+      return '<label class="pastille-case"><input type="checkbox" data-na-etab="' + ech(e.id) + '"' + (filtre === e.id ? " checked" : "") + '> ' + ech(e.nom) + '</label>';
+    }).join("") || '<span class="aide">Aucun établissement : créez d\'abord un élève ou importez un fichier.</span>';
+    verifierNa();
+    $("voile-nouvelle-aesh").hidden = false;
+    $("na-nom").focus();
+  }
+  function fermerCreationAesh() {
+    $("voile-nouvelle-aesh").hidden = true;
+    if (na.retour && na.retour.focus) na.retour.focus();
+  }
+  function creerAesh(encore) {
+    na.tente = true;
+    var r = verifierNa();
+    if (!r.ok) { if (!$("na-erreurs").hidden) $("na-erreurs").focus(); return; }
+    var objet = M.attribuerIdentifiants("aesh", [r.objet], etat.aesh)[0];
+    A.enregistrerPuisRendre([{ magasin: "aesh", enregistrer: [objet] }], A.nomAesh(objet) + " ajoutée.", "la création de " + A.nomAesh(objet)).then(function () {
+      if (encore) {
+        na.tente = false;
+        ["na-nom", "na-prenom", "na-email"].forEach(function (id) { $(id).value = ""; });
+        verifierNa();
+        $("na-nom").focus();
+      } else {
+        $("voile-nouvelle-aesh").hidden = true;
+        ouvrirAesh(objet.id);
+      }
+    });
+  }
+  $("pa-nouveau").addEventListener("click", ouvrirCreationAesh);
+  $("voile-nouvelle-aesh").addEventListener("input", verifierNa);
+  $("voile-nouvelle-aesh").addEventListener("change", verifierNa);
+  $("na-creer").addEventListener("click", function () { creerAesh(false); });
+  $("na-creer-autre").addEventListener("click", function () { creerAesh(true); });
+  $("na-annuler").addEventListener("click", fermerCreationAesh);
+  $("voile-nouvelle-aesh").addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape") { ev.preventDefault(); fermerCreationAesh(); }
+    if (ev.key === "Enter" && ev.target.tagName === "INPUT" && ev.target.type !== "checkbox") { ev.preventDefault(); creerAesh(ev.ctrlKey || ev.metaKey); }
+  });
+
   /* =============== ouverture, redessin =============== */
   function ouvrir(type) {
     if (type === "eleves") { remplirFiltresEleves(); rendreEleves(); }
+    if (type === "aesh") { remplirFiltresAesh(); rendreAesh(); }
   }
   A.surRendu(function () {
     if (!$("vue-eleves").classList.contains("masque")) { remplirFiltresEleves(); rendreEleves(); }
+    if (!$("vue-aesh").classList.contains("masque")) { remplirFiltresAesh(); rendreAesh(); }
   });
 
   return { ouvrir: ouvrir };

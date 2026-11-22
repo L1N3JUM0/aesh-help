@@ -41,12 +41,13 @@ var PialProfils = (function () {
       + '<button type="button" class="tri" data-tri="' + col.cle + '">' + col.lib + (actif ? (tri.sens > 0 ? " ▲" : " ▼") : "") + '</button></th>';
   }
   // flèches haut / bas entre les lignes, Entrée ou Espace pour ouvrir
-  function brancherLignes(corps, attr, ouvrir) {
+  function brancherLignes(corps, attr, ouvrir, basculer) {
     chaque(corps, "tr[" + attr + "]", function (tr) {
       tr.addEventListener("click", function () { ouvrir(tr.getAttribute(attr)); });
       tr.addEventListener("keydown", function (ev) {
         if (ev.target !== tr) return;
-        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ouvrir(tr.getAttribute(attr)); }
+        if (ev.key === "Enter" || (ev.key === " " && !basculer)) { ev.preventDefault(); ouvrir(tr.getAttribute(attr)); }
+        else if (ev.key === " ") { ev.preventDefault(); basculer(tr.getAttribute(attr)); }
         else if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
           ev.preventDefault();
           var autre = ev.key === "ArrowDown" ? tr.nextElementSibling : tr.previousElementSibling;
@@ -118,17 +119,19 @@ var PialProfils = (function () {
     majAnnuler("pe-annuler");
     var focus = document.activeElement, focusLigne = focus && focus.closest && focus.closest("#pe-table") && focus.getAttribute("data-eleve");
     var lignes = filtresEleves(), ctx = A.contexte();
+    nettoyerSelection("eleves", lignes.map(function (l) { return l.e.id; }));
     var baseE = $("pe-archives").checked ? etat.elevesTous.length : etat.eleves.length, masquesE = etat.elevesTous.length - etat.eleves.length;
     $("pe-compte").textContent = baseE ? (lignes.length === baseE ? pluriel(baseE, "élève") : lignes.length + " sur " + baseE) + " · année " + A.anneeCourante()
       + (!$("pe-archives").checked && masquesE ? " · " + pluriel(masquesE, "archivé masqué", "archivés masqués") : "") : (masquesE ? "Aucun élève actif · " + pluriel(masquesE, "archivé masqué", "archivés masqués") : "");
-    var h = '<thead><tr>' + COLONNES_ELEVES.map(function (c) { return teteTriable(c, pe.tri); }).join("") + '</tr></thead><tbody>';
+    var h = '<thead><tr>' + caseTete("eleves") + COLONNES_ELEVES.map(function (c) { return teteTriable(c, pe.tri); }).join("") + '</tr></thead><tbody>';
     if (!lignes.length) {
-      h += '<tr><td colspan="' + COLONNES_ELEVES.length + '" class="vide">' + (baseE ? "Aucun élève ne correspond à ces critères."
+      h += '<tr><td colspan="' + (COLONNES_ELEVES.length + 1) + '" class="vide">' + (baseE ? "Aucun élève ne correspond à ces critères."
         : "Aucun élève pour l'année " + ech(A.anneeCourante()) + ". Ajoutez-en un avec « + Nouvel élève », ou importez le fichier des élèves (onglet Importer).") + '</td></tr>';
     }
     lignes.forEach(function (l) {
       var e = l.e, cv = l.cv, cls = [pe.ouvert === e.id ? "actif" : "", M.estArchive(e) ? "archive" : ""].filter(Boolean).join(" ");
       h += '<tr data-eleve="' + ech(e.id) + '" tabindex="0"' + (cls ? ' class="' + cls + '"' : "") + (pe.ouvert === e.id ? ' aria-selected="true"' : "") + '>'
+        + caseLigne("eleves", e.id, e.nomCourt)
         + '<td><strong>' + ech(e.nomCourt) + '</strong>' + (M.estArchive(e) ? ' <span class="badge badge-archive">archivé</span>' : "") + '</td><td>' + ech(e.classe) + '</td>'
         + '<td class="col-secondaire">' + ech(A.nomEtablissement(e.etablissement)) + '</td>'
         + '<td class="col-secondaire">' + [e.heuresInd ? heures(e.heuresInd) + " ind." : "", e.heuresMut ? heures(e.heuresMut) + " mut." : ""].filter(Boolean).join(" · ") + '</td>'
@@ -144,7 +147,8 @@ var PialProfils = (function () {
         var bt = $("pe-table").querySelector('[data-tri="' + k + '"]'); if (bt) bt.focus();
       });
     });
-    brancherLignes($("pe-table"), "data-eleve", ouvrirEleve);
+    brancherLignes($("pe-table"), "data-eleve", ouvrirEleve, basculerLigne($("pe-table")));
+    brancherSelection("eleves", $("pe-table"));
     if (focusLigne) { var tr = $("pe-table").querySelector('tr[data-eleve="' + focusLigne.replace(/"/g, '\\"') + '"]'); if (tr) tr.focus(); }
     rendrePanneauEleve(ctx);
   }
@@ -353,12 +357,13 @@ var PialProfils = (function () {
     majAnnuler("pa-annuler");
     var focus = document.activeElement, focusLigne = focus && focus.closest && focus.closest("#pa-table") && focus.getAttribute("data-aesh");
     var lignes = filtresAesh(), ctx = A.contexte();
+    nettoyerSelection("aesh", lignes.map(function (l) { return l.a.id; }));
     var baseA = $("pa-archives").checked ? etat.aeshTous.length : etat.aesh.length, masqueesA = etat.aeshTous.length - etat.aesh.length;
     $("pa-compte").textContent = baseA ? (lignes.length === baseA ? pluriel(baseA, "AESH", "AESH") : lignes.length + " sur " + baseA)
       + (!$("pa-archives").checked && masqueesA ? " · " + pluriel(masqueesA, "archivée masquée", "archivées masquées") : "") : (masqueesA ? "Aucune AESH active · " + pluriel(masqueesA, "archivée masquée", "archivées masquées") : "");
-    var h = '<thead><tr>' + COLONNES_AESH.map(function (c) { return teteTriable(c, pa.tri); }).join("") + '</tr></thead><tbody>';
+    var h = '<thead><tr>' + caseTete("aesh") + COLONNES_AESH.map(function (c) { return teteTriable(c, pa.tri); }).join("") + '</tr></thead><tbody>';
     if (!lignes.length) {
-      h += '<tr><td colspan="' + COLONNES_AESH.length + '" class="vide">' + (baseA ? "Aucune AESH ne correspond à ces critères."
+      h += '<tr><td colspan="' + (COLONNES_AESH.length + 1) + '" class="vide">' + (baseA ? "Aucune AESH ne correspond à ces critères."
         : "Aucune AESH. Ajoutez-en une avec « + Nouvelle AESH », ou importez le fichier des AESH (onglet Importer).") + '</td></tr>';
     }
     lignes.forEach(function (l) {
@@ -366,6 +371,7 @@ var PialProfils = (function () {
       var titre = A.LIB_ETAT_AESH[ch.etat] + (ch.A !== ch.B ? " — semaine A : " + heures(ch.A) + ", semaine B : " + heures(ch.B) : "");
       var arch = M.estArchive(a), cls = [pa.ouvert === a.id ? "actif" : "", arch ? "archive" : ""].filter(Boolean).join(" ");
       h += '<tr data-aesh="' + ech(a.id) + '" tabindex="0"' + (cls ? ' class="' + cls + '"' : "") + (pa.ouvert === a.id ? ' aria-selected="true"' : "") + '>'
+        + caseLigne("aesh", a.id, A.nomAesh(a))
         + '<td><span class="puce-aesh" style="background:' + A.couleurAesh(a.id) + '">' + ech(A.initialesAesh(a)) + '</span> <strong>' + ech(A.nomAesh(a)) + '</strong>'
         + (arch ? ' <span class="badge badge-archive">archivée</span>' : "")
         + (a.ignorerIndispos ? ' <span class="badge-ignore" title="Indisponibilités et établissements possibles ignorés">indispos ignorées</span>' : "") + '</td>'
@@ -384,7 +390,8 @@ var PialProfils = (function () {
         var bt = $("pa-table").querySelector('[data-tri="' + k + '"]'); if (bt) bt.focus();
       });
     });
-    brancherLignes($("pa-table"), "data-aesh", ouvrirAesh);
+    brancherLignes($("pa-table"), "data-aesh", ouvrirAesh, basculerLigne($("pa-table")));
+    brancherSelection("aesh", $("pa-table"));
     if (focusLigne) { var tr = $("pa-table").querySelector('tr[data-aesh="' + focusLigne.replace(/"/g, '\\"') + '"]'); if (tr) tr.focus(); }
     rendrePanneauAesh(ctx);
   }
@@ -667,6 +674,248 @@ var PialProfils = (function () {
   $("voile-archiver").addEventListener("keydown", function (ev) {
     if (ev.key === "Escape") { ev.preventDefault(); fermerArchivage(); }
     if (ev.key === "Enter" && ev.target.tagName === "INPUT") { ev.preventDefault(); confirmerArchivage(); }
+  });
+
+  /* =============== sélection et actions groupées (§17) =============== */
+  var sel = { eleves: {}, aesh: {} }, derniereCase = { eleves: null, aesh: null };
+  var BARRES = { eleves: "pe", aesh: "pa" };
+  function idsSel(type) { return Object.keys(sel[type]); }
+  function majSelection(type, table) {
+    var p = BARRES[type], cases = table.querySelectorAll("input[data-sel]"), n = idsSel(type).length, tout = $(p + "-tout"), coches = 0;
+    Array.prototype.forEach.call(cases, function (c) { if (c.checked) coches++; });
+    if (tout) { tout.checked = cases.length > 0 && coches === cases.length; tout.indeterminate = coches > 0 && coches < cases.length; }
+    $(p + "-groupe").hidden = !n;
+    $(p + "-groupe-n").textContent = n + (type === "aesh" ? (n > 1 ? " AESH sélectionnées" : " AESH sélectionnée") : (n > 1 ? " élèves sélectionnés" : " élève sélectionné"));
+  }
+  // retire de la sélection les lignes qui ne sont plus affichées (aucune action sur des fiches cachées)
+  function nettoyerSelection(type, visibles) {
+    var v = {};
+    visibles.forEach(function (id) { v[id] = true; });
+    Object.keys(sel[type]).forEach(function (id) { if (!v[id]) delete sel[type][id]; });
+  }
+  function caseTete(type) {
+    return '<th class="col-case"><label class="case-ligne"><input type="checkbox" id="' + BARRES[type] + '-tout" aria-label="Sélectionner toute la liste affichée"></label></th>';
+  }
+  function caseLigne(type, id, libelle) {
+    return '<td class="col-case"><label class="case-ligne"><input type="checkbox" data-sel="' + ech(id) + '"' + (sel[type][id] ? " checked" : "") + ' aria-label="Sélectionner ' + ech(libelle) + '"></label></td>';
+  }
+  function brancherSelection(type, table) {
+    var cases = table.querySelectorAll("input[data-sel]");
+    chaque(table, "td.col-case, th.col-case", function (c) { c.addEventListener("click", function (ev) { ev.stopPropagation(); }); });
+    Array.prototype.forEach.call(cases, function (c, i) {
+      c.addEventListener("click", function (ev) {
+        var debut = ev.shiftKey && derniereCase[type] !== null && derniereCase[type] < cases.length ? Math.min(derniereCase[type], i) : i,
+          fin = ev.shiftKey && derniereCase[type] !== null && derniereCase[type] < cases.length ? Math.max(derniereCase[type], i) : i;
+        for (var k = debut; k <= fin; k++) {
+          cases[k].checked = c.checked;
+          if (c.checked) sel[type][cases[k].dataset.sel] = true; else delete sel[type][cases[k].dataset.sel];
+        }
+        derniereCase[type] = i;
+        majSelection(type, table);
+      });
+    });
+    var tout = $(BARRES[type] + "-tout");
+    tout.addEventListener("click", function () {
+      Array.prototype.forEach.call(cases, function (c) {
+        c.checked = tout.checked;
+        if (tout.checked) sel[type][c.dataset.sel] = true; else delete sel[type][c.dataset.sel];
+      });
+      majSelection(type, table);
+    });
+    majSelection(type, table);
+  }
+  function basculerLigne(table) {
+    return function (id) {
+      var tr = table.querySelector('tr[data-eleve="' + id.replace(/"/g, '\\"') + '"], tr[data-aesh="' + id.replace(/"/g, '\\"') + '"]'), c = tr && tr.querySelector("input[data-sel]");
+      if (c) c.click();
+    };
+  }
+
+  var gr = { type: null, action: null, retour: null, calcul: null };
+  var TITRES_GROUPE = { classe: "Changer de classe", etab: "Changer d'établissement", matiere: "État d'une matière", "etab-ajout": "Ajouter un établissement possible",
+    "etab-retrait": "Retirer un établissement possible", spec: "Ajouter une spécialité" };
+  function fichesActivesSel(type) { return fichesDe(type, idsSel(type)).filter(function (f) { return !M.estArchive(f); }); }
+  function optionsEtabs(valeurNouveau) {
+    return etablissementsTries().map(function (e) { return '<option value="' + ech(e.id) + '">' + ech(e.nom) + '</option>'; }).join("")
+      + (valeurNouveau ? '<option value="' + NOUVEAU + '">Nouvel établissement…</option>' : "");
+  }
+  function classesProposees(fiches) {
+    var ref = referentiel(), vues = {}, out = [];
+    fiches.forEach(function (e) { (ref[e.etablissement] || []).forEach(function (c) { if (!vues[M.normaliser(c)]) { vues[M.normaliser(c)] = true; out.push(c); } }); });
+    return out.sort(M.comparerClasses);
+  }
+  function matieresSel(fiches) {
+    var par = {}, ordre = [];
+    fiches.forEach(function (e) {
+      M.matieresEleve(e, etat.cours).forEach(function (m) {
+        if (!par[m.cle]) { par[m.cle] = { cle: m.cle, libelle: m.libelle, eleves: 0 }; ordre.push(m.cle); }
+        par[m.cle].eleves++;
+      });
+    });
+    return ordre.map(function (k) { return par[k]; }).sort(function (a, b) { return a.libelle.localeCompare(b.libelle, "fr"); });
+  }
+  function champsGroupe(action, fiches) {
+    var champClasse = function (libelle, aide) {
+      return '<div class="champ"><label for="gr-classe">' + libelle + '</label><input type="text" id="gr-classe" list="gr-classes-liste" maxlength="30" autocomplete="off"' + (aide ? ' aria-describedby="gr-classe-aide"' : "") + '>'
+        + '<datalist id="gr-classes-liste">' + classesProposees(fiches).map(function (c) { return '<option value="' + ech(c) + '">'; }).join("") + '</datalist>'
+        + (aide ? '<p class="aide" id="gr-classe-aide" style="margin:4px 0 0">' + aide + '</p>' : "") + '</div>';
+    };
+    if (action === "classe") return champClasse("Nouvelle classe", "Chaque élève reste dans son établissement.");
+    if (action === "etab") return '<div class="champ"><label for="gr-etab">Nouvel établissement</label><select id="gr-etab"><option value="">Choisir…</option>' + optionsEtabs(true) + '</select></div>'
+      + '<div class="champ" id="gr-etab-autre-champ" hidden><label for="gr-etab-autre">Nom du nouvel établissement</label><input type="text" id="gr-etab-autre" autocomplete="off"></div>'
+      + champClasse("Classe dans le nouvel établissement", "Laissez vide pour garder la classe actuelle.");
+    if (action === "matiere") {
+      var ms = matieresSel(fiches);
+      return '<div class="champ"><label for="gr-matiere">Matière</label><select id="gr-matiere">' + (ms.length ? ms.map(function (m) { return '<option value="' + ech(m.cle) + '">' + ech(m.libelle) + ' (' + pluriel(m.eleves, "élève") + ')</option>'; }).join("") : '<option value="">Aucun cours importé</option>') + '</select></div>'
+        + '<div class="champ"><label for="gr-etat">État</label><select id="gr-etat"><option value="exclu">Exclu</option><option value="prioritaire">Prioritaire</option><option value="normal">Normal</option></select></div>';
+    }
+    if (action === "etab-ajout" || action === "etab-retrait") return '<div class="champ"><label for="gr-etab">Établissement</label><select id="gr-etab"><option value="">Choisir…</option>' + optionsEtabs(false) + '</select></div>';
+    if (action === "spec") return '<div class="champ"><label for="gr-spec">Spécialité</label><input type="text" id="gr-spec" list="gr-spec-liste" maxlength="60" autocomplete="off">'
+      + '<datalist id="gr-spec-liste">' + (A.contexte().reglages.specialites || []).map(function (s) { return '<option value="' + ech(s.nom) + '">'; }).join("") + '</datalist></div>';
+    return "";
+  }
+  // classes ajoutées au référentiel : {etablissement: [classe]} des fiches déplacées
+  function paramsClasses(fiches) {
+    var table = etat.classes, change = false;
+    fiches.forEach(function (e) {
+      if (!(referentiel()[e.etablissement] || []).some(function (c) { return M.memeClasse(c, e.classe); })) { table = M.classesAvecAjout(table, A.anneeCourante(), e.etablissement, e.classe); change = true; }
+    });
+    return change ? [{ magasin: "parametres", enregistrer: [tableClasses(table)] }] : [];
+  }
+  /* calcul de l'action : {ops, lignes (html), erreurs, message, libelle} ; sans ops, rien n'est à faire */
+  function calculGroupe() {
+    var type = gr.type, action = gr.action, fiches = fichesActivesSel(type), ids = fiches.map(function (f) { return f.id; });
+    var r = { ops: [], lignes: [], erreurs: [], message: "", libelle: "" };
+    var n = fiches.length;
+    function inchanges(k) { if (k) r.lignes.push(pluriel(k, "fiche déjà dans cet état, inchangée", "fiches déjà dans cet état, inchangées") + "."); }
+    if (action === "classe") {
+      var classe = M.classeNette($("gr-classe").value);
+      if (!classe) return r;
+      var d = M.deplacerEleves(etat.elevesTous, etat.coursTous, ids, { classe: classe });
+      if (d.collisions.length) r.erreurs.push(pluriel(d.collisions.length, "élève porterait", "élèves porteraient") + " le même nom court qu'un élève déjà en " + classe + " ou qu'un autre élève de la sélection ("
+        + d.collisions.slice(0, 4).map(function (c) { return c.eleve.nomCourt; }).join(", ") + (d.collisions.length > 4 ? "…" : "") + "). Rien n'est écrit : écrivez une abréviation terminée par un point dans l'une des fiches, ou retirez ces élèves de la sélection.");
+      r.lignes.push(pluriel(d.eleves.length, "élève passe", "élèves passent") + " en " + ech(classe) + ".");
+      if (d.cours.length) r.lignes.push(pluriel(d.cours.length, "cours suit", "cours suivent") + " leur classe.");
+      inchanges(d.inchanges);
+      if (!d.eleves.length) return r;
+      r.ops = [{ magasin: "eleves", enregistrer: d.eleves }];
+      if (d.cours.length) r.ops.push({ magasin: "cours", enregistrer: d.cours });
+      r.ops = r.ops.concat(paramsClasses(d.eleves));
+      r.message = pluriel(d.eleves.length, "élève passe", "élèves passent") + " en " + classe + ".";
+      r.libelle = "le passage de " + pluriel(d.eleves.length, "élève", "élèves") + " en " + classe;
+    } else if (action === "etab") {
+      var choix = $("gr-etab").value, nouveau = choix === NOUVEAU, nom = nouveau ? $("gr-etab-autre").value.replace(/\s+/g, " ").trim() : (choix ? A.nomEtablissement(choix) : "");
+      if (!nom) return r;
+      var etabId = nouveau ? M.idEtablissement(nom) : choix, ch = { etablissement: etabId, etablissementNom: nom }, nvClasse = M.classeNette($("gr-classe").value);
+      if (nvClasse) ch.classe = nvClasse;
+      var dp = M.deplacerEleves(etat.elevesTous, etat.coursTous, ids, ch);
+      if (dp.collisions.length) r.erreurs.push(pluriel(dp.collisions.length, "élève porterait", "élèves porteraient") + " le même nom court qu'un élève déjà dans " + nom + " ("
+        + dp.collisions.slice(0, 4).map(function (c) { return c.eleve.nomCourt + " en " + c.eleve.classe; }).join(", ") + (dp.collisions.length > 4 ? "…" : "") + "). Rien n'est écrit : précisez une autre classe, ou retirez ces élèves de la sélection.");
+      r.lignes.push(pluriel(dp.eleves.length, "élève passe", "élèves passent") + " dans " + ech(nom) + (nvClasse ? ", classe " + ech(nvClasse) : ", classe conservée") + ".");
+      if (nouveau && !A.etablissementParId(etabId)) r.lignes.push("L'établissement sera créé avec ses paramètres par défaut (vérifiez ses horaires dans Réglages).");
+      if (dp.cours.length) r.lignes.push(pluriel(dp.cours.length, "cours suit", "cours suivent") + " : " + (dp.cours.length > 1 ? "leurs horaires restent ceux" : "son horaire reste celui") + " de l'ancien établissement jusqu'à un nouvel import des emplois du temps.");
+      inchanges(dp.inchanges);
+      if (!dp.eleves.length) return r;
+      var partis = dp.eleves.filter(function (e) { return A.eleveParId(e.id).etablissement !== e.etablissement; }).map(function (e) { return e.id; });
+      var eff = M.effetsRetrait("eleves", partis, donneesRetrait());
+      if (eff.supprimees.length || eff.modifiees.length) r.lignes.push(pluriel(eff.supprimees.length + eff.modifiees.length, "créneau du brouillon retiré", "créneaux du brouillon retirés")
+        + (eff.mutualisees ? ", dont " + pluriel(eff.mutualisees, "groupe mutualisé quitté", "groupes mutualisés quittés") : "") + " (ils appartenaient à l'ancien établissement).");
+      if (eff.versions.length) r.lignes.push("Versions validées inchangées (" + eff.versions.join(", ") + ").");
+      if (nouveau && !A.etablissementParId(etabId)) r.ops.push({ magasin: "etablissements", enregistrer: [M.etablissementParDefaut(nom)] });
+      r.ops.push({ magasin: "eleves", enregistrer: dp.eleves });
+      if (dp.cours.length) r.ops.push({ magasin: "cours", enregistrer: dp.cours });
+      if (eff.supprimees.length || eff.modifiees.length) r.ops.push({ magasin: "affectations", supprimer: eff.supprimees, enregistrer: eff.modifiees });
+      r.ops = r.ops.concat(paramsClasses(dp.eleves));
+      r.message = pluriel(dp.eleves.length, "élève passe", "élèves passent") + " dans " + nom + ".";
+      r.libelle = "le passage de " + pluriel(dp.eleves.length, "élève", "élèves") + " dans " + nom;
+    } else if (action === "matiere") {
+      var cle = $("gr-matiere").value, etatM = $("gr-etat").value;
+      if (!cle) return r;
+      var libM = (matieresSel(fiches).filter(function (m) { return m.cle === cle; })[0] || { libelle: cle }).libelle;
+      var em = M.etatMatiereGroupe(etat.elevesTous, etat.cours, ids, cle, etatM);
+      r.lignes.push(ech(libM) + " : « " + etatM + " » pour " + pluriel(em.eleves.length, "élève", "élèves") + ", " + pluriel(em.cours.length, "créneau modifié", "créneaux modifiés") + ".");
+      if (em.sansCours) r.lignes.push(pluriel(em.sansCours, "élève n'a", "élèves n'ont") + " aucun cours dans cette matière : l'état sera appliqué à leurs cours importés plus tard.");
+      if (!em.eleves.length && !em.cours.length) { r.lignes.push("Rien à modifier."); return r; }
+      if (em.eleves.length) r.ops.push({ magasin: "eleves", enregistrer: em.eleves });
+      if (em.cours.length) r.ops.push({ magasin: "cours", enregistrer: em.cours });
+      r.message = libM + " : " + etatM + " pour " + pluriel(em.eleves.length, "élève", "élèves") + ".";
+      r.libelle = "l'état de la matière " + libM + " pour " + pluriel(n, "élève", "élèves");
+    } else if (action === "etab-ajout" || action === "etab-retrait") {
+      var eid = $("gr-etab").value;
+      if (!eid) return r;
+      var ajout = action === "etab-ajout", ae = M.aeshEtablissement(etat.aeshTous, ids, eid, ajout, etat.etablissements.map(function (e) { return e.id; }));
+      if (ae.bloquees.length) r.erreurs.push(ae.bloquees.map(A.nomAesh).join(", ") + (ae.bloquees.length > 1 ? " n'ont" : " n'a") + " que cet établissement possible : le retirer la rendrait inutilisable. Retirez-" + (ae.bloquees.length > 1 ? "les" : "la") + " de la sélection.");
+      if (ae.fiches.length) r.lignes.push(pluriel(ae.fiches.length, "AESH modifiée", "AESH modifiées") + " : " + (ajout ? "ajout de " : "retrait de ") + ech(A.nomEtablissement(eid)) + ".");
+      if (!ajout && ae.fiches.some(function (a) { return !(etat.aeshTous.filter(function (x) { return x.id === a.id; })[0].etablissements || []).length; })) r.lignes.push("Une AESH sans restriction est limitée à tous les autres établissements.");
+      if (ajout && ae.inchanges) r.lignes.push(pluriel(ae.inchanges, "AESH l'a déjà ou n'a aucune restriction", "AESH l'ont déjà ou n'ont aucune restriction") + " : inchangée(s).");
+      else inchanges(ae.inchanges);
+      if (!ae.fiches.length) return r;
+      r.ops = [{ magasin: "aesh", enregistrer: ae.fiches }];
+      r.message = pluriel(ae.fiches.length, "AESH modifiée", "AESH modifiées") + ".";
+      r.libelle = (ajout ? "l'ajout" : "le retrait") + " d'un établissement possible pour " + pluriel(ae.fiches.length, "AESH", "AESH");
+    } else if (action === "spec") {
+      var sp = M.classeNette($("gr-spec").value);
+      if (!sp) return r;
+      var as = M.aeshSpecialite(etat.aeshTous, ids, sp);
+      if (as.fiches.length) r.lignes.push(pluriel(as.fiches.length, "AESH reçoit", "AESH reçoivent") + " la spécialité « " + ech(sp) + " ».");
+      inchanges(as.inchanges);
+      if (!as.fiches.length) return r;
+      r.ops = [{ magasin: "aesh", enregistrer: as.fiches }];
+      r.message = "Spécialité « " + sp + " » ajoutée à " + pluriel(as.fiches.length, "AESH", "AESH") + ".";
+      r.libelle = "l'ajout de la spécialité " + sp + " à " + pluriel(as.fiches.length, "AESH", "AESH");
+    }
+    return r;
+  }
+  function majGroupe() {
+    var r = gr.calcul = calculGroupe();
+    $("gr-apercu").innerHTML = r.lignes.length ? '<ul class="liste-motifs">' + r.lignes.map(function (l) { return "<li>" + l + "</li>"; }).join("") + "</ul>" : '<p class="aide">Renseignez le champ ci-dessus pour voir ce qui changera.</p>';
+    $("gr-erreurs").innerHTML = r.erreurs.length ? '<ul class="liste-motifs">' + r.erreurs.map(function (m) { return "<li>" + ech(m) + "</li>"; }).join("") + "</ul>" : "";
+    $("gr-erreurs").hidden = !r.erreurs.length;
+    $("gr-appliquer").disabled = !r.ops.length || !!r.erreurs.length;
+  }
+  function ouvrirGroupe(type, action) {
+    var tous = fichesDe(type, idsSel(type)), fiches = tous.filter(function (f) { return !M.estArchive(f); });
+    if (!fiches.length) { A.ui().toast("La sélection ne contient que des fiches archivées."); return; }
+    gr.type = type; gr.action = action; gr.retour = document.activeElement;
+    $("gr-titre").textContent = TITRES_GROUPE[action];
+    $("gr-cible").textContent = pluriel(fiches.length, type === "aesh" ? "AESH concernée" : "élève concerné", type === "aesh" ? "AESH concernées" : "élèves concernés")
+      + (tous.length > fiches.length ? " (" + pluriel(tous.length - fiches.length, type === "aesh" ? "archivée ignorée" : "archivé ignoré", type === "aesh" ? "archivées ignorées" : "archivés ignorés") + ")" : "") + " : " + listeNoms(type, fiches) + ".";
+    $("gr-champs").innerHTML = champsGroupe(action, fiches);
+    majGroupe();
+    $("voile-groupe").hidden = false;
+    var premier = $("gr-champs").querySelector("input, select"); if (premier) premier.focus();
+  }
+  function fermerGroupe() {
+    $("voile-groupe").hidden = true;
+    if (gr.retour && gr.retour.focus) gr.retour.focus();
+  }
+  function appliquerGroupe() {
+    majGroupe();
+    var r = gr.calcul;
+    if (!r.ops.length || r.erreurs.length) { if (r.erreurs.length) $("gr-erreurs").focus(); return; }
+    fermerGroupe();
+    A.enregistrerPuisRendre(r.ops, r.message, r.libelle);
+  }
+  $("voile-groupe").addEventListener("input", majGroupe);
+  $("voile-groupe").addEventListener("change", function (ev) {
+    if (ev.target.id === "gr-etab" && gr.action === "etab") { $("gr-etab-autre-champ").hidden = ev.target.value !== NOUVEAU; if (ev.target.value === NOUVEAU) $("gr-etab-autre").focus(); }
+    majGroupe();
+  });
+  $("gr-appliquer").addEventListener("click", appliquerGroupe);
+  $("gr-annuler").addEventListener("click", fermerGroupe);
+  $("voile-groupe").addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape") { ev.preventDefault(); fermerGroupe(); }
+    if (ev.key === "Enter" && ev.target.tagName === "INPUT") { ev.preventDefault(); appliquerGroupe(); }
+  });
+  ["eleves", "aesh"].forEach(function (type) {
+    chaque($(BARRES[type] + "-groupe"), "[data-groupe]", function (b) {
+      b.addEventListener("click", function () {
+        var a = this.dataset.groupe;
+        if (a === "aucune") { sel[type] = {}; derniereCase[type] = null; if (type === "eleves") rendreEleves(); else rendreAesh(); return; }
+        if (a === "archiver") { ouvrirArchivage(type, idsSel(type)); return; }
+        ouvrirGroupe(type, a);
+      });
+    });
   });
 
   /* =============== ouverture, redessin =============== */

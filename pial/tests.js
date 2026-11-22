@@ -1611,6 +1611,40 @@ var PialTests = (function () {
       var inv = M.operationsInverses(ops, { parametres: [{ cle: "classes", valeur: { a: 0 } }] });
       egal(inv, [{ magasin: "parametres", supprimer: ["reglages"], enregistrer: [] }, { magasin: "parametres", supprimer: [], enregistrer: [{ cle: "classes", valeur: { a: 0 } }] }]);
     });
+    t("actions groupées : déplacer des élèves, collisions vérifiées sur toute la sélection", function () {
+      var A = M.idEtablissement("Collège A"), B = M.idEtablissement("École B");
+      var e1 = eleve("el-1", "Lucas", "Martin", "5B", "Collège A"), e2 = eleve("el-2", "Zoé", "Petit", "5B", "Collège A"), e3 = eleve("el-3", "Léo", "Roux", "4A", "Collège A");
+      var e4 = eleve("el-4", "Lucas", "Moreau", "4A", "Collège A");
+      var cours = [{ id: "c1", eleveId: "el-1", eleveCle: e1.cle, classe: "5B", etablissement: A }];
+      var r = M.deplacerEleves([e1, e2, e3], cours, ["el-1", "el-2", "el-3"], { classe: "4A" });
+      egal([r.eleves.map(function (e) { return e.id; }), r.inchanges, r.collisions.length, r.cours.map(function (c) { return c.id; })], [["el-1", "el-2"], 1, 0, ["c1"]], "el-3 déjà en 4A : inchangé");
+      egal(M.deplacerEleves([e1, e2, e3, e4], [], ["el-1", "el-2"], { classe: "4A" }).collisions.map(function (c) { return [c.eleve.id, c.avec.id]; }), [["el-1", "el-4"]], "Lucas M. existe déjà en 4A");
+      var dup = eleve("el-5", "Lucas", "Mercier", "5C", "Collège A");
+      egal(M.deplacerEleves([e1, dup], [], ["el-1", "el-5"], { classe: "3A" }).collisions.map(function (c) { return [c.eleve.id, c.avec.id]; }), [["el-5", "el-1"]], "deux élèves déplacés sur la même clé");
+      var ch = M.deplacerEleves([e1], cours, ["el-1"], { etablissement: B, etablissementNom: "École B" });
+      egal([ch.eleves[0].etablissement, ch.eleves[0].cle, ch.cours[0].etablissement], [B, "lucas m.|5b|ecole b", B], "changement d'établissement : clé et cours suivent");
+    });
+    t("actions groupées : état d'une matière pour plusieurs élèves", function () {
+      var e1 = eleve("el-1", "Lucas", "Martin", "5B", "Collège A"), e2 = eleve("el-2", "Zoé", "Petit", "5B", "Collège A"), e3 = eleve("el-3", "Léo", "Roux", "5B", "Collège A");
+      e3.etatsMatieres = { eps: "exclu" };
+      var cours = [{ id: "c1", eleveId: "el-1", matiere: "EPS" }, { id: "c2", eleveId: "el-1", matiere: "Maths" }, { id: "c3", eleveId: "el-3", matiere: "eps", etat: "exclu" }];
+      var r = M.etatMatiereGroupe([e1, e2, e3], cours, ["el-1", "el-2", "el-3"], M.cleMatiere("EPS"), "exclu");
+      egal([r.eleves.map(function (e) { return e.id; }), r.cours.map(function (c) { return c.id + ":" + c.etat; }), r.sansCours], [["el-1", "el-2"], ["c1:exclu"], 1], "el-3 déjà exclu : rien à faire ; el-2 sans cours");
+      var n = M.etatMatiereGroupe([e3], cours, ["el-3"], M.cleMatiere("EPS"), "normal");
+      egal([n.eleves[0].etatsMatieres, n.cours[0].etat], [undefined, "normal"], "retour à normal : l'entrée disparaît");
+      vrai(e3.etatsMatieres.eps === "exclu", "original intact");
+    });
+    t("actions groupées : établissements et spécialités des AESH (champs marqués modifiés)", function () {
+      var tous = ["a", "b", "c"];
+      var s1 = { id: "ae-1", etablissements: [], formations: [] }, s2 = { id: "ae-2", etablissements: ["a"], formations: ["TSA"] }, s3 = { id: "ae-3", etablissements: ["b"], formations: [] };
+      var aj = M.aeshEtablissement([s1, s2, s3], ["ae-1", "ae-2", "ae-3"], "b", true, tous);
+      egal([aj.fiches.map(function (a) { return [a.id, a.etablissements, a.modifiesAppli]; }), aj.inchanges], [[["ae-2", ["a", "b"], { etablissements: true }]], 2], "sans restriction et déjà présent : inchangés");
+      var re = M.aeshEtablissement([s1, s2, s3], ["ae-1", "ae-2", "ae-3"], "b", false, tous);
+      egal([re.fiches.map(function (a) { return [a.id, a.etablissements]; }), re.inchanges, re.bloquees.map(function (a) { return a.id; })], [[["ae-1", ["a", "c"]]], 1, ["ae-3"]], "retrait d'une AESH sans restriction : les autres ; seul établissement : refusé");
+      var sp = M.aeshSpecialite([s2, s3], ["ae-2", "ae-3"], " tsa ");
+      egal([sp.fiches.map(function (a) { return [a.id, a.formations]; }), sp.inchanges], [[["ae-3", ["tsa"]]], 1], "casse ignorée");
+      egal(s3.formations, [], "original intact");
+    });
     t("archivage : opérations (créneaux du brouillon retirés, versions gardées, rétablissement)", function () {
       var e1 = eleve("el-1", "Lucas", "Martin", "5B", "Collège A"), e2 = eleve("el-2", "Zoé", "Petit", "5B", "Collège A");
       var a1 = { id: "ae-1", elevesExclus: ["el-1", "el-2"] };

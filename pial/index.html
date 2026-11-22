@@ -193,6 +193,11 @@ label.case input{width:auto}
 .classe-ajout input[type=text]{width:220px}
 .tableau-profils tbody tr.archive td{color:var(--gris)}
 .badge-archive{background:#ECECEC;color:#5C6370}
+.barre-groupe{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 10px;margin:0 0 10px;background:#EAF0F9;border:1px solid var(--seyes);border-radius:8px}
+.barre-groupe .btn{min-height:44px}
+.tableau-profils .col-case{width:44px;padding-left:6px;padding-right:0}
+.case-ligne{display:flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;cursor:pointer}
+.case-ligne input{width:20px;height:20px;margin:0}
 .etab-param .duo input{width:90px}
 .jours-ouvres{display:flex;flex-wrap:wrap;gap:10px;margin:8px 0}
 
@@ -745,8 +750,16 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
           <div class="champ" style="flex:none;align-self:center"><label class="case"><input type="checkbox" id="pe-archives"> Afficher les archivés</label></div>
           <div class="champ" style="flex:none;align-self:center"><button type="button" class="btn btn-vide" id="pe-reinitialiser">Réinitialiser</button></div>
         </div>
+        <div class="barre-groupe" id="pe-groupe" role="region" aria-label="Actions sur les élèves sélectionnés" hidden>
+          <strong id="pe-groupe-n"></strong>
+          <button type="button" class="btn btn-vide" data-groupe="archiver">Archiver…</button>
+          <button type="button" class="btn btn-vide" data-groupe="classe">Changer de classe…</button>
+          <button type="button" class="btn btn-vide" data-groupe="etab">Changer d'établissement…</button>
+          <button type="button" class="btn btn-vide" data-groupe="matiere">État d'une matière…</button>
+          <button type="button" class="btn-lien" data-groupe="aucune">Tout désélectionner</button>
+        </div>
         <div class="tableau-conteneur"><table class="tableau tableau-profils" id="pe-table"></table></div>
-        <p class="aide" style="margin-top:10px">Cliquez sur une ligne (ou Entrée) pour ouvrir la fiche ; flèches haut et bas pour passer d'un élève à l'autre.</p>
+        <p class="aide" style="margin-top:10px">Cliquez sur une ligne (ou Entrée) pour ouvrir la fiche ; flèches haut et bas pour passer d'un élève à l'autre ; Espace coche la ligne (Maj+clic : une plage de cases).</p>
       </div>
       <aside class="carte profils-panneau" id="pe-panneau" hidden aria-labelledby="pe-titre">
         <div class="pp-tete">
@@ -785,8 +798,16 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
           <div class="champ" style="flex:none;align-self:center"><label class="case"><input type="checkbox" id="pa-archives"> Afficher les archivées</label></div>
           <div class="champ" style="flex:none;align-self:center"><button type="button" class="btn btn-vide" id="pa-reinitialiser">Réinitialiser</button></div>
         </div>
+        <div class="barre-groupe" id="pa-groupe" role="region" aria-label="Actions sur les AESH sélectionnées" hidden>
+          <strong id="pa-groupe-n"></strong>
+          <button type="button" class="btn btn-vide" data-groupe="archiver">Archiver…</button>
+          <button type="button" class="btn btn-vide" data-groupe="etab-ajout">Ajouter un établissement possible…</button>
+          <button type="button" class="btn btn-vide" data-groupe="etab-retrait">Retirer un établissement possible…</button>
+          <button type="button" class="btn btn-vide" data-groupe="spec">Ajouter une spécialité…</button>
+          <button type="button" class="btn-lien" data-groupe="aucune">Tout désélectionner</button>
+        </div>
         <div class="tableau-conteneur"><table class="tableau tableau-profils" id="pa-table"></table></div>
-        <p class="aide" style="margin-top:10px">Cliquez sur une ligne (ou Entrée) pour ouvrir la fiche.</p>
+        <p class="aide" style="margin-top:10px">Cliquez sur une ligne (ou Entrée) pour ouvrir la fiche ; Espace coche la ligne (Maj+clic : une plage de cases).</p>
       </div>
       <aside class="carte profils-panneau" id="pa-panneau" hidden aria-labelledby="pa-titre">
         <div class="pp-tete">
@@ -1224,6 +1245,19 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
     <div class="actions"><button type="button" class="btn btn-plein" id="na-creer">Créer</button>
       <button type="button" class="btn btn-vide" id="na-creer-autre">Créer et en ajouter une autre</button>
       <button type="button" class="btn btn-vide" id="na-annuler">Annuler</button></div>
+  </div>
+</div>
+
+<div class="voile" id="voile-groupe" hidden>
+  <div class="modale modale-large" role="dialog" aria-modal="true" aria-labelledby="gr-titre">
+    <h3 id="gr-titre"></h3>
+    <p class="aide" id="gr-cible"></p>
+    <div class="formulaire-fiche" id="gr-champs"></div>
+    <div id="gr-apercu" aria-live="polite"></div>
+    <div class="note alerte" id="gr-erreurs" hidden tabindex="-1" aria-live="polite"></div>
+    <p class="aide">Une seule action pour toute la sélection, annulable.</p>
+    <div class="actions"><button type="button" class="btn btn-plein" id="gr-appliquer">Appliquer</button>
+      <button type="button" class="btn btn-vide" id="gr-annuler">Annuler</button></div>
   </div>
 </div>
 

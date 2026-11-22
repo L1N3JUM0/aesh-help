@@ -339,22 +339,95 @@ var PialModele = (function () {
   function elevesDeClasse(eleves, etab, classe) {
     return (eleves || []).filter(function (e) { return e.etablissement === etab && memeClasse(e.classe, classe); });
   }
-  /* renommer une classe = changer de classe ses élèves (identifiants
-     inchangés ; cours qui suivent). Renvoie {eleves, cours, collisions:
-     [{eleve (nouvelle fiche), avec (fiche déjà en place)}]} ; il ne faut rien
-     écrire si collisions n'est pas vide. */
-  function renommerClasse(eleves, cours, etab, de, vers) {
-    var cible = elevesDeClasse(eleves, etab, de), ids = {}, modifs = [], vus = {}, collisionsTrouvees = [], coursModifies = [];
-    cible.forEach(function (e) { ids[e.id] = true; });
-    cible.forEach(function (e) {
-      var m = eleveModifie(e, { classe: vers }), k = cleFicheEleve(m);
-      var autre = (eleves || []).filter(function (x) { return !ids[x.id] && cleFicheEleve(x) === k; })[0] || vus[k];
-      if (autre) collisionsTrouvees.push({ eleve: m, avec: autre });
-      vus[k] = m;
-      modifs.push(m);
-      coursModifies = coursModifies.concat(coursSuivantEleve(cours, m));
+  /* changer l'identité (classe, établissement) de plusieurs élèves d'un coup :
+     identifiants inchangés, cours qui suivent. changements : {classe?,
+     etablissement? (id), etablissementNom?}. Les collisions de clé sont
+     vérifiées sur toute la sélection avant d'écrire : avec les autres élèves
+     (archivés compris) et entre élèves déplacés. Renvoie {eleves (fiches
+     modifiées), cours (cours modifiés), collisions: [{eleve (nouvelle fiche),
+     avec (fiche déjà en place)}], inchanges (déjà à cet endroit)} ; il ne
+     faut rien écrire si collisions n'est pas vide. */
+  function deplacerEleves(eleves, cours, ids, changements) {
+    var cible = {}, vus = {}, out = { eleves: [], cours: [], collisions: [], inchanges: 0 }, deplaces = [];
+    ids.forEach(function (id) { cible[id] = true; });
+    var autres = (eleves || []).filter(function (e) { return !cible[e.id]; });
+    (eleves || []).filter(function (e) { return cible[e.id]; }).forEach(function (e) {
+      var m = eleveModifie(e, changements);
+      if (m.classe === e.classe && m.etablissement === e.etablissement) { out.inchanges++; vus[cleFicheEleve(e)] = e; return; }
+      deplaces.push(m);
     });
-    return { eleves: modifs, cours: coursModifies, collisions: collisionsTrouvees };
+    deplaces.forEach(function (m) {
+      var k = cleFicheEleve(m);
+      var autre = autres.filter(function (x) { return cleFicheEleve(x) === k; })[0] || vus[k];
+      if (autre) out.collisions.push({ eleve: m, avec: autre });
+      vus[k] = m;
+      out.eleves.push(m);
+      out.cours = out.cours.concat(coursSuivantEleve(cours, m));
+    });
+    return out;
+  }
+  // renommer une classe = changer de classe ses élèves
+  function renommerClasse(eleves, cours, etab, de, vers) {
+    return deplacerEleves(eleves, cours, elevesDeClasse(eleves, etab, de).map(function (e) { return e.id; }), { classe: vers });
+  }
+  /* état d'une matière pour plusieurs élèves (comme dans la fiche) : la
+     fiche et ses cours de cette matière. cle : cleMatiere ; etat :
+     prioritaire | normal | exclu. Renvoie {eleves, cours, sansCours (élèves
+     sans cours dans cette matière : fiche modifiée quand même)}. */
+  function etatMatiereGroupe(eleves, cours, ids, cle, nouvelEtat) {
+    var cible = {}, out = { eleves: [], cours: [], sansCours: 0 };
+    ids.forEach(function (id) { cible[id] = true; });
+    (eleves || []).filter(function (e) { return cible[e.id]; }).forEach(function (e) {
+      var b = JSON.parse(JSON.stringify(e));
+      b.etatsMatieres = b.etatsMatieres || {};
+      if (nouvelEtat === "normal") delete b.etatsMatieres[cle]; else b.etatsMatieres[cle] = nouvelEtat;
+      if (!Object.keys(b.etatsMatieres).length) delete b.etatsMatieres;
+      var siens = (cours || []).filter(function (c) { return c.eleveId === e.id && cleMatiere(c.matiere) === cle; });
+      if (!siens.length) out.sansCours++;
+      siens.filter(function (c) { return (c.etat || "normal") !== nouvelEtat; }).forEach(function (c) { var x = JSON.parse(JSON.stringify(c)); x.etat = nouvelEtat; out.cours.push(x); });
+      if (JSON.stringify(b.etatsMatieres || null) !== JSON.stringify(e.etatsMatieres || null)) out.eleves.push(b);
+    });
+    return out;
+  }
+  /* établissements possibles des AESH (liste vide = tous). Ajouter à une
+     AESH sans restriction ne change rien ; retirer d'une AESH sans restriction
+     la limite aux autres établissements (tousIds). Retirer le seul
+     établissement possible est refusé (bloquees). Les fiches modifiées sont
+     marquées « modifié » : protégées au réimport, comme dans la fiche. */
+  function marquerModifieeAesh(a, champ, valeur) {
+    var b = JSON.parse(JSON.stringify(a));
+    b[champ] = valeur;
+    b.modifiesAppli = b.modifiesAppli || {};
+    b.modifiesAppli[champ] = true;
+    return b;
+  }
+  function aeshEtablissement(aeshs, ids, etabId, ajouter, tousIds) {
+    var cible = {}, out = { fiches: [], inchanges: 0, bloquees: [] };
+    ids.forEach(function (id) { cible[id] = true; });
+    (aeshs || []).filter(function (a) { return cible[a.id]; }).forEach(function (a) {
+      var liste = a.etablissements || [];
+      if (ajouter) {
+        if (!liste.length || liste.indexOf(etabId) > -1) { out.inchanges++; return; }
+        out.fiches.push(marquerModifieeAesh(a, "etablissements", liste.concat([etabId])));
+        return;
+      }
+      var base = liste.length ? liste : (tousIds || []);
+      if (base.indexOf(etabId) < 0) { out.inchanges++; return; }
+      var reste = base.filter(function (x) { return x !== etabId; });
+      if (!reste.length) { out.bloquees.push(a); return; }
+      out.fiches.push(marquerModifieeAesh(a, "etablissements", reste));
+    });
+    return out;
+  }
+  function aeshSpecialite(aeshs, ids, specialite) {
+    var cible = {}, s = txt(specialite).replace(/\s+/g, " ").trim(), out = { fiches: [], inchanges: 0 };
+    ids.forEach(function (id) { cible[id] = true; });
+    (aeshs || []).filter(function (a) { return cible[a.id]; }).forEach(function (a) {
+      var liste = a.formations || [];
+      if (liste.some(function (f) { return normaliser(f) === normaliser(s); })) { out.inchanges++; return; }
+      out.fiches.push(marquerModifieeAesh(a, "formations", liste.concat([s])));
+    });
+    return out;
   }
 
   // archivé (§17) : sorti des listes actives et des propositions, gardé dans
@@ -1200,6 +1273,7 @@ var PialModele = (function () {
     comparerClasses: comparerClasses, referentielClasses: referentielClasses,
     classeNette: classeNette, memeClasse: memeClasse, classesEnregistrees: classesEnregistrees, classesAvecAjout: classesAvecAjout,
     classesSansClasse: classesSansClasse, classesRenommee: classesRenommee, elevesDeClasse: elevesDeClasse, renommerClasse: renommerClasse,
+    deplacerEleves: deplacerEleves, etatMatiereGroupe: etatMatiereGroupe, aeshEtablissement: aeshEtablissement, aeshSpecialite: aeshSpecialite,
     estArchive: estArchive, actifs: actifs, donneesActives: donneesActives, effetsRetrait: effetsRetrait,
     dateArchivageValide: dateArchivageValide, operationsArchivage: operationsArchivage, operationsRetablissement: operationsRetablissement, operationsSuppression: operationsSuppression,
     anneeScolaire: anneeScolaire, niveauClasse: niveauClasse, typeEtablissement: typeEtablissement,

@@ -218,7 +218,15 @@ var PialAffectations = (function () {
     if (!imp) return;
     var manquants = I.champsManquants(imp.type, imp.correspondance);
     if (manquants.length) { ui.toast("Colonne(s) obligatoire(s) non choisie(s) : " + manquants.join(", ") + "."); return; }
-    imp.apercu = I.apercu(imp.type, imp.lignes.slice(1), imp.correspondance, { annee: anneeCourante(), elevesConnus: elevesConnus(),
+    calculerImport(imp);
+    rendreApercu();
+  });
+
+  /* aperçu d'un import : partagé entre l'import de fichiers et le collage
+     depuis un tableur (saisie rapide). imp : {type, lignes (la première
+     est l'en-tête, ignorée), correspondance, premiereLigne?} */
+  function calculerImport(imp) {
+    imp.apercu = I.apercu(imp.type, imp.lignes.slice(1), imp.correspondance, { annee: anneeCourante(), elevesConnus: elevesConnus(), premiereLigne: imp.premiereLigne,
       gererPeriscolaire: !!etat.reglages.gererPeriscolaire, specialites: M.contexte({ reglages: etat.reglages }).reglages.specialites });
     // identifiants internes (§3) : une fiche existante de même clé garde le sien
     imp.apercu.valides = M.attribuerIdentifiants(imp.type, imp.apercu.valides, existantsDuType(imp.type), etat.elevesTous);
@@ -242,8 +250,7 @@ var PialAffectations = (function () {
         if (champs.length) imp.conflits.push({ existant: parId[n.id], nouveau: n, champs: champs });
       });
     }
-    rendreApercu();
-  });
+  }
 
   function listeMotifs(titre, elements, max) {
     if (!elements.length) return "";
@@ -254,9 +261,18 @@ var PialAffectations = (function () {
   }
 
   function rendreApercu() {
-    var imp = importEnCours, ap = imp.apercu;
+    var imp = importEnCours;
+    rendreApercuDans(imp, $("imp-resume"), $("imp-details"), {});
+    $("imp-maj").disabled = !imp.apercu.valides.length;
+    $("imp-remplacer").disabled = !imp.apercu.valides.length;
+    $("imp-apercu").hidden = false;
+  }
+  // opts.sansRemplacer : le collage n'a que « Ajouter / mettre à jour »
+  function rendreApercuDans(imp, hoteResume, hoteDetails, opts) {
+    var ap = imp.apercu;
+    opts = opts || {};
     var nouveauxEtabs = ap.etablissements.filter(function (n) { return !etablissementParId(M.idEtablissement(n)); });
-    $("imp-resume").innerHTML = '<div class="compteurs-import">'
+    hoteResume.innerHTML = '<div class="compteurs-import">'
       + '<span><strong>' + ap.valides.length + '</strong> ligne(s) reconnue(s)</span>'
       + '<span><strong>' + ap.erreurs.length + '</strong> en erreur</span>'
       + '<span><strong>' + ap.doublons.length + '</strong> doublon(s) ignoré(s)</span>'
@@ -264,8 +280,9 @@ var PialAffectations = (function () {
       + (ap.exemples.length ? '<span><strong>' + ap.exemples.length + '</strong> ligne(s) d\'exemple du gabarit ignorée(s)</span>' : '')
       + '</div>'
       + '<p class="note">Mettre à jour : ' + imp.planMaj.ajouts.length + ' ajout(s), ' + imp.planMaj.modifies.length + ' modification(s), '
-      + imp.planMaj.inchanges.length + ' inchangé(s). Remplacer supprimerait en plus ' + imp.planRemplacer.supprimes.length + ' enregistrement(s) absent(s) du fichier'
-      + (imp.archivesSupprimees ? ' (dont ' + imp.archivesSupprimees + ' archivé(s))' : '') + '.</p>'
+      + imp.planMaj.inchanges.length + ' inchangé(s).'
+      + (opts.sansRemplacer ? '' : ' Remplacer supprimerait en plus ' + imp.planRemplacer.supprimes.length + ' enregistrement(s) absent(s) du fichier'
+        + (imp.archivesSupprimees ? ' (dont ' + imp.archivesSupprimees + ' archivé(s))' : '') + '.') + '</p>'
       + (imp.archivesFichier.length ? '<p class="note">' + pluriel(imp.archivesFichier.length, 'fiche archivée figure', 'fiches archivées figurent') + ' dans le fichier. Elles restent archivées (leurs données sont mises à jour). <label class="case"><input type="checkbox" id="imp-retablir"> Les rétablir</label></p>' : '')
       + (nouveauxEtabs.length ? '<p class="note">Nouvel(s) établissement(s) créé(s) à l\'import : ' + nouveauxEtabs.map(ech).join(", ") + '. Vérifiez ensuite leurs horaires dans Réglages.</p>' : '');
     var h = "";
@@ -306,19 +323,18 @@ var PialAffectations = (function () {
     }
     if (ap.exemples.length) h += '<p class="aide">Lignes d\'exemple du gabarit ignorées : ' + ap.exemples.join(", ") + '.</p>';
     if (ap.doublons.length) h += '<p class="aide">Doublons ignorés (lignes identiques à une ligne précédente) : ' + ap.doublons.map(function (d) { return d.ligne; }).join(", ") + '.</p>';
-    $("imp-details").innerHTML = h;
-    if ($("imp-retablir")) $("imp-retablir").addEventListener("change", function () { imp.retablir = this.checked; });
-    Array.prototype.forEach.call($("imp-details").querySelectorAll('[name="imp-conflits"]'), function (r) {
+    hoteDetails.innerHTML = h;
+    var retablir = hoteResume.querySelector("#imp-retablir");
+    if (retablir) retablir.addEventListener("change", function () { imp.retablir = this.checked; });
+    Array.prototype.forEach.call(hoteDetails.querySelectorAll('[name="imp-conflits"]'), function (r) {
       r.addEventListener("change", function () { if (this.checked) imp.garderAppli = this.value === "appli"; });
     });
-    $("imp-maj").disabled = !ap.valides.length;
-    $("imp-remplacer").disabled = !ap.valides.length;
-    $("imp-apercu").hidden = false;
   }
 
   /* =============== import : écriture en base =============== */
-  function operationsImport(mode) {
-    var imp = importEnCours, type = imp.type, plan = mode === "remplacer" ? imp.planRemplacer : imp.planMaj;
+  function operationsImport(mode, imp) {
+    imp = imp || importEnCours;
+    var type = imp.type, plan = mode === "remplacer" ? imp.planRemplacer : imp.planMaj;
     var magasin = type === "eleves" ? "eleves" : (type === "aesh" ? "aesh" : "cours");
     var parId = {};
     existantsDuType(type).forEach(function (e) { parId[e.id] = e; });
@@ -351,8 +367,18 @@ var PialAffectations = (function () {
     var nouveaux = imp.apercu.etablissements.filter(function (n) { return !etablissementParId(M.idEtablissement(n)); })
       .map(M.etablissementParDefaut);
     if (nouveaux.length) ops.push({ magasin: "etablissements", enregistrer: nouveaux });
-    ops.push({ magasin: "correspondances", enregistrer: [{ type: type, colonnes: I.correspondanceAMemoriser(imp.lignes[0], imp.correspondance) }] });
+    // un collage ne mémorise pas de correspondance de colonnes
+    if (!imp.collage) ops.push({ magasin: "correspondances", enregistrer: [{ type: type, colonnes: I.correspondanceAMemoriser(imp.lignes[0], imp.correspondance) }] });
     return { ops: ops, plan: plan, coursSuppr: coursSuppr.length, affSuppr: affSuppr.length + affModif.length, nouveauxEtabs: nouveaux.length };
+  }
+  /* collage depuis un tableur : « Ajouter / mettre à jour », en une seule
+     action annulable (établissements créés compris) */
+  function appliquerCollage(imp) {
+    var r = operationsImport("maj", imp), n = r.plan.ajouts.length + r.plan.modifies.length;
+    if (!n) return Promise.resolve(false);
+    return enregistrerPuisRendre(r.ops, "Collage : " + r.plan.ajouts.length + " ajout(s), " + r.plan.modifies.length + " modification(s)."
+      + (r.nouveauxEtabs ? " " + pluriel(r.nouveauxEtabs, "établissement créé", "établissements créés") + " : vérifiez leurs horaires dans Réglages." : ""),
+      "le collage de " + pluriel(n, "ligne", "lignes")).then(function () { return true; });
   }
   function ecrireImport(mode) {
     var r = operationsImport(mode), imp = importEnCours;
@@ -2379,6 +2405,7 @@ var PialAffectations = (function () {
     enregistrerPuisRendre: enregistrerPuisRendre, annuler: annuler, viderAnnulation: viderAnnulation,
     libelleAnnulation: function () { return pileAnnulation.length ? pileAnnulation[pileAnnulation.length - 1].libelle : ""; },
     surRendu: function (fn) { abonnesRendu.push(fn); },
+    calculerImport: calculerImport, rendreApercuDans: rendreApercuDans, appliquerCollage: appliquerCollage,
     ui: function () { return ui; },
     // ouvre la grille dans l'onglet Affectations
     voirGrilleEleve: function (id) { ui.vue("vue-affectations"); remplirFiltres(); ouvrirGrilleEleve(id); },

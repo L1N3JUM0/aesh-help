@@ -1645,6 +1645,24 @@ var PialTests = (function () {
       egal([sp.fiches.map(function (a) { return [a.id, a.formations]; }), sp.inchanges], [[["ae-3", ["tsa"]]], 1], "casse ignorée");
       egal(s3.formations, [], "original intact");
     });
+    t("dates : jour et mois inexistants refusés (import et saisie)", function () {
+      egal([I.dateIso("30/06/2027"), I.dateIso("2027-6-3"), I.dateIso("1.9.26"), I.dateIso("")], ["2027-06-30", "2027-06-03", "2026-09-01", ""]);
+      egal([I.dateIso("32/13/2026"), I.dateIso("31/02/2026"), I.dateIso("2026-02-30"), I.dateIso("29/02/2028")], [null, null, null, "2028-02-29"], "31/02 refusé, 29/02/2028 (bissextile) accepté");
+    });
+    t("collage : en-têtes reconnus, ou colonnes dans l'ordre à partir de la cellule", function () {
+      var cols = ["etablissement", "classe", "prenom", "nom", "heuresInd", "heuresMut", "besoins", "debutNotif", "finNotif"];
+      var avec = I.analyserCollage("eleves", "Etablissement\tClasse\tPrénom\tNom\tHeures individuelles\nCollège A\t5B\tLucas\tMartin\t6\n", cols, 2);
+      egal([avec.entetes, avec.premiereLigne, avec.manquants, avec.lignesImport.length, avec.correspondance.prenom, avec.correspondance.heuresMut], [true, 2, [], 2, 2, -1], "en-têtes : le point de départ est ignoré");
+      var sans = I.analyserCollage("eleves", "Collège A\t5B\tLucas\tMartin\t6\r\nCollège A\t5B\tZoé\tPetit\t4\r\n", cols, 0);
+      egal([sans.entetes, sans.premiereLigne, sans.manquants, sans.lignesImport.length, sans.correspondance.nom, sans.correspondance.heuresInd, sans.correspondance.finNotif], [false, 1, [], 3, 3, 4, 8], "colonnes au-delà des cellules collées : vides à l'aperçu");
+      var ap = I.apercu("eleves", sans.lignesImport.slice(1), sans.correspondance, { annee: "2026-2027", premiereLigne: sans.premiereLigne });
+      egal([ap.valides.length, ap.erreurs.length, ap.valides[0].nomCourt], [2, 0, "Lucas M."], "l'aperçu de l'import sert tel quel");
+      var milieu = I.analyserCollage("eleves", "Lucas\tMartin\t6", cols, 2);
+      egal(milieu.manquants, ["Établissement", "Classe"], "collage commencé au milieu : colonnes obligatoires absentes");
+      var cellules = I.analyserCollage("aesh", "Durand\tSophie\t24\n\"Le\nroy\"\tMarc\t20", ["nom", "prenom", "quotite", "email"], 0);
+      egal([cellules.lignes.length, cellules.lignes[1][0], cellules.manquants], [2, "Le\nroy", []], "cellule entre guillemets sur plusieurs lignes");
+      egal(I.analyserCollage("eleves", "", cols, 0).lignes, [], "presse-papiers vide");
+    });
     t("archivage : opérations (créneaux du brouillon retirés, versions gardées, rétablissement)", function () {
       var e1 = eleve("el-1", "Lucas", "Martin", "5B", "Collège A"), e2 = eleve("el-2", "Zoé", "Petit", "5B", "Collège A");
       var a1 = { id: "ae-1", elevesExclus: ["el-1", "el-2"] };

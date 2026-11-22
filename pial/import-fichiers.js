@@ -345,6 +345,33 @@ var PialImport = (function () {
       .map(libelleChamp);
   }
 
+  /* collage depuis un tableur (saisie rapide, §17). texte : le presse-papiers
+     (cellules séparées par des tabulations, comme Excel et LibreOffice) ;
+     colonnes : clés des colonnes affichées, dans l'ordre ; depart : indice de
+     la colonne où le collage commence. Si la première ligne ressemble à des
+     en-têtes (au moins deux colonnes reconnues), la correspondance est
+     automatique ; sinon les cellules suivent l'ordre des colonnes à partir de
+     depart. Renvoie {lignes (tout le collage), entetes (booléen),
+     correspondance ({cle: indice, -1 si absente}), lignesImport (à passer à
+     l'aperçu : la première ligne est l'en-tête, fictif sans en-têtes),
+     premiereLigne (numéro de la première ligne de données), manquants
+     (colonnes obligatoires absentes)}. */
+  function analyserCollage(type, texte, colonnes, depart) {
+    var lignes = analyserCSV(txt(texte), "\t");
+    var res = { lignes: lignes, entetes: false, correspondance: {}, lignesImport: [[]], premiereLigne: 1, manquants: [] };
+    if (!lignes.length) return res;
+    var auto = correspondanceAuto(type, lignes[0]);
+    if (Object.keys(auto).length >= 2) { res.entetes = true; res.correspondance = auto; res.premiereLigne = 2; res.lignesImport = lignes; }
+    else {
+      (colonnes || []).slice(depart || 0).forEach(function (cle, i) { res.correspondance[cle] = i; });
+      res.lignesImport = [[]].concat(lignes);
+    }
+    TYPES[type].champs.forEach(function (c) { if (res.correspondance[c.cle] == null) res.correspondance[c.cle] = -1; });
+    res.manquants = champsManquants(type, res.correspondance);
+    return res;
+  }
+
+
   /* =============== conversion des valeurs =============== */
   function nombre(v) {
     var s = txt(v).trim().replace(/\s*h(eures?)?$/i, "").replace(",", ".");
@@ -362,13 +389,21 @@ var PialImport = (function () {
     return d.getUTCFullYear() + "-" + String(d.getUTCMonth() + 1).padStart(2, "0") + "-" + String(d.getUTCDate()).padStart(2, "0");
   }
   // "2026-09-01", "01/09/2026", "1/9/26" ou n° de série Excel -> ISO ; "" si vide ; null si illisible
+  // jour et mois qui existent (31/02 et 32/13 sont illisibles)
+  function dateExiste(a, m, j) {
+    var d = new Date(Date.UTC(+a, +m - 1, +j));
+    return d.getUTCFullYear() === +a && d.getUTCMonth() === +m - 1 && d.getUTCDate() === +j;
+  }
   function dateIso(v) {
     var s = txt(v).trim();
     if (!s) return "";
     var m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(s);
-    if (m) return m[1] + "-" + m[2].padStart(2, "0") + "-" + m[3].padStart(2, "0");
+    if (m) return dateExiste(m[1], m[2], m[3]) ? m[1] + "-" + m[2].padStart(2, "0") + "-" + m[3].padStart(2, "0") : null;
     m = /^(\d{1,2})[\/.](\d{1,2})[\/.](\d{2}|\d{4})$/.exec(s);
-    if (m) return (m[3].length === 2 ? "20" + m[3] : m[3]) + "-" + m[2].padStart(2, "0") + "-" + m[1].padStart(2, "0");
+    if (m) {
+      var an = m[3].length === 2 ? "20" + m[3] : m[3];
+      return dateExiste(an, m[2], m[1]) ? an + "-" + m[2].padStart(2, "0") + "-" + m[1].padStart(2, "0") : null;
+    }
     if (/^\d+(\.\d+)?$/.test(s) && +s > 20000 && +s < 80000) return serieVersIso(+s);
     return null;
   }
@@ -595,9 +630,9 @@ var PialImport = (function () {
     decoderTexte: decoderTexte, detecterSeparateur: detecterSeparateur, analyserCSV: analyserCSV,
     lireXlsx: lireXlsx, lireFichier: lireFichier, gabarit: gabarit, libelleChamp: libelleChamp,
     normaliserEntete: normaliserEntete, correspondanceAuto: correspondanceAuto,
-    correspondanceAMemoriser: correspondanceAMemoriser, champsManquants: champsManquants,
+    correspondanceAMemoriser: correspondanceAMemoriser, champsManquants: champsManquants, analyserCollage: analyserCollage,
     nombre: nombre, booleen: booleen, dateIso: dateIso, heure: heure,
-    apercu: apercu, planFusion: planFusion, exporterCSV: exporterCSV, validerLigne: validerLigne
+    apercu: apercu, planFusion: planFusion, exporterCSV: exporterCSV, ligneExport: ligneExport, validerLigne: validerLigne
   };
 })();
 

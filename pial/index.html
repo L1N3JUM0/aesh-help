@@ -192,6 +192,23 @@ label.case input{width:auto}
 .classe-ligne .aide{margin:0}
 .classe-ajout input[type=text]{width:220px}
 .tableau-profils tbody tr.archive td{color:var(--gris)}
+.profils-rapide[hidden]{display:none}
+.profils.mode-rapide{grid-template-columns:minmax(0,1fr)}
+.profils.mode-rapide > .profils-liste,.profils.mode-rapide > .profils-panneau{display:none}
+.tableau-rapide th.sr-num,.tableau-rapide td.sr-num{width:38px;text-align:right;color:var(--gris);font-weight:400;padding-right:8px}
+.tableau-rapide td{padding:2px 3px;vertical-align:middle}
+.tableau-rapide input{width:100%;min-width:76px;min-height:40px;padding:6px 7px;font-size:14px;border:1px solid transparent;border-radius:5px;background:transparent}
+.tableau-rapide tr.sr-ligne:hover input{border-color:var(--seyes)}
+.tableau-rapide input:focus{background:#fff;border-color:var(--encre-clair)}
+.tableau-rapide input.sr-c-etablissement,.tableau-rapide input.sr-c-etablissements{min-width:170px}
+.tableau-rapide input.sr-c-besoins,.tableau-rapide input.sr-c-formations,.tableau-rapide input.sr-c-indisponibilites{min-width:190px}
+.tableau-rapide input.sr-c-email{min-width:190px}
+.tableau-rapide input.sr-c-classe,.tableau-rapide input.sr-c-heuresInd,.tableau-rapide input.sr-c-heuresMut,.tableau-rapide input.sr-c-quotite{min-width:64px;width:84px}
+.tableau-rapide tr.sr-erreur input{border-color:var(--marge);background:#FDF5F3}
+.tableau-rapide tr.sr-incomplet input{border-color:#E4D6A8}
+.sr-statut{min-width:210px;max-width:320px;font-size:12.5px;color:var(--gris);white-space:normal}
+.tableau-rapide tr.sr-erreur .sr-statut{color:var(--marge)}
+.tableau-rapide tr.sr-ok .sr-statut{color:var(--couvert)}
 .badge-archive{background:#ECECEC;color:#5C6370}
 .barre-groupe{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 10px;margin:0 0 10px;background:#EAF0F9;border:1px solid var(--seyes);border-radius:8px}
 .barre-groupe .btn{min-height:44px}
@@ -732,6 +749,7 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
           <h2>Élèves <span class="profils-compte" id="pe-compte"></span></h2>
           <div class="actions">
             <button type="button" class="btn btn-vide" id="pe-annuler" disabled>↶ Annuler</button>
+            <button type="button" class="btn btn-vide" id="pe-rapide-ouvrir">Saisie rapide</button>
             <button type="button" class="btn btn-plein" id="pe-nouveau">+ Nouvel élève</button>
           </div>
         </div>
@@ -761,6 +779,20 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
         <div class="tableau-conteneur"><table class="tableau tableau-profils" id="pe-table"></table></div>
         <p class="aide" style="margin-top:10px">Cliquez sur une ligne (ou Entrée) pour ouvrir la fiche ; flèches haut et bas pour passer d'un élève à l'autre ; Espace coche la ligne (Maj+clic : une plage de cases).</p>
       </div>
+      <div class="carte profils-rapide" id="pe-rapide" hidden>
+        <div class="profils-barre">
+          <h2>Saisie rapide : élèves <span class="profils-compte" id="pe-rapide-compte"></span></h2>
+          <div class="actions">
+            <button type="button" class="btn btn-vide" id="pe-rapide-annuler" disabled>↶ Annuler</button>
+            <button type="button" class="btn btn-plein" id="pe-rapide-retour">← Retour à la liste</button>
+          </div>
+        </div>
+        <p class="aide">Une ligne complète et valide s'enregistre dès que vous quittez la cellule ; « ↶ Annuler » revient en arrière. Une ligne incomplète ou invalide reste en brouillon, avec son motif (bord rouge si elle est invalide). Les lignes déjà enregistrées se modifient de la même façon.
+          Tab : cellule suivante · Entrée : cellule du dessous (Maj+Entrée : du dessus) · F2 : sélectionner la cellule · Échap : rendre à la cellule sa valeur d'avant · Ctrl+V : coller des cellules depuis Excel ou LibreOffice, avec ou sans ligne d'en-têtes.</p>
+        <div class="tableau-conteneur"><table class="tableau tableau-rapide" id="pe-rapide-table"></table></div>
+        <div id="pe-rapide-listes"></div>
+        <p class="aide" id="pe-rapide-etat" role="status" aria-live="polite"></p>
+      </div>
       <aside class="carte profils-panneau" id="pe-panneau" hidden aria-labelledby="pe-titre">
         <div class="pp-tete">
           <button type="button" class="btn-lien" id="pe-fermer">← Retour à la liste</button>
@@ -785,6 +817,7 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
           <h2>AESH <span class="profils-compte" id="pa-compte"></span></h2>
           <div class="actions">
             <button type="button" class="btn btn-vide" id="pa-annuler" disabled>↶ Annuler</button>
+            <button type="button" class="btn btn-vide" id="pa-rapide-ouvrir">Saisie rapide</button>
             <button type="button" class="btn btn-plein" id="pa-nouveau">+ Nouvelle AESH</button>
           </div>
         </div>
@@ -808,6 +841,20 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
         </div>
         <div class="tableau-conteneur"><table class="tableau tableau-profils" id="pa-table"></table></div>
         <p class="aide" style="margin-top:10px">Cliquez sur une ligne (ou Entrée) pour ouvrir la fiche ; Espace coche la ligne (Maj+clic : une plage de cases).</p>
+      </div>
+      <div class="carte profils-rapide" id="pa-rapide" hidden>
+        <div class="profils-barre">
+          <h2>Saisie rapide : AESH <span class="profils-compte" id="pa-rapide-compte"></span></h2>
+          <div class="actions">
+            <button type="button" class="btn btn-vide" id="pa-rapide-annuler" disabled>↶ Annuler</button>
+            <button type="button" class="btn btn-plein" id="pa-rapide-retour">← Retour à la liste</button>
+          </div>
+        </div>
+        <p class="aide">Une ligne complète et valide s'enregistre dès que vous quittez la cellule ; « ↶ Annuler » revient en arrière. Une ligne incomplète ou invalide reste en brouillon, avec son motif (bord rouge si elle est invalide). Les lignes déjà enregistrées se modifient de la même façon.
+          Tab : cellule suivante · Entrée : cellule du dessous (Maj+Entrée : du dessus) · F2 : sélectionner la cellule · Échap : rendre à la cellule sa valeur d'avant · Ctrl+V : coller des cellules depuis Excel ou LibreOffice, avec ou sans ligne d'en-têtes.</p>
+        <div class="tableau-conteneur"><table class="tableau tableau-rapide" id="pa-rapide-table"></table></div>
+        <div id="pa-rapide-listes"></div>
+        <p class="aide" id="pa-rapide-etat" role="status" aria-live="polite"></p>
       </div>
       <aside class="carte profils-panneau" id="pa-panneau" hidden aria-labelledby="pa-titre">
         <div class="pp-tete">
@@ -1248,6 +1295,17 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
   </div>
 </div>
 
+<div class="voile" id="voile-collage" hidden>
+  <div class="modale modale-large" role="dialog" aria-modal="true" aria-labelledby="co-titre">
+    <h3 id="co-titre">Coller depuis un tableur</h3>
+    <div id="co-resume"></div>
+    <div id="co-details"></div>
+    <p class="aide">« Ajouter / mettre à jour » ne supprime rien. Une seule action, annulable.</p>
+    <div class="actions"><button type="button" class="btn btn-plein" id="co-appliquer">Ajouter / mettre à jour</button>
+      <button type="button" class="btn btn-vide" id="co-annuler">Annuler</button></div>
+  </div>
+</div>
+
 <div class="voile" id="voile-groupe" hidden>
   <div class="modale modale-large" role="dialog" aria-modal="true" aria-labelledby="gr-titre">
     <h3 id="gr-titre"></h3>
@@ -1379,6 +1437,7 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
 <script src="import-fichiers.js"></script>
 <script src="affectations.js"></script>
 <script src="profils.js"></script>
+<script src="saisie-rapide.js"></script>
 <script src="app.js"></script>
 <script>
 /* Service worker commun à toute l'application (portée : dossier racine),

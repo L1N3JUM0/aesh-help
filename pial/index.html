@@ -357,6 +357,8 @@ body.glisser-en-cours,body.glisser-en-cours *{cursor:grabbing!important;user-sel
 .ga-axe span{position:absolute;right:6px;transform:translateY(-50%);color:var(--gris);font-variant-numeric:tabular-nums;font-size:10.5px}
 .ga-axe span:first-child{transform:none}
 .ga-axe span:last-child{transform:translateY(-100%)}
+.ga-jour[data-jour]{cursor:cell}
+.pastille-mod{display:inline-block;padding:0 6px;border-radius:10px;background:#EEF1F5;font-size:11.5px;color:var(--gris)}
 .ga-jour{position:relative;border-left:1px solid #E4E8F0;background:#fff}
 .ga-ligne{position:absolute;left:0;right:0;border-top:1px solid #EEF1F6}
 .ga-indispo{position:absolute;left:0;right:0;background:repeating-linear-gradient(45deg,#ECECEC 0 6px,#DADADA 6px 12px);color:#666;font-size:10.5px}
@@ -1010,6 +1012,7 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
             <div class="barre-retour"><button type="button" class="btn-lien" id="aff-retour-aesh">← vue d'ensemble</button>
               <button type="button" class="btn-lien" id="ga-ensemble" hidden>Vue d'ensemble</button>
               <span class="ga-actions">
+                <button type="button" class="btn btn-vide" id="ga-ajouter" title="Choisir un jour et un créneau, puis un élève à accompagner">Ajouter un créneau…</button>
                 <button type="button" class="btn btn-vide" id="ga-ouvrir-fiche">Fiche et filtre</button>
                 <button type="button" class="btn btn-vide" id="ga-imprimer">Imprimer (PDF)</button>
                 <button type="button" class="btn btn-vide" id="ga-imprimer-toutes">Imprimer toutes les AESH</button>
@@ -1572,6 +1575,22 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
     <div id="vh-corps"></div>
     <div id="vh-detail"></div>
     <div class="actions"><button type="button" class="btn btn-vide" id="vh-fermer">Fermer</button></div>
+  </div>
+</div>
+
+<div class="voile" id="voile-qpa" hidden>
+  <div class="modale modale-large" role="dialog" aria-modal="true" aria-labelledby="qpa-titre">
+    <h3 id="qpa-titre">Qui peut-elle accompagner ?</h3>
+    <p class="aide" id="qpa-sous-titre"></p>
+    <div class="ligne-filtres">
+      <div class="champ etroit"><label for="qpa-jour">Jour</label><select id="qpa-jour"></select></div>
+      <div class="champ"><label for="qpa-creneau">Créneau</label><select id="qpa-creneau"></select></div>
+    </div>
+    <div id="qpa-corps"></div>
+    <div class="actions">
+      <button type="button" class="btn btn-plein" id="qpa-groupe" disabled title="Affecte l'AESH à tous les élèves cochés (même cours, mutualisé)">Affecter les élèves cochés (mutualisé)</button>
+      <button type="button" class="btn btn-vide" id="qpa-fermer">Fermer</button>
+    </div>
   </div>
 </div>
 

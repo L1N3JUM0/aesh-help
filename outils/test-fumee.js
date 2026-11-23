@@ -183,6 +183,28 @@ function testerPial(rendre) {
           });
         });
       }).then(function () {
+        // scénario « Qui peut-elle accompagner ? » : grille d'une AESH, fenêtre ouverte, élèves listés, une affectation faite
+        var avantQ = erreurs.length, doc = nav.document;
+        nav.declencher(boutons.filter(function (b) { return b.dataset.vue === "vue-affectations"; })[0], "click");
+        return laisserFinir().then(function () {
+          nav.declencher(doc.querySelector("[data-grille-aesh]"), "click");
+          return laisserFinir().then(function () {
+            nav.declencher(doc.getElementById("ga-ajouter"), "click");
+            var ouverte = visible(doc.getElementById("voile-qpa")), lignes = doc.querySelectorAll("[data-qpa-affecter]").length;
+            var nbAvant = doc.querySelectorAll("[data-aff]").length;
+            nav.declencher(doc.querySelector("[data-qpa-affecter]"), "click");
+            return laisserFinir().then(function () {
+              rendre("espace PIAL : grille AESH, « Qui peut-elle accompagner ? » (fenêtre, élèves listés, affectation)", function () {
+                if (erreurs.length > avantQ) throw new Error(erreurs.slice(avantQ, avantQ + 4).join("\n          "));
+                if (!ouverte) throw new Error("la fenêtre ne s'ouvre pas");
+                if (!(lignes > 0)) throw new Error("aucun élève proposé");
+                if (visible(doc.getElementById("voile-qpa"))) throw new Error("la fenêtre reste ouverte après « Affecter »");
+                if (!(doc.querySelectorAll("[data-aff]").length > nbAvant)) throw new Error("aucun créneau ajouté dans la grille de l'AESH");
+              });
+            });
+          });
+        });
+      }).then(function () {
         verifierModules(nav, page.fichiers, rendre, "espace PIAL");
       });
     }).then(arreter, function (e) { arreter(); throw e; });

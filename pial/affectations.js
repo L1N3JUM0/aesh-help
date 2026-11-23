@@ -1743,7 +1743,7 @@ var PialAffectations = (function () {
     h += '</div>';
     var ignorees = !r.respecterIndispos || a.ignorerIndispos;
     jours.forEach(function (j) {
-      h += '<div class="ga-jour" style="height:' + H + 'px">';
+      h += '<div class="ga-jour" style="height:' + H + 'px"' + (imp ? "" : ' data-jour="' + j + '" data-t0="' + b.t0 + '" data-k="' + k + '" title="Cliquer sur une zone libre : qui peut-elle accompagner ?"') + '>';
       for (var t2 = b.t0 + 60; t2 < b.t1; t2 += 60) h += '<div class="ga-ligne" style="top:' + y(t2) + 'px"></div>';
       // indisponibilités (journée, matin ou après-midi)
       (a.indisponibilites || []).forEach(function (code) {
@@ -1860,6 +1860,13 @@ var PialAffectations = (function () {
       bt.addEventListener("click", function (ev) { ev.stopPropagation(); ouvrirGrilleEleve(this.dataset.grilleEleve); });
       bt.addEventListener("keydown", function (ev) { ev.stopPropagation(); });
     });
+    Array.prototype.forEach.call($("ga-grille").querySelectorAll("[data-jour]"), function (zone) {
+      zone.addEventListener("click", function (ev) {
+        if (ev.target.closest && ev.target.closest("[data-aff], [data-grille-eleve]")) return;
+        var haut = this.getBoundingClientRect().top, minute = parseFloat(this.dataset.t0) + (ev.clientY - haut) / parseFloat(this.dataset.k);
+        ouvrirQuiPeutElle(aeshOuverte, this.dataset.jour, minute);
+      });
+    });
     Array.prototype.forEach.call($("ga-grille").querySelectorAll("[data-aff]"), function (d) {
       function ouvrir() { ouvrirMenuDepuisAffectation(d.dataset.aff); }
       d.addEventListener("click", ouvrir);
@@ -1907,6 +1914,159 @@ var PialAffectations = (function () {
   }
   $("ga-imprimer").addEventListener("click", function () { var a = aeshParId(aeshOuverte); if (a) imprimerGrillesAesh([a]); });
   $("ga-imprimer-toutes").addEventListener("click", function () { imprimerGrillesAesh(aeshTriees()); });
+
+  /* =============== grille AESH : « Qui peut-elle accompagner ? » =============== */
+  // Un clic sur une zone libre de la grille d'une AESH (ou « Ajouter un créneau… ») liste les élèves qui ont cours à ce créneau,
+  // dans les établissements de l'AESH : triés par besoin restant, avec le score et les raisons du moteur ; ceux qu'elle ne peut
+  // pas accompagner sont grisés avec le motif (même logique que le menu de la grille élève, vue depuis l'AESH). On choisit un
+  // élève, ou plusieurs élèves mutualisés du même cours. L'affectation est épinglée et annulable.
+  var qpa = null;   // {aeshId, jour, creneaux: [{etab, debut, fin}], choisi: index}
+  function etabsAesh(a) { return (a.etablissements || []).length ? a.etablissements : etat.etablissements.map(function (e) { return e.id; }); }
+  // créneaux (établissement, début, fin) où au moins un élève a cours ce jour-là, dans les établissements de l'AESH
+  function creneauxDuJour(a, jour) {
+    var etabs = etabsAesh(a), vus = {}, out = [];
+    etat.cours.forEach(function (c) {
+      if (c.jour !== jour || etabs.indexOf(c.etablissement) < 0) return;
+      var k = c.etablissement + "|" + c.debut + "|" + c.fin;
+      if (vus[k]) return;
+      vus[k] = true;
+      out.push({ etab: c.etablissement, debut: c.debut, fin: c.fin });
+    });
+    return out.sort(function (p, q) { return M.minutes(p.debut) - M.minutes(q.debut) || M.minutes(p.fin) - M.minutes(q.fin) || nomEtablissement(p.etab).localeCompare(nomEtablissement(q.etab), "fr"); });
+  }
+  function ouvrirQuiPeutElle(aeshId, jour, minute) {
+    var a = aeshParId(aeshId);
+    if (!a) return;
+    if (!ctxCourant) recalculer();
+    qpa = { aeshId: aeshId, jour: jour, creneaux: [], choisi: 0 };
+    choisirJourQpa(jour, minute);
+    $("qpa-jour").innerHTML = joursAesh(a, ctxCourant._affParAesh[a.id] || []).map(function (j) { return '<option value="' + j + '">' + j + '</option>'; }).join("");
+    $("qpa-jour").value = qpa.jour;
+    $("voile-qpa").hidden = false;
+    rendreQpa();
+    $("qpa-fermer").focus();
+  }
+  // choisit le jour et le créneau : celui qui contient la minute cliquée, sinon le suivant, sinon le premier
+  function choisirJourQpa(jour, minute) {
+    var a = aeshParId(qpa.aeshId);
+    qpa.jour = jour;
+    qpa.creneaux = creneauxDuJour(a, jour);
+    qpa.choisi = 0;
+    if (minute == null) return;
+    var dedans = -1, suivant = -1;
+    qpa.creneaux.forEach(function (c, i) {
+      var d = M.minutes(c.debut), f = M.minutes(c.fin);
+      if (dedans < 0 && d <= minute && minute < f) dedans = i;
+      if (suivant < 0 && d >= minute) suivant = i;
+    });
+    qpa.choisi = dedans > -1 ? dedans : (suivant > -1 ? suivant : 0);
+  }
+  function fermerQpa() { qpa = null; $("voile-qpa").hidden = true; }
+  // un contexte de créneau (comme le menu) pour un élève, un de ses cours et une modalité
+  function contexteQpa(e, cours, modalite) {
+    var etab = etablissementParId(e.etablissement);
+    return { eleve: e, cas: { type: "cours", cours: cours, jour: cours.jour, debut: cours.debut, fin: cours.fin }, modalite: modalite,
+      semaine: cours.semaine ? cours.semaine : "toutes", alternance: !!(etab && etab.alternance) };
+  }
+  function lignesQpa(a, cr) {
+    var lignes = [], vue = null;
+    etat.eleves.forEach(function (e) {
+      if (e.etablissement !== cr.etab) return;
+      var cv = M.couvertureEleve(e, ctxCourant);
+      (ctxCourant._coursParEleve[e.id] || []).filter(function (c) { return c.jour === qpa.jour && c.debut === cr.debut && c.fin === cr.fin; }).forEach(function (cours) {
+        var mods = e.heuresInd > 0 || e.heuresMut > 0 ? modalitesPossibles(e, { type: "cours" }) : ["individuel"];
+        mods.forEach(function (modalite) {
+          var m = contexteQpa(e, cours, modalite), cand = candidat(a.id, m);
+          var restant = modalite === "individuel" ? Math.max(0, cv.ind.notifie - cv.ind.moy) : Math.max(0, cv.mut.notifie - cv.mut.moy);
+          var deja = etat.affectations.filter(function (x) { return x.aeshId === a.id && x.eleves.indexOf(e.id) > -1 && x.creneau.etab === cr.etab && x.creneau.jour === qpa.jour
+            && x.creneau.debut === cr.debut && x.creneau.fin === cr.fin && M.semainesDe(x.creneau.semaine, etablissementParId(cr.etab)).some(function (s) { return M.semainesDe(m.semaine, etablissementParId(cr.etab)).indexOf(s) > -1; }); }).length > 0;
+          var motifs = M.motifsIndisponibilite(a.id, cand.aff, ctxCourant, cand.remplaceId).map(function (v) { return v.message; });
+          if (cours.etat === "exclu") motifs.push("cours marqué « exclu » pour cet élève");
+          if (!(e.heuresInd > 0) && !(e.heuresMut > 0)) motifs.push("aucune heure notifiée");
+          var autres = modalite === "individuel" ? affsActuelles(m).filter(function (x) { return x.aeshId !== a.id && x.modalite === "individuel"; }) : [];
+          var x = { m: m, e: e, cours: cours, modalite: modalite, restant: restant, motifs: motifs, deja: deja,
+            info: cand.remplaceId ? "rejoint un groupe mutualisé déjà accompagné par elle" : (autres.length ? "remplacera " + autres.map(function (y) { return nomAesh(aeshParId(y.aeshId)); }).join(", ") : "") };
+          if (!motifs.length && !deja) {
+            if (!vue) vue = donneesMoteur();
+            var ev = M.traduireIds(P.classerAesh(vue.donnees, M.traduireIds(cand.aff, vue.versCle), M.traduireIds(cand.remplaceId, vue.versCle), vue.versCle[a.id])[0], vue.versId);
+            if (ev && ev.possible) { x.score = ev.score; x.raisons = ev.raisons; }
+          }
+          lignes.push(x);
+        });
+      });
+    });
+    function rang(x) { return x.deja ? 2 : (x.motifs.length ? 1 : 0); }
+    return lignes.sort(function (p, q) {
+      return (rang(p) - rang(q)) || (q.restant - p.restant) || ((q.score == null ? -1e9 : q.score) - (p.score == null ? -1e9 : p.score)) || p.e.nomCourt.localeCompare(q.e.nomCourt, "fr");
+    });
+  }
+  function rendreQpa() {
+    var a = aeshParId(qpa.aeshId), cr = qpa.creneaux[qpa.choisi];
+    $("qpa-titre").textContent = "Qui peut-elle accompagner ? — " + nomAesh(a);
+    $("qpa-creneau").innerHTML = qpa.creneaux.map(function (c, i) {
+      return '<option value="' + i + '">' + ech(c.debut + "–" + c.fin + " · " + nomEtablissement(c.etab)) + '</option>';
+    }).join("");
+    $("qpa-creneau").value = String(qpa.choisi);
+    var ch = M.chargeAesh(a, ctxCourant);
+    $("qpa-sous-titre").textContent = "Quotité " + heures(ch.quotite) + " · charge " + heures(ch.moy) + " · élèves ayant cours à ce créneau dans ses établissements, triés par besoin restant.";
+    $("qpa-groupe").disabled = true;
+    if (!cr) { $("qpa-corps").innerHTML = '<p class="aide">Aucun cours ce jour-là dans ses établissements possibles.</p>'; return; }
+    var lignes = lignesQpa(a, cr);
+    qpa.lignes = lignes;
+    $("qpa-corps").innerHTML = lignes.length ? '<ul class="mc-aesh">' + lignes.map(function (x, i) {
+      var ok = !x.motifs.length && !x.deja;
+      return '<li class="' + (ok ? "" : "indispo") + '"><span>'
+        + (x.modalite === "mutualise" && !x.deja ? '<input type="checkbox" data-qpa-coche="' + i + '" aria-label="Choisir ' + ech(x.e.nomCourt) + ' pour une affectation mutualisée"> ' : "")
+        + '<strong>' + ech(x.e.nomCourt) + '</strong> <span class="aide">(' + ech(x.e.classe) + ' · ' + ech(x.cours.matiere) + (x.cours.groupe ? " · " + ech(x.cours.groupe) : "")
+        + (x.cours.semaine ? " · sem. " + ech(x.cours.semaine) : "") + ')</span> <span class="pastille-mod">' + LIB_MODALITE[x.modalite].toLowerCase() + '</span>'
+        + (x.score != null ? ' <span class="mc-score" title="Score du moteur">' + Math.round(x.score) + '</span>' : "")
+        + '<span class="mc-motif">' + (x.restant > 0 ? "reste " + heures(x.restant) + " à couvrir en " + LIB_MODALITE[x.modalite].toLowerCase() : "besoin déjà couvert en " + LIB_MODALITE[x.modalite].toLowerCase()) + '</span>'
+        + (x.deja ? '<span class="mc-motif">déjà accompagné(e) par elle sur ce créneau</span>' : "")
+        + (x.info ? '<span class="mc-motif">' + ech(x.info) + '</span>' : "")
+        + (x.raisons && x.raisons.length ? '<span class="mc-motif">' + x.raisons.map(ech).join(" · ") + '</span>' : "")
+        + (x.motifs.length ? '<span class="mc-motif">' + x.motifs.map(ech).join(" · ") + '</span>' : "") + '</span>'
+        + (x.deja ? "" : '<button type="button" class="btn ' + (ok ? "btn-plein" : "btn-danger") + '" data-qpa-affecter="' + i + '">' + (ok ? "Affecter" : "Affecter quand même") + '</button>') + '</li>';
+    }).join("") + '</ul>' : '<p class="aide">Aucun élève n\'a cours à ce créneau.</p>';
+    Array.prototype.forEach.call($("qpa-corps").querySelectorAll("[data-qpa-affecter]"), function (b) {
+      b.addEventListener("click", function () { affecterQpa([qpa.lignes[parseInt(this.dataset.qpaAffecter, 10)]]); });
+    });
+    Array.prototype.forEach.call($("qpa-corps").querySelectorAll("[data-qpa-coche]"), function (c) {
+      c.addEventListener("change", function () { $("qpa-groupe").disabled = !$("qpa-corps").querySelector("[data-qpa-coche]:checked"); });
+    });
+  }
+  // affecte l'AESH à un ou plusieurs élèves du même cours (mutualisé)
+  function affecterQpa(choisies) {
+    var a = aeshParId(qpa.aeshId), ops, aff, noms = choisies.map(function (x) { return x.e.nomCourt; });
+    if (choisies.length === 1) {
+      var r = operationsAffecter(a.id, choisies[0].m);
+      ops = r.ops; aff = r.aff;
+    } else {
+      var premier = choisies[0];
+      var incoherent = choisies.some(function (x) { return x.modalite !== "mutualise" || x.m.semaine !== premier.m.semaine || !M.memeCours(x.cours, premier.cours); });
+      if (incoherent) { ui.toast("Plusieurs élèves ne peuvent être affectés ensemble que s'ils suivent le même cours (classe, matière, groupe) en mutualisé."); return; }
+      var rejoindre = affARejoindre(a.id, premier.m);
+      aff = rejoindre ? JSON.parse(JSON.stringify(rejoindre))
+        : { id: nouvelId(), annee: anneeCourante(), version: 0, aeshId: a.id, creneau: creneauMenu(premier.m), modalite: "mutualise", eleves: [], raisons: [] };
+      choisies.forEach(function (x) { if (aff.eleves.indexOf(x.e.id) < 0) aff.eleves.push(x.e.id); });
+      aff.creneauCle = M.creneauCle(aff.creneau); aff.epinglee = true; aff.origine = "manuel";
+      ops = [{ magasin: "affectations", enregistrer: [avecAlertes(aff)] }];
+    }
+    var debut = aff.creneau.jour + " " + aff.creneau.debut;
+    fermerQpa();
+    enregistrerPuisRendre(ops, nomAesh(a) + " affectée à " + noms.join(", ") + " (" + debut + ", épinglée)" + (aff.alertes && aff.alertes.length ? " — attention : contrainte non respectée." : "."),
+      "l'affectation de " + nomAesh(a) + " à " + (noms.length > 1 ? pluriel(noms.length, "élève") : noms[0]) + " (" + debut + ")");
+  }
+  $("qpa-fermer").addEventListener("click", fermerQpa);
+  $("voile-qpa").addEventListener("click", function (ev) { if (ev.target === this) fermerQpa(); });
+  document.addEventListener("keydown", function (ev) { if (ev.key === "Escape" && qpa) fermerQpa(); });
+  $("qpa-jour").addEventListener("change", function () { if (!qpa) return; choisirJourQpa(this.value, null); rendreQpa(); });
+  $("qpa-creneau").addEventListener("change", function () { if (!qpa) return; qpa.choisi = parseInt(this.value, 10) || 0; rendreQpa(); });
+  $("qpa-groupe").addEventListener("click", function () {
+    if (!qpa) return;
+    var choisies = Array.prototype.map.call($("qpa-corps").querySelectorAll("[data-qpa-coche]:checked"), function (c) { return qpa.lignes[parseInt(c.dataset.qpaCoche, 10)]; });
+    if (choisies.length) affecterQpa(choisies);
+  });
+  $("ga-ajouter").addEventListener("click", function () { if (aeshOuverte) ouvrirQuiPeutElle(aeshOuverte, joursAesh(aeshParId(aeshOuverte), ctxCourant._affParAesh[aeshOuverte] || [])[0], null); });
 
   /* =============== menu d'un créneau (§7.1) =============== */
   var menu = null; // {eleve, cas, modalite, semaine}

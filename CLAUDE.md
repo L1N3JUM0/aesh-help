@@ -49,6 +49,14 @@ The script is a single IIFE at the bottom of `index.html`, organized into clearl
 - Vanilla ES5-style JS (`var`, `function`, no arrow functions/`let`/`const`, no modules) — match this style rather than introducing modern syntax.
 - User-facing text inserted into `innerHTML` should be escaped where it originates from free text fields (see the `.replace(/</g,"&lt;")` pattern used for the comment field) to avoid breaking the markup.
 
+## Branches (règle de travail)
+
+- **`main` est toujours publiable** : tout ce qui s'y trouve peut être poussé tel quel. Ne jamais y commiter de travail inachevé, ni de modification de l'application AESH.
+- **Tout travail sur `index.html` (application AESH en production) se fait sur la branche `aesh-v2`**, rebasée sur `main` au besoin (`git rebase main aesh-v2`). `aesh-v2` ne rejoint `main` qu'avec l'accord de l'utilisateur, quand un lot de la V2 est prêt à être publié. Les fichiers liés à l'application AESH (`rapprochement.js`, `outils/test-index-sans-module.js`, `outils/generer-sauvegardes-aesh.js`, `exemples/FICTIF_sauvegarde_aesh_*`) suivent la même règle.
+- Le travail sur l'espace PIAL (`pial/`), les outils et la documentation se fait sur `main`. Vérifier avant de pousser : `git diff --stat <dernier commit publié>..main -- index.html` doit être vide.
+- `service-worker.js` : `CACHE_VERSION` de `aesh-v2` doit rester supérieure à celle de `main` (la rebaser en conséquence).
+- Rien n'est poussé sans l'accord de l'utilisateur. Pousser un état précis : `git push origin <hash>:main`.
+
 ## Module Affectations (espace PIAL)
 
 La spécification fait foi : `docs/SPEC-affectations-PIAL.md`. Lire la section concernée avant toute modification de `/pial/`. Les règles de calcul vivent dans `pial/modele.js` (fonctions pures) et doivent rester couvertes par `pial/tests.html`. Les noms des données d'exemple (`exemples/`) sont fictifs. Ne jamais y mettre de données réelles.

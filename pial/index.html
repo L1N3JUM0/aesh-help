@@ -237,6 +237,39 @@ label.case input{width:auto}
 .bandeau-synthese .bs-sep{color:var(--seyes);margin:0 -10px}
 .bandeau-synthese .bs-manque{color:var(--sous)!important}
 .bandeau-synthese .bs-marge{color:var(--couvert)!important}
+/* ---------- onglet Répartition (§19) ---------- */
+.rep-notes p{margin:6px 0;font-size:13px;color:var(--gris)}
+.rep-disposition{display:grid;grid-template-columns:minmax(260px,340px) 1fr;gap:14px;align-items:start;margin-top:10px}
+@media (max-width:900px){.rep-disposition{grid-template-columns:1fr}}
+.rep-reservoir-carte{position:sticky;top:130px;max-height:calc(100vh - 150px);overflow:auto}
+.rep-carte{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px;border:1px solid var(--seyes);border-left:4px solid var(--gris-clair);border-radius:8px;padding:8px;margin:0 0 8px;background:#fff}
+.rep-carte.reste{border-left-color:var(--partiel)}.rep-carte.complete{border-left-color:var(--couvert)}.rep-carte.depasse{border-left-color:var(--sous)}
+.rep-carte-corps{flex:1;min-width:140px;font-size:13px}
+.rep-carte-chiffres{color:var(--gris);font-size:12px}
+.rep-carte.depasse .rep-reste{color:var(--sous);font-weight:700}
+.rep-carte-lignes{margin:4px 0 0;padding-left:16px;font-size:12px}
+.rep-poignee{cursor:grab;touch-action:none;user-select:none;color:var(--gris);font-size:18px;line-height:1;padding:2px 4px}
+.rep-colonnes{display:flex;gap:12px;align-items:flex-start;overflow-x:auto;padding-bottom:8px}
+.rep-colonne{flex:0 0 250px;background:#fff;border:1px solid var(--seyes);border-radius:var(--rayon);padding:10px}
+.rep-colonne.depot{outline:3px solid var(--sur);background:#EEF4FB}
+.rep-colonne header h3{margin:0;font-family:var(--serif);font-size:16px;color:var(--encre)}
+.rep-type{font-size:12px;color:var(--gris)}
+.rep-besoins{width:100%;border-collapse:collapse;margin:8px 0;font-size:13px}
+.rep-besoins th{text-align:left;font-weight:400;color:var(--gris);padding:2px 0}
+.rep-besoins td{text-align:right;font-variant-numeric:tabular-nums;padding:2px 0}
+.rep-brut{font-style:italic;color:var(--gris)}
+.rep-bilan{display:flex;justify-content:space-between;gap:6px;border-left:5px solid var(--gris-clair);padding:4px 8px;margin:6px 0;font-size:13px;background:#F6F7F9}
+.rep-bilan.e-bord-sous{border-left-color:var(--sous)}.rep-bilan.e-bord-partiel{border-left-color:var(--partiel)}.rep-bilan.e-bord-couvert{border-left-color:var(--couvert)}.rep-bilan.e-bord-sur{border-left-color:var(--sur)}
+.rep-depot{min-height:60px;border:1px dashed var(--seyes);border-radius:8px;padding:6px}
+.rep-chip{display:flex;align-items:center;gap:6px;padding:4px 6px;margin:0 0 4px;border:1px solid var(--seyes);border-radius:14px;background:#fff;font-size:13px;cursor:pointer}
+.rep-chip span:nth-child(2){flex:1}
+.rep-retirer{border:none;background:none;color:var(--gris);font-size:16px;cursor:pointer;line-height:1}
+.rep-ligne-saisie{display:flex;align-items:center;gap:8px;margin:6px 0}
+.rep-ligne-saisie label{flex:1;font-size:14px}
+.rep-ligne-saisie input{width:80px;text-align:right}
+.rep-total{margin:10px 0 4px;font-size:14px}
+.rep-alerte strong{font-size:20px}
+.rep-hors{color:var(--sous);font-weight:600}
 .bandeau-synthese .bs-actions{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .selecteur-semaine{display:inline-flex;border:1px solid var(--seyes);border-radius:8px;overflow:hidden}
 .selecteur-semaine button{border:none;background:#fff;padding:7px 12px;font:inherit;font-weight:600;color:var(--gris);cursor:pointer}
@@ -664,6 +697,7 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
   <button type="button" data-vue="vue-import" aria-current="true">Importer</button>
   <button type="button" data-vue="vue-eleves">Élèves</button>
   <button type="button" data-vue="vue-aesh">AESH</button>
+  <button type="button" data-vue="vue-repartition">Répartition</button>
   <button type="button" data-vue="vue-affectations">Affectations</button>
   <button type="button" data-vue="vue-rapports">Rapports</button>
   <button type="button" data-vue="vue-indicateurs">Indicateurs</button>
@@ -894,6 +928,19 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
         </div>
         <div id="pa-fiche"></div>
       </aside>
+    </div>
+  </section>
+
+  <section id="vue-repartition" class="masque">
+    <div class="bandeau-synthese" id="rep-synthese"></div>
+    <div class="rep-notes" id="rep-notes"></div>
+    <div class="rep-disposition">
+      <div class="carte rep-reservoir-carte">
+        <h2>AESH</h2>
+        <p class="chapeau">Glissez une AESH par sa poignée ⠿ sur une colonne, ou utilisez « Répartir… ». Les heures sont hebdomadaires (semaines A et B), par pas de 0,5 h ; le total d'une AESH ne dépasse pas sa quotité.</p>
+        <div id="rep-reservoir"></div>
+      </div>
+      <div class="rep-colonnes" id="rep-colonnes"></div>
     </div>
   </section>
 
@@ -1253,6 +1300,12 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
       <div class="actions"><button type="button" class="btn btn-vide" data-csv="charge-aesh">Exporter en CSV</button></div>
     </div>
 
+    <div class="carte carte-graphique" data-imp id="s2-rep-carte">
+      <div class="entete-graphique"><input type="checkbox" checked aria-label="Imprimer ce bloc"><h2>Répartition des AESH entre établissements (heures par semaine)</h2></div>
+      <p class="note-sous-graphique" id="s2-rep-note"></p>
+      <div id="s2-rep-tab"></div>
+    </div>
+
     <div class="grille-cartes">
       <div class="carte carte-graphique" data-imp>
         <div class="entete-graphique"><input type="checkbox" checked aria-label="Imprimer ce bloc"><h2>Nombre d'AESH par élève</h2></div>
@@ -1296,6 +1349,13 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
     </div>
 
     <div class="carte">
+      <h2>Dispositifs (ULIS)</h2>
+      <p class="chapeau">Un dispositif ULIS est une unité à part : un établissement et des horaires d'ouverture (9h-12h et 13h30-16h par défaut). Dans l'onglet Répartition, sa colonne a pour besoin ses heures d'ouverture par semaine. Les notifications de ses élèves, pour leurs inclusions, comptent dans la colonne de leur établissement.</p>
+      <div id="reg-dispositifs"></div>
+      <div class="actions"><button type="button" class="btn btn-vide" id="reg-dispositif-ajouter">Déclarer une ULIS</button></div>
+    </div>
+
+    <div class="carte">
       <h2>Classes</h2>
       <p class="chapeau">Les classes proposées quand vous créez un élève, par établissement, pour l'année en cours. Elles sont reprises des élèves et des emplois du temps importés ; vous pouvez en ajouter. Renommer une classe change la classe de tous ses élèves (leurs affectations et leurs emplois du temps sont conservés) ; une classe qui a des élèves ne se retire pas.</p>
       <div id="reg-classes"></div>
@@ -1306,6 +1366,8 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
       <div class="champ"><label class="case"><input type="checkbox" id="reg-duree-reelle"> Compter la durée réelle des cours</label>
         <p class="aide">Décoché (par défaut) : la durée d'un cours est arrondie à l'heure la plus proche, avec un minimum de 1 h (55 min = 1 h).</p></div>
       <div class="champ"><label class="case"><input type="checkbox" id="reg-indispos"> Respecter les indisponibilités et les établissements possibles des AESH</label></div>
+      <div class="champ"><label class="case"><input type="checkbox" id="reg-repartition"> Respecter la répartition des AESH entre établissements</label>
+        <p class="aide">Coché (par défaut) : si une répartition existe (onglet Répartition), une AESH qui a au moins une ligne ne dépasse pas les heures allouées à chaque établissement, dans la proposition comme dans les saisies (signalées sinon).</p></div>
       <div class="champ"><label class="case"><input type="checkbox" id="reg-periscolaire"> Gérer les temps périscolaires (récréations, pause méridienne)</label>
         <p class="aide">Décoché (par défaut) : les colonnes Récréation et Pause méridienne sont ignorées à l'import, et ces temps n'apparaissent ni dans les grilles, ni dans la proposition. Coché : chaque élève est accompagné ou non sur ces temps, selon son fichier ; cochez avant d'importer les élèves.</p></div>
       <div class="champ" style="max-width:260px"><label for="reg-pause">Pause repas minimale des AESH (minutes)</label><input type="number" id="reg-pause" min="0" max="120" step="5"></div>
@@ -1464,6 +1526,18 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
   </div>
 </div>
 
+<div class="voile" id="voile-repartition" hidden>
+  <div class="modale modale-large" role="dialog" aria-modal="true" aria-labelledby="rep-modale-titre">
+    <h3 id="rep-modale-titre">Répartir</h3>
+    <p class="aide">Heures par semaine consacrées à chaque établissement ou dispositif. Laissez vide ou mettez 0 pour retirer l'AESH d'une colonne.</p>
+    <div id="rep-modale-lignes"></div>
+    <p class="rep-total" id="rep-modale-total"></p>
+    <p class="note alerte" id="rep-modale-erreur" role="alert" hidden></p>
+    <div class="actions"><button type="button" class="btn btn-plein" id="rep-modale-valider">Enregistrer</button>
+      <button type="button" class="btn btn-vide" id="rep-modale-annuler">Annuler</button></div>
+  </div>
+</div>
+
 <div class="voile" id="voile-valider" hidden>
   <div class="modale" role="dialog" aria-modal="true" aria-labelledby="vv-titre">
     <h3 id="vv-titre">Valider la version</h3>
@@ -1593,6 +1667,7 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
 <script src="graphiques.js"></script>
 <script src="modele.js"></script>
 <script src="moteur.js"></script>
+<script src="repartition.js"></script>
 <script src="zip.js"></script>
 <script src="dossier.js"></script>
 <script src="stats-affectations.js"></script>
@@ -1602,6 +1677,7 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
 <script src="affectations.js"></script>
 <script src="profils.js"></script>
 <script src="saisie-rapide.js"></script>
+<script src="repartition-ui.js"></script>
 <script src="app.js"></script>
 <script src="stats-aff-ui.js"></script>
 <script>

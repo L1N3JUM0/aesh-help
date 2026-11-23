@@ -58,6 +58,7 @@ var PialModele = (function () {
   var REGLAGES_DEFAUT = {
     dureeReelle: false,          // §4.1 « Compter la durée réelle »
     respecterIndispos: true,     // §4.4 contrainte 7
+    respecterRepartition: true,  // §19 : heures allouées par établissement (contrainte dure si une répartition existe)
     gererPeriscolaire: false,    // §5.2 « Gérer les temps périscolaires »
     pauseRepasMin: 45,           // §4.4 contrainte 6, en minutes
     seuilJourneePause: 360,      // journée de plus de 6 h de présence
@@ -166,6 +167,12 @@ var PialModele = (function () {
       return c;
     });
     out.cours = (d.cours || []).map(function (co) { var c = copie(co); c.eleveId = id(co.eleveId); c.id = idCours(c); return c; });
+    // répartition des AESH (§19) : réglage « repartition » {aeshId: {établissement: heures}}
+    if (d.reglages && d.reglages.repartition) {
+      out.reglages = copie(d.reglages);
+      out.reglages.repartition = {};
+      Object.keys(d.reglages.repartition).forEach(function (k) { out.reglages.repartition[id(k)] = d.reglages.repartition[k]; });
+    }
     out.affectations = (d.affectations || []).map(function (a) {
       var c = copie(a); c.aeshId = id(a.aeshId); c.eleves = (a.eleves || []).map(id); c.id = idAffectationTraduit(a.id, vc);
       return c;
@@ -1016,6 +1023,22 @@ var PialModele = (function () {
         }
       });
 
+      // 5 bis. répartition entre établissements (§19) : seulement si une répartition existe pour cette AESH
+      var rep = ctx.reglages.repartition;
+      if (rep && possede(rep, aesh.id)) {
+        var alloc = rep[aesh.id][c.etab] || 0, nomEt = etabDe(ctx, c.etab).nom;
+        for (var si = 0, sems = ["A", "B"]; si < 2; si++) {
+          var s2 = sems[si];
+          if (dureeAffectation(aff, s2, ctx) <= 0) continue;
+          var cumul = dureeAffectation(aff, s2, ctx);
+          autres.forEach(function (a) { if (a.creneau.etab === c.etab) cumul += dureeAffectation(a, s2, ctx); });
+          if (cumul > alloc + EPS) {
+            out.push(violation("repartition", "Répartition dépassée à " + nomEt + " en semaine " + s2 + " (" + arrondi(cumul) + " h / " + arrondi(alloc) + " h allouées)."));
+            break;
+          }
+        }
+      }
+
       // 6. pause repas
       ["A", "B"].forEach(function (s) {
         if (semainesDe(c.semaine, ctx.etablissements[c.etab]).indexOf(s) < 0) return;
@@ -1060,7 +1083,7 @@ var PialModele = (function () {
      si l'AESH est disponible. */
   function motifsIndisponibilite(aeshId, candidat, ctx, remplaceId) {
     return violationsSimulees(aeshId, candidat, ctx, remplaceId).filter(function (v) {
-      return ["exclusion", "chevauchement", "deplacement", "quotite", "pause", "indisponibilite", "etablissement"].indexOf(v.code) > -1;
+      return ["exclusion", "chevauchement", "deplacement", "quotite", "pause", "indisponibilite", "etablissement", "repartition"].indexOf(v.code) > -1;
     });
   }
   // Toutes les violations de niveau « erreur » si l'AESH prenait ce

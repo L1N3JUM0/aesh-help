@@ -14,7 +14,7 @@
    ===================================================================== */
 var PialAffectations = (function () {
 
-  var M = PialModele, I = PialImport, P = PialMoteur;
+  var M = PialModele, I = PialImport, P = PialMoteur, R = PialRepartition.creer(PialModele);
   var ui = null; // {toast, confirmationForte, telecharger, vue}
 
   function $(id) { return document.getElementById(id); }
@@ -37,7 +37,9 @@ var PialAffectations = (function () {
     // archivés (§17) : etat.eleves, etat.aesh et etat.cours ne contiennent que les fiches actives (moteur, grilles, menus) ;
     // elevesTous, aeshTous et coursTous les gardent aussi (listes Élèves et AESH, collisions, import, annulation)
     elevesTous: [], aeshTous: [], coursTous: [],
-    classes: {}, classesParam: null // référentiel des classes enregistré (Réglages) : {annee: {etab: [classe]}} et sa ligne de paramètres
+    classes: {}, classesParam: null, // référentiel des classes enregistré (Réglages) : {annee: {etab: [classe]}} et sa ligne de paramètres
+    repartition: { annee: "", parAesh: {} }, repartitionParam: null, // répartition des AESH du brouillon (§19) et sa ligne de paramètres
+    dispositifs: [], dispositifsParam: null // dispositifs ULIS déclarés dans Réglages (§19)
   };
 
   function aujourdhui() {
@@ -73,6 +75,12 @@ var PialAffectations = (function () {
       // {signature, nbOrdres, ms, budget, date} : nombre d'ordres de la dernière proposition (§16)
       var prop = parNom.parametres.filter(function (p) { return p.cle === "proposition"; })[0];
       etat.proposition = (prop && prop.valeur) || null;
+      var rp = parNom.parametres.filter(function (p) { return p.cle === "repartition"; })[0];
+      etat.repartitionParam = rp || null;
+      etat.repartition = rp && rp.valeur && rp.valeur.annee === annee && rp.valeur.parAesh ? rp.valeur : R.vide(annee);
+      var dp = parNom.parametres.filter(function (p) { return p.cle === "dispositifs"; })[0];
+      etat.dispositifsParam = dp || null;
+      etat.dispositifs = (dp && dp.valeur) || [];
     });
   }
 
@@ -80,10 +88,26 @@ var PialAffectations = (function () {
     return { eleves: etat.eleves.length, aesh: etat.aesh.length, cours: etat.cours.length, affectations: etat.affectations.length };
   }
 
+  // réglages vus par les règles et le moteur : ceux de l'utilisateur, plus la répartition des AESH (§19) quand elle existe
+  // et que « Respecter la répartition » est coché ; une AESH sans aucune ligne n'est pas contrainte
+  function reglagesEffectifs() {
+    var r = {};
+    Object.keys(etat.reglages).forEach(function (k) { r[k] = etat.reglages[k]; });
+    if (M.contexte({ reglages: etat.reglages }).reglages.respecterRepartition) {
+      var rep = R.pourMoteur(R.nettoyer(etat.repartition, etat.aesh.map(function (a) { return a.id; }), null));
+      if (rep) r.repartition = rep;
+    }
+    return r;
+  }
+  // données pour l'onglet Répartition : fiches actives de l'année
+  function donneesRepartition() {
+    return { etablissements: etat.etablissements, eleves: etat.eleves, cours: etat.cours, aesh: etat.aesh, reglages: etat.reglages, dispositifs: etat.dispositifs };
+  }
+
   function contexte() {
     return M.contexte({
       etablissements: etat.etablissements, eleves: etat.eleves, aesh: etat.aesh,
-      cours: etat.cours, affectations: etat.affectations, reglages: etat.reglages
+      cours: etat.cours, affectations: etat.affectations, reglages: reglagesEffectifs()
     });
   }
   function etablissementParId(id) { return etat.etablissements.filter(function (e) { return e.id === id; })[0]; }
@@ -463,6 +487,7 @@ var PialAffectations = (function () {
     var r = M.contexte({ reglages: etat.reglages }).reglages;
     $("reg-duree-reelle").checked = !!r.dureeReelle;
     $("reg-indispos").checked = !!r.respecterIndispos;
+    $("reg-repartition").checked = !!r.respecterRepartition;
     $("reg-periscolaire").checked = !!r.gererPeriscolaire;
     $("reg-pause").value = r.pauseRepasMin;
     $("reg-ecart").value = r.ecartMax / 60;
@@ -480,6 +505,7 @@ var PialAffectations = (function () {
     Object.keys(etat.reglages).forEach(function (k) { valeur[k] = etat.reglages[k]; });
     valeur.dureeReelle = $("reg-duree-reelle").checked;
     valeur.respecterIndispos = $("reg-indispos").checked;
+    valeur.respecterRepartition = $("reg-repartition").checked;
     valeur.gererPeriscolaire = $("reg-periscolaire").checked;
     valeur.pauseRepasMin = pause;
     valeur.ecartMax = ecart;
@@ -575,6 +601,15 @@ var PialAffectations = (function () {
   function nouvelId() { compteurId++; return "m-" + Date.now().toString(36) + "-" + compteurId; }
 
   /* =============== bandeau de synthèse =============== */
+  // heures non réparties (§19) : en évidence dès qu'une répartition existe, car une AESH répartie ne peut pas les utiliser
+  function nonRepartiesHtml() {
+    if (R.estVide(etat.repartition)) return "";
+    var total = 0, n = 0;
+    etat.aesh.forEach(function (a) { var r = R.reste(etat.repartition, a); if (r > 0) { total += r; n++; } });
+    if (!n) return '<span class="bs-chiffre" title="Toutes les quotités sont réparties entre les établissements.">Répartition : <strong class="bs-marge">complète</strong></span>';
+    return '<span class="bs-chiffre rep-alerte" id="aff-non-reparties" title="Heures de quotité non réparties entre les établissements (onglet Répartition) : une AESH qui a une répartition ne peut pas les utiliser.">'
+      + '<strong class="bs-manque">' + heures(total) + '</strong> non réparties (' + pluriel(n, "AESH") + ')</span>';
+  }
   function rendreSynthese(alertes) {
     var s = M.synthese(ctxCourant);
     function ab(a, b) { return a !== b ? ' title="Semaine A : ' + heures(a) + ' · semaine B : ' + heures(b) + '"' : ""; }
@@ -589,6 +624,7 @@ var PialAffectations = (function () {
       '<span class="bs-chiffre" title="Heures notifiées (individuel + mutualisé) moins quotités totales. Théorique : une heure mutualisée peut couvrir plusieurs élèves, l\'écart réel est donc souvent plus faible.">'
         + 'Écart besoins − capacité : <strong class="' + (ecart > 0 ? "bs-manque" : "bs-marge") + '">' + (ecart > 0 ? "+" + heures(ecart) : (ecart < 0 ? "−" + heures(-ecart) : heures(0))) + '</strong>'
         + (ecart > 0 ? " (manque théorique)" : " (marge théorique)") + '</span>',
+      nonRepartiesHtml(),
       '<span class="bs-chiffre"><strong>' + s.elevesSous + '</strong> élève(s) sous-couvert(s)</span>',
       '<span class="bs-chiffre"><strong>' + s.aeshDepassement + '</strong> AESH en dépassement, <strong>' + s.aeshSous + '</strong> sous-utilisée(s)</span>',
       '<span class="bs-chiffre"><strong>' + alertes.length + '</strong> alerte(s)</span>'
@@ -627,7 +663,7 @@ var PialAffectations = (function () {
   // retour par M.traduireIds(…, vue.versId)
   function donneesMoteur(affectations) {
     return M.donneesParCles({ annee: anneeCourante(), etablissements: etat.etablissements, eleves: etat.eleves, aesh: etat.aesh, cours: etat.cours,
-      affectations: affectations || etat.affectations, reglages: etat.reglages });
+      affectations: affectations || etat.affectations, reglages: reglagesEffectifs() });
   }
   // relance partielle : les épinglées sont gardées, les autres remplacées.
   // Le moteur essaie plusieurs ordres de départage (spec §16), autant que le
@@ -1102,7 +1138,7 @@ var PialAffectations = (function () {
     var g = glisse, ctxSans = ctxCourant;
     if (g.source) {
       ctxSans = M.contexte({ etablissements: etat.etablissements, eleves: etat.eleves, aesh: etat.aesh, cours: etat.cours,
-        affectations: etat.affectations.filter(function (a) { return a.id !== g.source.id; }), reglages: etat.reglages });
+        affectations: etat.affectations.filter(function (a) { return a.id !== g.source.id; }), reglages: reglagesEffectifs() });
     }
     g.actif = true;
     g.verdicts = {};
@@ -2077,6 +2113,8 @@ var PialAffectations = (function () {
       compteurs: { affectations: etat.affectations.length, eleves: etat.eleves.length, aesh: etat.aesh.length, conflits: conflits,
         indCouvert: s.indCouvert, indDemande: s.indDemande, mutCouvert: s.mutCouvert, mutDemande: s.mutDemande, elevesSous: s.elevesSous },
       libelles: libelles };
+    // répartition des AESH au moment de la validation (§19)
+    if (!R.estVide(etat.repartition)) v.repartition = JSON.parse(JSON.stringify(etat.repartition));
     // nombre d'ordres de départage de la proposition d'origine (§16), pour la rejouer
     if (etat.proposition) v.proposition = { nbOrdres: etat.proposition.nbOrdres, ms: etat.proposition.ms, budget: etat.proposition.budget, date: etat.proposition.date };
     var copies = etat.affectations.map(function (a) {
@@ -2274,7 +2312,9 @@ var PialAffectations = (function () {
       "Restaurer", function () {
         fermerHistorique();
         dernierRapport = null;
-        enregistrerPuisRendre([{ magasin: "affectations", supprimer: etat.affectations.map(function (a) { return a.id; }), enregistrer: restaurees }],
+        var vr = versionParNumero(numero);
+        enregistrerPuisRendre([{ magasin: "affectations", supprimer: etat.affectations.map(function (a) { return a.id; }), enregistrer: restaurees },
+          { magasin: "parametres", enregistrer: [{ cle: "repartition", valeur: vr && vr.repartition ? vr.repartition : R.vide(anneeCourante()) }] }],
           "Version n° " + numero + " restaurée comme brouillon.", "la restauration de la version n° " + numero);
       });
   }
@@ -2300,7 +2340,7 @@ var PialAffectations = (function () {
   }
   document.addEventListener("keydown", function (ev) {
     if (!(ev.ctrlKey || ev.metaKey) || ev.shiftKey || ev.altKey || (ev.key !== "z" && ev.key !== "Z")) return;
-    if (!["vue-affectations", "vue-eleves", "vue-aesh"].some(ongletVisible) || /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || "")) return;
+    if (!["vue-affectations", "vue-repartition", "vue-eleves", "vue-aesh"].some(ongletVisible) || /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || "")) return;
     ev.preventDefault();
     annuler();
   });
@@ -2313,7 +2353,7 @@ var PialAffectations = (function () {
   function enregistrerPuisRendre(ops, message, libelleAnnulation, cleFusion) {
     var haut = pileAnnulation[pileAnnulation.length - 1];
     if (libelleAnnulation && !(cleFusion && haut && haut.fusion === cleFusion)) {
-      pileAnnulation.push({ libelle: libelleAnnulation, fusion: cleFusion || "", ops: M.operationsInverses(ops, { affectations: etat.affectations, cours: etat.coursTous, eleves: etat.elevesTous, aesh: etat.aeshTous, parametres: etat.classesParam ? [etat.classesParam] : [] }) });
+      pileAnnulation.push({ libelle: libelleAnnulation, fusion: cleFusion || "", ops: M.operationsInverses(ops, { affectations: etat.affectations, cours: etat.coursTous, eleves: etat.elevesTous, aesh: etat.aeshTous, parametres: [etat.classesParam, etat.repartitionParam, etat.dispositifsParam].filter(Boolean) }) });
       if (pileAnnulation.length > MAX_ANNULATION) pileAnnulation.shift();
     }
     return PialDB.appliquer(ops).then(recharger).then(function () {
@@ -2331,7 +2371,7 @@ var PialAffectations = (function () {
   // sansIds : affectations qui vont disparaître dans la même action
   function avecAlertes(aff, sansIds) {
     var ctx = M.contexte({ etablissements: etat.etablissements, eleves: etat.eleves, aesh: etat.aesh, cours: etat.cours,
-      affectations: etat.affectations.filter(function (a) { return a.id !== aff.id && (sansIds || []).indexOf(a.id) < 0; }).concat([aff]), reglages: etat.reglages });
+      affectations: etat.affectations.filter(function (a) { return a.id !== aff.id && (sansIds || []).indexOf(a.id) < 0; }).concat([aff]), reglages: reglagesEffectifs() });
     aff.alertes = M.verifierAffectation(aff, ctx).map(function (v) { return v.message; });
     return aff;
   }
@@ -2476,6 +2516,8 @@ var PialAffectations = (function () {
     enregistrerPuisRendre: enregistrerPuisRendre, annuler: annuler, viderAnnulation: viderAnnulation,
     libelleAnnulation: function () { return pileAnnulation.length ? pileAnnulation[pileAnnulation.length - 1].libelle : ""; },
     surRendu: function (fn) { abonnesRendu.push(fn); },
+    R: R, donneesRepartition: donneesRepartition, reglagesEffectifs: reglagesEffectifs, recalculer: recalculer,
+    rendreSynthese: function () { rendreAffectations(); },
     calculerImport: calculerImport, rendreApercuDans: rendreApercuDans, appliquerCollage: appliquerCollage,
     ui: function () { return ui; },
     // ouvre la grille dans l'onglet Affectations

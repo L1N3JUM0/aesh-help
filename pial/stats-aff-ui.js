@@ -37,8 +37,10 @@ var PialStatsUI = (function () {
       var p = {};
       PialDB.MAGASINS_AFFECTATIONS.forEach(function (nom, i) { p[nom] = r[i] || []; });
       var reg = (p.parametres || []).filter(function (x) { return x.cle === "reglages"; })[0];
+      var rp = (p.parametres || []).filter(function (x) { return x.cle === "repartition"; })[0];
+      var dp = (p.parametres || []).filter(function (x) { return x.cle === "dispositifs"; })[0];
       brut = { etablissements: p.etablissements, eleves: p.eleves, aesh: p.aesh, cours: p.cours, affectations: p.affectations,
-        versions: p.versions || [], reglages: (reg && reg.valeur) || {} };
+        versions: p.versions || [], reglages: (reg && reg.valeur) || {}, repartition: rp && rp.valeur || null, dispositifs: dp && dp.valeur || [] };
     });
   }
 
@@ -163,11 +165,34 @@ var PialStatsUI = (function () {
     $("s2-prio").textContent = r.prioritaires.total
       ? fr(r.prioritaires.heures) + " h sur " + fr(r.prioritaires.total) + " h d'accompagnement (" + pct(r.prioritaires.part) + ") recouvrent un cours marqué « prioritaire »."
       : "Aucune heure d'accompagnement dans la sélection.";
+    rendreRepartition(annee, cle);
     $("s2-peri-carte").hidden = !r.periscolaire.active;
     $("s2-peri").textContent = r.periscolaire.active ? "Récréation : " + fr(r.periscolaire.recreation) + " h · Pause méridienne : " + fr(r.periscolaire.meridienne) + " h (durées réelles)." : "";
     $("s2-evolution").innerHTML = PialGraphiques.barresVerticales(courant.evo.filter(function (e) { return e.taux != null; }).map(function (e) { return { libelle: e.libelle, valeur: Math.round(e.taux) }; }), { texteVide: "Pas encore de version à comparer.", largeur: 560 });
     $("s2-evolution-tab").innerHTML = tableau(["Version", "Notifiées", "Couvertes", "Non couvertes", "Taux"], courant.evo.map(function (e) {
       return [ech(e.libelle), fr(e.notifie) + " h", fr(e.couvert) + " h", fr(e.nonCouvert) + " h", pct(e.taux)];
+    }));
+  }
+
+  /* ---------- répartition des AESH (§19) ---------- */
+  // répartition de la version choisie ; pour le brouillon, celle de l'année en cours. Les besoins se calculent sur les fiches actuelles.
+  function rendreRepartition(annee, cle) {
+    var RP = PialRepartition.creer(PialModele), M = PialModele, rep = null;
+    if (cle === "brouillon") rep = brut.repartition && brut.repartition.annee === annee ? brut.repartition : null;
+    else rep = (versionsDe(annee).filter(function (v) { return String(v.numero) === String(cle); })[0] || {}).repartition || null;
+    var d = M.donneesActives({ etablissements: brut.etablissements, eleves: brut.eleves.filter(function (e) { return e.annee === annee; }),
+      cours: brut.cours.filter(function (c) { return c.annee === annee; }), aesh: brut.aesh, reglages: brut.reglages, affectations: [] });
+    d.dispositifs = brut.dispositifs || [];
+    if (!rep || RP.estVide(rep)) {
+      $("s2-rep-note").textContent = "Aucune répartition enregistrée pour cette sélection (onglet Répartition).";
+      $("s2-rep-tab").innerHTML = "";
+      return;
+    }
+    var tab = RP.tableau(d, rep), t = tab.totaux;
+    var LIB = { sous: "Manque", partiel: "Presque couvert", couvert: "Couvert", sur: "En trop" };
+    $("s2-rep-note").textContent = "Besoin " + fr(t.besoin) + " h · allouées " + fr(t.alloue) + " h · non réparties " + fr(t.nonReparties) + " h (quotités : " + fr(t.quotites) + " h). Besoin calculé sur les fiches actuelles : individuel + mutualisé estimé (brut sans emploi du temps) + périscolaire ; ULIS : heures d'ouverture.";
+    $("s2-rep-tab").innerHTML = tableau(["Établissement ou dispositif", "Besoin", "Allouées", "Écart", "État"], tab.unites.map(function (u) {
+      return [ech((u.type === "ulis" ? "ULIS " : "") + u.nom), fr(u.besoin) + " h", fr(u.alloue) + " h", (u.ecart > 0 ? "+" : "") + fr(u.ecart) + " h", LIB[u.etat]];
     }));
   }
 

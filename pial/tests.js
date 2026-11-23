@@ -2085,6 +2085,220 @@ var PialTests = (function () {
     });
   }
 
+  /* =============== répartition des AESH (spec §19) =============== */
+  function testsRepartition(t, RP, M, P, env) {
+    var R = RP.creer(M), AN = "2026-2027";
+    // jeu minimal : établissements, élèves et cours à la demande
+    function jeu() {
+      var etabs = [], eleves = [], cours = [], n = 0;
+      return {
+        etab: function (nom, extra) {
+          var e = M.etablissementParDefaut(nom);
+          Object.keys(extra || {}).forEach(function (k) { e[k] = extra[k]; });
+          etabs.push(e);
+          return e;
+        },
+        eleve: function (e, prenom, classe, ind, mut, extra) {
+          var court = M.nomCourt(prenom, "Test"), cle = M.cleEleve(court, classe, e.nom);
+          var x = { id: "el-" + prenom.toLowerCase(), cle: cle, annee: AN, nomCourt: court, classe: classe, etablissement: e.id,
+            heuresInd: ind || 0, heuresMut: mut || 0, recreation: false, meridienne: false, besoins: [] };
+          Object.keys(extra || {}).forEach(function (k) { x[k] = extra[k]; });
+          eleves.push(x);
+          return x;
+        },
+        cours: function (el, jour, debut, matiere) {
+          n++;
+          cours.push({ id: "c" + String(n).padStart(3, "0"), eleveId: el.id, etablissement: el.etablissement, classe: el.classe, jour: jour, debut: debut,
+            fin: debut.replace(":00", ":55"), matiere: matiere || "Français", semaine: "", groupe: "", etat: "normal" });
+        },
+        donnees: function (extra) {
+          var d = { annee: AN, etablissements: etabs, eleves: eleves, cours: cours, aesh: [], dispositifs: [], reglages: {} };
+          Object.keys(extra || {}).forEach(function (k) { d[k] = extra[k]; });
+          return d;
+        }
+      };
+    }
+    function unite(tab, id) { return tab.unites.filter(function (u) { return u.id === id; })[0]; }
+
+    t("répartition : horaires d'ouverture d'un dispositif ULIS (9h-12h et 13h30-16h par défaut)", function () {
+      var d = R.nouveauDispositif("di-1", "ULIS Test", "college-x");
+      egal(d.jours, ["lundi", "mardi", "jeudi", "vendredi"]);
+      proche(R.heuresOuverture(d), 22, "4 jours × (3 h + 2,5 h)");
+      d.jours = ["lundi"]; d.apresmidi = null;
+      proche(R.heuresOuverture(d), 3);
+      egal(R.erreurDispositif(d), "");
+      d.jours = [];
+      vrai(R.erreurDispositif(d) !== "", "au moins un jour");
+      d.jours = ["lundi"]; d.matin = { debut: "12:00", fin: "09:00" };
+      vrai(R.erreurDispositif(d) !== "", "plage inversée refusée");
+      vrai(R.erreurDispositif({ nom: " ", etab: "x", jours: ["lundi"], matin: { debut: "09:00", fin: "10:00" } }) !== "", "nom obligatoire");
+    });
+    t("répartition : heures par pas de 0,5 h, total borné par la quotité, annulation sans effet de bord", function () {
+      var a = { id: "ae-1", quotite: 24 };
+      proche(R.normaliserHeures("12,3"), 12.5);
+      proche(R.normaliserHeures("12"), 12);
+      vrai(isNaN(R.normaliserHeures("abc")) && isNaN(R.normaliserHeures("-2")), "valeurs invalides");
+      var r0 = R.vide(AN), r1 = R.fixer(r0, "ae-1", "college", 12), r2 = R.fixer(r1, "ae-1", "ecole", 12);
+      egal(r0.parAesh, {}, "la répartition d'origine n'est pas modifiée");
+      proche(R.alloue(r2, "ae-1"), 24);
+      proche(R.reste(r2, a), 0);
+      proche(R.reste(r1, a), 12);
+      vrai(R.erreurSaisie(r2, a, "college", 13) !== "", "13 h au collège dépasse 24 h avec 12 h à l'école");
+      egal(R.erreurSaisie(r2, a, "college", 12), "", "redire la même valeur est permis");
+      egal(R.erreurSaisie(r1, a, "ecole", 12), "");
+      egal(R.fixer(r2, "ae-1", "college", 0).parAesh, { "ae-1": { ecole: 12 } });
+      egal(R.fixer(R.fixer(r1, "ae-1", "college", 0), "ae-1", "college", 0).parAesh, {}, "plus aucune ligne : l'AESH disparaît");
+      egal(R.enDepassement(r2, [{ id: "ae-1", quotite: 20 }]).length, 1, "quotité réduite après coup");
+    });
+    t("répartition : nettoyage et forme transmise au moteur", function () {
+      var r = R.fixer(R.fixer(R.fixer(R.vide(AN), "ae-1", "college", 10), "ae-1", "ulis:di-1", 5), "ae-2", "ulis:di-1", 4);
+      egal(R.pourMoteur(R.vide(AN)), null, "sans répartition, rien n'est transmis");
+      egal(R.pourMoteur(r), { "ae-1": { college: 10 }, "ae-2": {} }, "l'AESH de l'ULIS seule n'intervient dans aucun établissement");
+      egal(R.nettoyer(r, ["ae-1"], null).parAesh, { "ae-1": { college: 10, "ulis:di-1": 5 } }, "AESH absente retirée");
+      egal(R.nettoyer(r, ["ae-1", "ae-2"], ["college"]).parAesh, { "ae-1": { college: 10 } }, "unité disparue retirée");
+    });
+    t("répartition : besoin individuel et mutualisé (brut et estimé après regroupement d'une classe)", function () {
+      var j = jeu(), e = j.etab("Collège Test"), l = j.eleve(e, "Lola", "5A", 0, 2), m = j.eleve(e, "Mehdi", "5A", 0, 2), n = j.eleve(e, "Nina", "5A", 0, 2);
+      var i = j.eleve(e, "Ines", "6B", 3, 0);
+      [l, m, n].forEach(function (x) { ["08:00", "09:00", "10:00"].forEach(function (h) { j.cours(x, "lundi", h); }); });
+      var tab = R.tableau(j.donnees(), R.vide(AN)), u = unite(tab, e.id);
+      proche(u.ind, 3);
+      proche(u.mutBrut, 6, "2 h × 3 élèves");
+      proche(u.mutEstime, 2, "tous les cours sont communs : 2 h suffisent");
+      proche(u.mutMin, 2);
+      vrai(u.estimation, "emplois du temps présents");
+      proche(u.besoin, 5, "3 + 2");
+    });
+    t("répartition : estimation intermédiaire quand les cours ne sont qu'en partie communs", function () {
+      var j = jeu(), e = j.etab("Collège Test"), a = j.eleve(e, "Axel", "5A", 0, 2), b = j.eleve(e, "Brune", "5A", 0, 2);
+      ["08:00", "09:00", "10:00"].forEach(function (h) { j.cours(a, "lundi", h); });
+      j.cours(a, "mardi", "08:00", "Maths");
+      ["10:00", "11:00", "13:00"].forEach(function (h) { j.cours(b, "lundi", h); });
+      // communs : lundi 10:00 (couvre les deux), puis une heure chacun
+      var u = unite(R.tableau(j.donnees(), R.vide(AN)), e.id);
+      proche(u.mutEstime, 3);
+      proche(u.mutBrut, 4);
+      proche(u.mutMin, 2);
+    });
+    t("répartition : sans emploi du temps pour tous les élèves, l'état se calcule sur le brut", function () {
+      var j = jeu(), e = j.etab("Collège Test"), a = j.eleve(e, "Axel", "5A", 1, 2), b = j.eleve(e, "Brune", "5A", 0, 2);
+      j.cours(a, "lundi", "08:00"); j.cours(a, "lundi", "09:00");
+      var u = unite(R.tableau(j.donnees(), R.vide(AN)), e.id);
+      vrai(!u.estimation, "Brune n'a aucun cours");
+      proche(u.besoin, 1 + 4, "individuel + mutualisé brut");
+    });
+    t("répartition : le périscolaire compte une fois par établissement, seulement s'il est géré", function () {
+      var j = jeu(), e = j.etab("Collège Test", { recreations: [{ debut: "10:00", fin: "10:15" }] });
+      var a = j.eleve(e, "Axel", "5A", 0, 0, { recreation: true }), b = j.eleve(e, "Brune", "6B", 0, 0, { recreation: true });
+      j.cours(a, "lundi", "08:00"); j.cours(b, "lundi", "08:00");
+      proche(unite(R.tableau(j.donnees(), R.vide(AN)), e.id).peri, 0, "réglage décoché");
+      proche(unite(R.tableau(j.donnees({ reglages: { gererPeriscolaire: true } }), R.vide(AN)), e.id).peri, 0.25, "une récréation de 15 min, une seule fois");
+    });
+    t("répartition : colonne, écart, état coloré, heures non réparties, colonne ULIS", function () {
+      var j = jeu(), e = j.etab("Collège Test"), a = j.eleve(e, "Axel", "5A", 4, 0);
+      j.cours(a, "lundi", "08:00");
+      var uli = R.nouveauDispositif("di-1", "ULIS Test", e.id);
+      var aesh = [{ id: "ae-1", nom: "A", prenom: "A", quotite: 24 }, { id: "ae-2", nom: "B", prenom: "B", quotite: 10 }];
+      var rep = R.fixer(R.fixer(R.fixer(R.vide(AN), "ae-1", e.id, 3), "ae-1", "ulis:di-1", 10), "ae-2", "ghost", 2);
+      var tab = R.tableau(j.donnees({ aesh: aesh, dispositifs: [uli] }), rep), c = unite(tab, e.id), u = unite(tab, "ulis:di-1");
+      proche(c.alloue, 3); proche(c.ecart, -1); egal(c.etat, "sous", "il manque 1 h");
+      proche(u.besoin, 22, "heures d'ouverture"); proche(u.alloue, 10); egal(u.etat, "sous");
+      proche(tab.totaux.nonReparties, 11 + 8, "24 − 13, et 10 − 2 : les heures d une unité disparue restent comptées comme réparties, et sont signalées");
+      egal(tab.totaux.orphelines, 1);
+      var plein = R.tableau(j.donnees({ aesh: aesh }), R.fixer(R.vide(AN), "ae-1", e.id, 4));
+      egal(unite(plein, e.id).etat, "couvert");
+      egal(unite(R.tableau(j.donnees({ aesh: aesh }), R.fixer(R.vide(AN), "ae-1", e.id, 4.5)), e.id).etat, "sur");
+      egal(unite(R.tableau(j.donnees({ aesh: aesh }), R.fixer(R.vide(AN), "ae-1", e.id, 3.5)), e.id).etat, "partiel");
+      egal(R.tableau(j.donnees({ aesh: aesh }), R.fixer(R.vide(AN), "ae-2", e.id, 11)).totaux.aeshEnDepassement, 1);
+    });
+    t("répartition : une saisie qui dépasse les heures allouées est signalée (code « repartition »)", function () {
+      var j = jeu(), A = j.etab("Collège Alpha"), B = j.etab("Collège Bêta"), ea = j.eleve(A, "Axel", "5A", 4, 0), eb = j.eleve(B, "Brune", "5A", 4, 0);
+      ["08:00", "09:00", "10:00"].forEach(function (h) { j.cours(ea, "lundi", h); j.cours(eb, "mardi", h); });
+      var aesh = [{ id: "ae-1", nom: "A", prenom: "A", quotite: 24, etablissements: [], indisponibilites: [] }, { id: "ae-2", nom: "B", prenom: "B", quotite: 24, etablissements: [], indisponibilites: [] }];
+      function ctx(affs, rep, reglages) {
+        var r = { gererPeriscolaire: false }; Object.keys(reglages || {}).forEach(function (k) { r[k] = reglages[k]; });
+        if (rep) r.repartition = rep;
+        return M.contexte({ etablissements: [A, B], eleves: [ea, eb], aesh: aesh, cours: j.donnees().cours, affectations: affs, reglages: r });
+      }
+      function af(id, aeshId, etab, debut, eleve) {
+        return { id: id, version: 0, aeshId: aeshId, creneau: { etab: etab.id, jour: etab === A ? "lundi" : "mardi", debut: debut, fin: debut.replace(":00", ":55"), semaine: "toutes" },
+          modalite: "individuel", eleves: [eleve.id], epinglee: true, origine: "manuel" };
+      }
+      function codes(affs, rep, cible, reglages) {
+        var c = ctx(affs, rep, reglages);
+        return M.verifierAffectation(cible, c).map(function (v) { return v.code; });
+      }
+      var a1 = af("x1", "ae-1", A, "08:00", ea), a2 = af("x2", "ae-1", A, "09:00", ea), b1 = af("x3", "ae-1", B, "08:00", eb), autre = af("x4", "ae-2", A, "08:00", ea);
+      var rep = { "ae-1": {} }; rep["ae-1"][A.id] = 1;
+      egal(codes([a1], rep, a1), [], "1 h allouée, 1 h faite");
+      egal(codes([a1, a2], rep, a2), ["repartition"], "2 h pour 1 h allouée");
+      egal(codes([a1, b1], rep, b1), ["repartition"], "établissement sans heures allouées");
+      egal(codes([autre], rep, autre), [], "une AESH sans ligne n'est pas contrainte");
+      egal(codes([a1, a2], null, a2), [], "sans répartition : comportement inchangé");
+      egal(M.motifsIndisponibilite("ae-1", { creneau: a2.creneau, modalite: "individuel", eleves: [ea.id] }, ctx([a1], rep), null).map(function (v) { return v.code; }), ["repartition"], "motif dans le menu");
+      vrai(M.contexte({ reglages: {} }).reglages.respecterRepartition === true, "réglage actif par défaut");
+    });
+    t("répartition : les clés de la répartition suivent la traduction identifiant → clé du moteur", function () {
+      var j = jeu(), e = j.etab("Collège Test"), x = j.eleve(e, "Axel", "5A", 1, 0);
+      var aesh = [{ id: "ae-1", cle: "dupont|jean", nom: "Dupont", prenom: "Jean", quotite: 10 }];
+      var vue = M.donneesParCles({ annee: AN, etablissements: [e], eleves: [x], aesh: aesh, cours: [], affectations: [], reglages: { repartition: { "ae-1": { a: 2 } }, budgetOrdres: 2 } });
+      egal(vue.donnees.reglages.repartition, { "dupont|jean": { a: 2 } });
+      egal(vue.donnees.reglages.budgetOrdres, 2, "les autres réglages sont conservés");
+    });
+    if (!P) return;
+    t("répartition : le moteur ne dépasse jamais les heures allouées, et sans répartition rien ne change", function () {
+      var j = jeu(), A = j.etab("Collège Alpha"), B = j.etab("Collège Bêta"), ea = j.eleve(A, "Axel", "5A", 3, 0), eb = j.eleve(B, "Brune", "5A", 3, 0);
+      ["08:00", "09:00", "10:00"].forEach(function (h) { j.cours(ea, "lundi", h); j.cours(eb, "mardi", h); });
+      var aesh = [{ id: "ae-1", nom: "A", prenom: "A", quotite: 10, etablissements: [], indisponibilites: [] }];
+      function rp(e1, h1, e2, h2) { var o = { "ae-1": {} }; o["ae-1"][e1.id] = h1; if (h2) o["ae-1"][e2.id] = h2; return o; }
+      function dans(res, etab) { return res.affectations.filter(function (a) { return a.creneau.etab === etab.id; }).length; }
+      var libre = P.proposer(j.donnees({ aesh: aesh, reglages: { gererPeriscolaire: false } }));
+      egal([dans(libre, A), dans(libre, B)], [3, 3], "sans répartition : tout est couvert");
+      var vide = P.proposer(j.donnees({ aesh: aesh, reglages: { gererPeriscolaire: false, repartition: undefined } }));
+      egal(vide.affectations.map(function (a) { return a.id; }), libre.affectations.map(function (a) { return a.id; }), "même résultat");
+      var d = j.donnees({ aesh: aesh, reglages: { gererPeriscolaire: false, repartition: rp(A, 2, B, 1) } });
+      var res = P.proposer(d);
+      egal([dans(res, A), dans(res, B)], [2, 1], "2 h chez Alpha, 1 h chez Bêta");
+      egal(violationsMoteur(M, d, res), []);
+      var seulA = P.proposer(j.donnees({ aesh: aesh, reglages: { gererPeriscolaire: false, repartition: rp(A, 10, B, 0) } }));
+      egal([dans(seulA, A), dans(seulA, B)], [3, 0], "aucune heure allouée chez Bêta : personne n'y va");
+      vrai(P.signatureDonnees(d) !== P.signatureDonnees(j.donnees({ aesh: aesh, reglages: { gererPeriscolaire: false, repartition: rp(A, 1, B, 2) } })),
+        "la signature change avec la répartition : une proposition mémorisée n'est pas rejouée à tort");
+    });
+    t("répartition : sur le jeu d'exemple, la proposition respecte une répartition serrée (échanges compris)", function () {
+      if (!env.importFichiers) throw new Ignore("import indisponible");
+      return chargerExemples(env).then(function (d) {
+        var libre = P.proposer(d), ctx = M.contexte(avecAffectations(d, libre.affectations)), rep = {};
+        d.aesh.forEach(function (a) {
+          // heures réelles par établissement, en semaines A et B
+          var h = {};
+          libre.affectations.filter(function (x) { return x.aeshId === a.id; }).forEach(function (x) {
+            h[x.creneau.etab] = h[x.creneau.etab] || { A: 0, B: 0 };
+            h[x.creneau.etab].A += M.dureeAffectation(x, "A", ctx); h[x.creneau.etab].B += M.dureeAffectation(x, "B", ctx);
+          });
+          Object.keys(h).forEach(function (e) {
+            rep[a.id] = rep[a.id] || {};
+            rep[a.id][e] = Math.floor(Math.max(h[e].A, h[e].B) * 0.6 * 2) / 2;
+          });
+        });
+        var contraint = JSON.parse(JSON.stringify(d));
+        contraint.reglages = Object.assign({}, d.reglages, { repartition: rep });
+        var vue = M.donneesParCles(contraint), res = M.traduireIds(P.proposer(vue.donnees), vue.versId);
+        egal(violationsMoteur(M, contraint, res), [], "aucune contrainte enfreinte, répartition comprise");
+        var c2 = M.contexte(avecAffectations(contraint, res.affectations)), depassements = [];
+        res.affectations.forEach(function (x) {
+          ["A", "B"].forEach(function (s) {
+            var cumul = 0;
+            res.affectations.forEach(function (y) { if (y.aeshId === x.aeshId && y.creneau.etab === x.creneau.etab) cumul += M.dureeAffectation(y, s, c2); });
+            if (cumul > ((rep[x.aeshId] || {})[x.creneau.etab] || 0) + 1e-9) depassements.push(x.aeshId + " " + x.creneau.etab + " " + s);
+          });
+        });
+        egal(depassements, []);
+        vrai(res.affectations.length > 0 && res.affectations.length <= libre.affectations.length, "une proposition existe, au plus aussi fournie que la libre");
+      });
+    });
+  }
+
   /* =============== exécution =============== */
   function executer(env) {
     var tests = [];
@@ -2099,6 +2313,7 @@ var PialTests = (function () {
     groupeCourant = "protection"; testsProtection(t, env.modele, env.chiffrement);
     if (env.dossier) { groupeCourant = "dossier"; testsDossier(t, env.dossier, env.zip); }
     if (env.statsAff) { groupeCourant = "statistiques"; testsStatsAffectations(t, env.statsAff, env.modele); }
+    if (env.repartition) { groupeCourant = "répartition"; testsRepartition(t, env.repartition, env.modele, env.moteur, env); }
     if (env.rapprochement) { groupeCourant = "rapprochement"; testsRapprochement(t, env.modele, env.rapprochement); }
     var bilan = { reussis: 0, echecs: [], ignores: 0, lignes: [] };
     return tests.reduce(function (p, test) {

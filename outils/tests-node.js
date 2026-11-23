@@ -25,6 +25,7 @@ var env = {
   zip: charger("pial/zip.js"),
   importFichiers: charger("pial/import-fichiers.js"),
   moteur: charger("pial/moteur.js"),
+  repartition: charger("pial/repartition.js"),
   chiffrement: charger("pial/chiffrement.js"),
   rapprochement: charger("rapprochement.js"),
   dossier: charger("pial/dossier.js"),

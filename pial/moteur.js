@@ -82,9 +82,9 @@ var PialMoteur = (function () {
   }
 
   // motifs d'écartement d'une AESH, dans l'ordre où ils sont testés
-  var ORDRE_MOTIFS = ["exclusion", "etablissement", "indisponibilite", "quotite", "chevauchement", "deplacement", "pause"];
+  var ORDRE_MOTIFS = ["exclusion", "etablissement", "repartition", "indisponibilite", "quotite", "chevauchement", "deplacement", "pause"];
   var LIBELLE_ECARTEE = {
-    exclusion: "élève à ne pas lui affecter", etablissement: "autre établissement", indisponibilite: "indisponible", quotite: "quotité",
+    exclusion: "élève à ne pas lui affecter", etablissement: "autre établissement", repartition: "répartition épuisée", indisponibilite: "indisponible", quotite: "quotité",
     chevauchement: "déjà occupée", deplacement: "déplacement", pause: "pause repas"
   };
   // motif d'une heure non couverte (rapport de fin, §5.3.7)
@@ -94,6 +94,7 @@ var PialMoteur = (function () {
     chevauchement: "AESH déjà occupées sur ces créneaux",
     indisponibilite: "AESH indisponibles sur ces créneaux",
     etablissement: "aucune AESH n'intervient dans l'établissement",
+    repartition: "heures allouées à l'établissement épuisées (répartition)",
     deplacement: "déplacement impossible",
     pause: "pause repas des AESH",
     aucune: "aucune AESH",
@@ -204,7 +205,18 @@ var PialMoteur = (function () {
       if ((aesh.etablissements || []).length && aesh.etablissements.indexOf(c.etab) < 0) return "etablissement";
       if (M.indisponibilite(aesh, c)) return "indisponibilite";
     }
-    var d = duree(c, u.modalite, ctx), ch = chargeDe(et, aesh.id), q = aesh.quotite || 0;
+    // répartition (§19) : heures allouées à cet établissement, par semaine ; sans ligne pour cette AESH, rien à vérifier
+    var rep = r.repartition, dd = duree(c, u.modalite, ctx);
+    if (rep && Object.prototype.hasOwnProperty.call(rep, aesh.id)) {
+      var alloc = rep[aesh.id][c.etab] || 0, cumul = { A: 0, B: 0 };
+      affsDe(et, aesh.id).forEach(function (a) {
+        if (a.creneau.etab !== c.etab) return;
+        var da = duree(a.creneau, a.modalite, ctx);
+        semainesCreneau(a.creneau, ctx).forEach(function (s) { cumul[s] += da; });
+      });
+      if (semaines.some(function (s) { return cumul[s] + dd > alloc + EPS; })) return "repartition";
+    }
+    var d = dd, ch = chargeDe(et, aesh.id), q = aesh.quotite || 0;
     if (semaines.some(function (s) { return ch[s] + d > q + EPS; })) return "quotite";
     var deb = mn(c.debut), fin = mn(c.fin);
     var simulee = { creneau: { etab: c.etab, jour: c.jour, debut: c.debut, fin: c.fin, semaine: "toutes" }, modalite: u.modalite, periscolaire: u.periscolaire };

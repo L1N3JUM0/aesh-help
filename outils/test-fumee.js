@@ -106,7 +106,11 @@ function graineIdb(idb) {
       { magasin: "etablissements", enregistrer: d.etablissements },
       { magasin: "eleves", enregistrer: m.eleves }, { magasin: "aesh", enregistrer: m.aesh },
       { magasin: "cours", enregistrer: m.cours }, { magasin: "affectations", enregistrer: m.affectations },
-      { magasin: "parametres", enregistrer: [{ cle: "reglages", valeur: { gererPeriscolaire: true } }] }
+      { magasin: "parametres", enregistrer: [{ cle: "reglages", valeur: { gererPeriscolaire: true } }, {
+        // une ULIS et une répartition (heures dans un établissement et dans l'ULIS) pour exercer l'onglet Répartition
+        cle: "dispositifs", valeur: [{ id: "di-test", nom: "ULIS Test", type: "ulis", etab: d.etablissements[0].id, jours: ["lundi", "mardi", "jeudi", "vendredi"],
+          matin: { debut: "09:00", fin: "12:00" }, apresmidi: { debut: "13:30", fin: "16:00" } }] }, {
+        cle: "repartition", valeur: { annee: d.annee, parAesh: (function () { var o = {}; o[m.aesh[0].id] = {}; o[m.aesh[0].id][d.etablissements[0].id] = 6; o[m.aesh[0].id]["ulis:di-test"] = 3; return o; })() } }] }
     ];
     return DB.appliquer(ops).then(function () {
       var fichiers = fs.readdirSync(path.join(RACINE, "exemples")).filter(function (f) { return /^FICTIF_transmission_.*\.json$/.test(f); }).sort();
@@ -126,7 +130,7 @@ function testerPial(rendre) {
     var nav = FB.creerNavigateur({ html: page.html, erreurs: erreurs, indexedDB: idb });
     // le sélecteur de navigation doit exister dans le HTML réel
     var boutons = nav.document.querySelectorAll("#nav button");
-    rendre("la barre de navigation compte 8 onglets", function () { if (boutons.length !== 8) throw new Error(boutons.length + " onglet(s) trouvé(s)"); });
+    rendre("la barre de navigation compte 9 onglets", function () { if (boutons.length !== 9) throw new Error(boutons.length + " onglet(s) trouvé(s)"); });
     rendre("jeu fictif : élèves et affectations présents en base", function () { if (!(graine.eleves > 5 && graine.affectations > 5)) throw new Error(JSON.stringify(graine)); });
     executerScripts(nav, page.fichiers);
     return laisserFinir().then(function () {
@@ -157,6 +161,28 @@ function testerPial(rendre) {
           });
         });
       }, Promise.resolve()).then(function () {
+        // scénario Répartition : cartes et colonnes dessinées, fenêtre « Répartir… » ouverte puis enregistrée, ULIS dans Réglages
+        var avantRep = erreurs.length, doc = nav.document;
+        nav.declencher(boutons.filter(function (b) { return b.dataset.vue === "vue-repartition"; })[0], "click");
+        return laisserFinir().then(function () {
+          var cartes = doc.querySelectorAll("[data-rep-aesh]").length, colonnes = doc.querySelectorAll("[data-rep-unite]").length, chips = doc.querySelectorAll("[data-rep-chip]").length;
+          nav.declencher(doc.querySelector("[data-rep-repartir]"), "click");
+          var ouverte = visible(doc.getElementById("voile-repartition"));
+          nav.declencher(doc.getElementById("rep-modale-valider"), "click");
+          return laisserFinir().then(function () {
+            nav.declencher(boutons.filter(function (b) { return b.dataset.vue === "vue-reglages"; })[0], "click");
+            return laisserFinir().then(function () {
+              rendre("espace PIAL : Répartition (cartes, colonnes dont l'ULIS, saisie des heures, enregistrement, ULIS dans Réglages)", function () {
+                if (erreurs.length > avantRep) throw new Error(erreurs.slice(avantRep, avantRep + 4).join("\n          "));
+                if (!(cartes > 3 && colonnes >= 3 && chips >= 2)) throw new Error(cartes + " carte(s), " + colonnes + " colonne(s), " + chips + " AESH dans les colonnes");
+                if (!ouverte) throw new Error("la fenêtre « Répartir… » ne s'ouvre pas");
+                if (visible(doc.getElementById("voile-repartition"))) throw new Error("la fenêtre reste ouverte après « Enregistrer »");
+                if (doc.querySelectorAll("[data-dispositif]").length < 1) throw new Error("la fiche du dispositif ULIS n'est pas dessinée dans Réglages");
+              });
+            });
+          });
+        });
+      }).then(function () {
         verifierModules(nav, page.fichiers, rendre, "espace PIAL");
       });
     }).then(arreter, function (e) { arreter(); throw e; });

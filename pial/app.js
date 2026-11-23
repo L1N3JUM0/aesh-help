@@ -78,7 +78,7 @@ function rafraichirCache() { return PialDB.tousLesRapports().then(function (r) {
 function rafraichirImports() { return PialDB.tousLesImports().then(function (r) { importsCache = r; return importsCache; }); }
 
 /* =============== navigation =============== */
-var VUES = ["vue-import", "vue-eleves", "vue-aesh", "vue-affectations", "vue-rapports", "vue-detail-rapport", "vue-fiche-eleve", "vue-indicateurs", "vue-stats", "vue-reglages"];
+var VUES = ["vue-import", "vue-eleves", "vue-aesh", "vue-repartition", "vue-affectations", "vue-rapports", "vue-detail-rapport", "vue-fiche-eleve", "vue-indicateurs", "vue-stats", "vue-reglages"];
 // dernier onglet utilisé, rouvert au prochain chargement (Élèves par défaut)
 var CLE_ONGLET = "pial-dernier-onglet";
 function vue(nom) {
@@ -93,10 +93,11 @@ function vue(nom) {
 }
 function ouvrirOngletNav(nom) {
   vue(nom);
-  if (nom === "vue-reglages") { rendreStockage(); PialAffectations.rendreReglages(); PialProfils.ouvrir("reglages"); }
+  if (nom === "vue-reglages") { rendreStockage(); PialAffectations.rendreReglages(); PialProfils.ouvrir("reglages"); PialRepartitionUI.rendreReglages(); }
   if (nom === "vue-indicateurs") rendreIndicateurs();
   if (nom === "vue-eleves") PialProfils.ouvrir("eleves");
   if (nom === "vue-aesh") PialProfils.ouvrir("aesh");
+  if (nom === "vue-repartition") PialRepartitionUI.ouvrir();
   if (nom === "vue-affectations") PialAffectations.ouvrirOnglet();
   if (nom === "vue-stats") { initialiserFiltresStats(); rendreStats(); if (typeof PialStatsUI !== "undefined") PialStatsUI.afficher(); }
   if (nom === "vue-import") rendreRattachement();
@@ -1108,7 +1109,7 @@ function proposerRestauration(donnees) {
       }).then(function () {
         initialiserFiltres(); initialiserPurge(); rendreRapports(); rendreImports(); rendreIndicateurs();
         initialiserFiltresStats(); rendreStats();
-        PialAffectations.rendreReglages();
+        PialAffectations.rendreReglages(); PialRepartitionUI.rendreReglages();
         PialAffectations.viderAnnulation();
         if (typeof PialAffectations.surChangement === "function") PialAffectations.surChangement();
         toast("Sauvegarde restaurée.");
@@ -1178,7 +1179,7 @@ $("btn-purger").addEventListener("click", function () {
         }).then(function () {
           initialiserFiltres(); initialiserPurge(); rendreRapports(); rendreIndicateurs();
           initialiserFiltresStats(); rendreStats();
-          PialAffectations.rendreReglages();
+          PialAffectations.rendreReglages(); PialRepartitionUI.rendreReglages();
           PialAffectations.viderAnnulation();
           if (typeof PialAffectations.surChangement === "function") PialAffectations.surChangement();
           toast("Purge effectuée : " + lib + ".");

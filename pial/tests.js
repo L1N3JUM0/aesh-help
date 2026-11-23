@@ -2238,6 +2238,27 @@ var PialTests = (function () {
       egal(M.motifsIndisponibilite("ae-1", { creneau: a2.creneau, modalite: "individuel", eleves: [ea.id] }, ctx([a1], rep), null).map(function (v) { return v.code; }), ["repartition"], "motif dans le menu");
       vrai(M.contexte({ reglages: {} }).reglages.respecterRepartition === true, "réglage actif par défaut");
     });
+    t("répartition : allouer des heures ajoute l'établissement aux établissements possibles de l'AESH (la répartition prime)", function () {
+      var a = { id: "ae-1", nom: "Exemplaire", prenom: "Léa", quotite: 24, etablissements: ["tilleuls"] };
+      var r = R.fichePourRepartition(a, { tilleuls: 10, port: 6, "ulis:di-1": 3, ecole: 0 });
+      egal(r.ajoutes, ["port"], "seulement l'établissement avec des heures, pas l'ULIS ni les zéros");
+      egal(r.fiche.etablissements, ["tilleuls", "port"]);
+      vrai(r.fiche.modifiesAppli && r.fiche.modifiesAppli.etablissements, "modification marquée : protégée au réimport");
+      egal(a.etablissements, ["tilleuls"], "la fiche d'origine n'est pas modifiée");
+      egal(R.fichePourRepartition(a, { tilleuls: 5 }).fiche, null, "déjà possible : rien à changer");
+      egal(R.fichePourRepartition({ id: "ae-2", nom: "B", prenom: "B", quotite: 10, etablissements: [] }, { port: 5 }).fiche, null, "sans restriction : tous les établissements sont déjà possibles");
+      egal(R.fichePourRepartition(a, { port: 2, ecole: 2 }).fiche.etablissements, ["tilleuls", "ecole", "port"], "plusieurs établissements ajoutés, par ordre alphabétique des identifiants");
+    });
+    t("répartition : une fois l'établissement ajouté, le moteur peut y affecter l'AESH", function () {
+      if (!P) throw new Ignore("moteur indisponible");
+      var j = jeu(), A = j.etab("Collège Alpha"), B = j.etab("Collège Bêta"), eb = j.eleve(B, "Brune", "5A", 2, 0);
+      ["08:00", "09:00"].forEach(function (h) { j.cours(eb, "mardi", h); });
+      var a = { id: "ae-1", nom: "A", prenom: "A", quotite: 10, etablissements: [A.id], indisponibilites: [] };
+      var rp = {}; rp["ae-1"] = {}; rp["ae-1"][B.id] = 2;
+      function nb(aesh) { return P.proposer(j.donnees({ aesh: [aesh], reglages: { gererPeriscolaire: false, repartition: rp } })).affectations.length; }
+      egal(nb(a), 0, "établissement non possible : rien (cas que la répartition évite désormais)");
+      egal(nb(R.fichePourRepartition(a, rp["ae-1"]).fiche), 2, "après l'ajout automatique : couvert");
+    });
     t("répartition : les clés de la répartition suivent la traduction identifiant → clé du moteur", function () {
       var j = jeu(), e = j.etab("Collège Test"), x = j.eleve(e, "Axel", "5A", 1, 0);
       var aesh = [{ id: "ae-1", cle: "dupont|jean", nom: "Dupont", prenom: "Jean", quotite: 10 }];

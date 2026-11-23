@@ -127,6 +127,19 @@ var PialRepartition = (function () {
     function enDepassement(rep, aeshs) {
       return aeshs.filter(function (a) { return alloue(rep, a.id) > (a.quotite || 0) + EPS; });
     }
+    // La répartition prime sur les « établissements possibles » : allouer des heures à une AESH dans un établissement l'ajoute à
+    // ses établissements possibles (si elle en a une liste ; vide = tous). valeurs : {uniteId: heures}. Renvoie la fiche modifiée
+    // (marquée « modifiée » : protégée au réimport) et les identifiants ajoutés, ou {fiche: null, ajoutes: []}. Les dispositifs
+    // ne comptent pas : l'AESH d'une ULIS n'intervient que dans le dispositif.
+    function fichePourRepartition(aesh, valeurs) {
+      var fiche = aesh, ajoutes = [];
+      Object.keys(valeurs).sort().forEach(function (u) {
+        if (estUniteDispositif(u) || !(valeurs[u] > EPS)) return;
+        var r = M.aeshEtablissement([fiche], [fiche.id], u, true, null);
+        if (r.fiches.length) { fiche = r.fiches[0]; ajoutes.push(u); }
+      });
+      return { fiche: ajoutes.length ? fiche : null, ajoutes: ajoutes };
+    }
     // ce que le moteur et la vérification utilisent : {aeshId: {établissement: heures}}.
     // Une AESH qui a au moins une ligne y figure, même si elle n'a que du dispositif
     // (elle n'intervient alors dans aucun établissement). Sans répartition : null.
@@ -272,7 +285,7 @@ var PialRepartition = (function () {
       idUnite: idUnite, estUniteDispositif: estUniteDispositif, heuresOuverture: heuresOuverture,
       nouveauDispositif: nouveauDispositif, erreurDispositif: erreurDispositif,
       vide: vide, estVide: estVide, normaliserHeures: normaliserHeures, lignes: lignes, alloue: alloue, reste: reste,
-      fixer: fixer, erreurSaisie: erreurSaisie, nettoyer: nettoyer, enDepassement: enDepassement, pourMoteur: pourMoteur,
+      fixer: fixer, fichePourRepartition: fichePourRepartition, erreurSaisie: erreurSaisie, nettoyer: nettoyer, enDepassement: enDepassement, pourMoteur: pourMoteur,
       estimerClasse: estimerClasse, heuresPeriscolaire: heuresPeriscolaire, besoins: besoins, tableau: tableau
     };
   }

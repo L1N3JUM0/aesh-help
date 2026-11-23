@@ -19,9 +19,9 @@ var PialRepartitionUI = (function () {
   var JOURS = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"];
 
   /* =============== écriture =============== */
-  function ecrire(rep, message, libelle) {
+  function ecrire(rep, message, libelle, opsEnPlus) {
     rep.annee = A.anneeCourante();
-    return A.enregistrerPuisRendre([{ magasin: "parametres", enregistrer: [{ cle: "repartition", valeur: rep }] }], message, libelle);
+    return A.enregistrerPuisRendre([{ magasin: "parametres", enregistrer: [{ cle: "repartition", valeur: rep }] }].concat(opsEnPlus || []), message, libelle);
   }
   function aeshParId(id) { return etat.aesh.filter(function (a) { return a.id === id; })[0]; }
   function uniteParId(tab, id) { return tab.unites.filter(function (u) { return u.id === id; })[0]; }
@@ -197,8 +197,16 @@ var PialRepartitionUI = (function () {
     neuve.parAesh = JSON.parse(JSON.stringify(rep.parAesh || {}));
     delete neuve.parAesh[a.id];
     Object.keys(s.valeurs).forEach(function (u) { neuve = R.fixer(neuve, a.id, u, s.valeurs[u]); });
+    // la répartition prime : les établissements où elle a des heures deviennent possibles (même action, même annulation)
+    var plus = R.fichePourRepartition(a, s.valeurs), message = "Répartition de " + A.nomAesh(a) + " enregistrée.", ops = [];
+    if (plus.fiche) {
+      ops.push({ magasin: "aesh", enregistrer: [plus.fiche] });
+      var noms = plus.ajoutes.map(A.nomEtablissement);
+      message = (noms.length > 1 ? noms.slice(0, -1).join(", ") + " et " + noms[noms.length - 1] + " ajoutés" : noms[0] + " ajouté")
+        + " aux établissements possibles de " + A.txt(a.prenom) + " " + A.txt(a.nom).charAt(0) + ".";
+    }
     fermerSaisie();
-    ecrire(neuve, "Répartition de " + A.nomAesh(a) + " enregistrée.", "la répartition de " + A.nomAesh(a));
+    ecrire(neuve, message, "la répartition de " + A.nomAesh(a), ops);
   }
   $("rep-modale-valider").addEventListener("click", validerSaisie);
   $("rep-modale-annuler").addEventListener("click", fermerSaisie);

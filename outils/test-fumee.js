@@ -117,7 +117,10 @@ function graineIdb(idb) {
       return fichiers.reduce(function (p, f) {
         return p.then(function () { return DB.importerFichier(JSON.parse(fs.readFileSync(path.join(RACINE, "exemples", f), "utf8")), f); });
       }, Promise.resolve());
-    }).then(function () { return { eleves: m.eleves.length, affectations: m.affectations.length }; });
+    }).then(function () {
+      var dansUlis = m.eleves.filter(function (e) { return e.etablissement === d.etablissements[0].id; })[0];
+      return { eleves: m.eleves.length, affectations: m.affectations.length, eleveUlis: dansUlis && dansUlis.id };
+    });
   });
 }
 
@@ -180,6 +183,40 @@ function testerPial(rendre) {
                 if (doc.querySelectorAll("[data-dispositif]").length < 1) throw new Error("la fiche du dispositif ULIS n'est pas dessinée dans Réglages");
               });
             });
+          });
+        });
+      }).then(function () {
+        // scénario fiche élève : dispositif (ULIS) enregistré et marqué dans la liste, puis changement de classe avec aperçu
+        var avantI = erreurs.length, doc = nav.document, id = graine.eleveUlis, resultat = {};
+        nav.declencher(boutons.filter(function (b) { return b.dataset.vue === "vue-eleves"; })[0], "click");
+        return laisserFinir().then(function () {
+          nav.declencher(doc.querySelector('tr[data-eleve="' + id + '"]'), "click");
+          return laisserFinir();
+        }).then(function () {
+          var sel = doc.getElementById("fe-dispositif");
+          resultat.options = sel.querySelectorAll("option").length;
+          sel.value = "di-test";
+          nav.declencher(sel, "change");
+          return laisserFinir();
+        }).then(function () {
+          resultat.marque = doc.querySelectorAll(".badge-ulis").length; resultat.statut = String((doc.getElementById("fe-statut") || {}).textContent);
+          nav.declencher(doc.getElementById("fe-modifier-identite"), "click");
+          resultat.ouverte = visible(doc.getElementById("voile-identite"));
+          var c = doc.getElementById("id-classe"); c.value = "__nouveau"; nav.declencher(c, "change");
+          var a = doc.getElementById("id-classe-autre"); a.value = "9Z"; nav.declencher(a, "input");
+          resultat.apercu = String(doc.getElementById("id-apercu").innerHTML);
+          nav.declencher(doc.getElementById("id-appliquer"), "click");
+          return laisserFinir();
+        }).then(function () {
+          var tr = doc.querySelector('tr[data-eleve="' + id + '"]');
+          rendre("espace PIAL : fiche élève (dispositif ULIS marqué dans la liste, changement de classe avec aperçu)", function () {
+            if (erreurs.length > avantI) throw new Error(erreurs.slice(avantI, avantI + 4).join("\n          "));
+            if (!(resultat.options >= 2)) throw new Error("aucune ULIS proposée dans la fiche (" + resultat.options + " option(s))");
+            if (!(resultat.marque >= 1)) throw new Error("l'élève n'est pas marqué ULIS dans la liste (" + resultat.statut + ")");
+            if (!resultat.ouverte) throw new Error("la fenêtre d'identité ne s'ouvre pas");
+            if (resultat.apercu.indexOf("9Z") < 0) throw new Error("l'aperçu ne cite pas la nouvelle classe");
+            if (visible(doc.getElementById("voile-identite"))) throw new Error("la fenêtre reste ouverte après « Appliquer »");
+            if (!tr || String(doc.getElementById("pe-table").innerHTML).indexOf("9Z") < 0) throw new Error("la liste ne montre pas la nouvelle classe");
           });
         });
       }).then(function () {

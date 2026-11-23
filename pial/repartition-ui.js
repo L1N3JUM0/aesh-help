@@ -100,7 +100,8 @@ var PialRepartitionUI = (function () {
     $("rep-colonnes").innerHTML = tab.unites.map(function (u) {
       var lignes;
       if (u.type === "ulis") {
-        lignes = ligneBesoin("Ouverture du dispositif", heures(u.ouverture), "Heures d'ouverture par semaine (jours × plages), réglées dans Réglages → Dispositifs.");
+        lignes = ligneBesoin("Ouverture du dispositif", heures(u.ouverture), "Heures d'ouverture par semaine (jours × plages), réglées dans Réglages → Dispositifs.")
+          + ligneBesoin("Élèves de l'ULIS", String(u.nbEleves), "Élèves rattachés à ce dispositif (fiche élève). Leurs notifications, pour leurs inclusions, comptent dans la colonne de leur établissement.");
       } else {
         lignes = ligneBesoin("Individuel", heures(u.ind), "Somme des heures notifiées en individuel.")
           + ligneBesoin("Mutualisé brut", heures(u.mutBrut), "Somme des heures notifiées en mutualisé.")

@@ -2259,6 +2259,89 @@ var PialTests = (function () {
       egal(nb(a), 0, "établissement non possible : rien (cas que la répartition évite désormais)");
       egal(nb(R.fichePourRepartition(a, rp["ae-1"]).fiche), 2, "après l'ajout automatique : couvert");
     });
+    /* ----- fiche élève : identité et dispositif (spec §19.5) ----- */
+    function appliquerOps(stores, ops) {
+      ops.forEach(function (op) {
+        var l = stores[op.magasin] = stores[op.magasin] || [];
+        (op.supprimer || []).forEach(function (id) { var i = l.map(function (o) { return o.id; }).indexOf(id); if (i > -1) l.splice(i, 1); });
+        (op.enregistrer || []).forEach(function (o) { var i = l.map(function (x) { return x.id; }).indexOf(o.id); if (i > -1) l[i] = JSON.parse(JSON.stringify(o)); else l.push(JSON.parse(JSON.stringify(o))); });
+      });
+    }
+    function cas() {
+      var j = jeu(), A = j.etab("Collège Alpha"), B = j.etab("Collège Bêta");
+      var lea = j.eleve(A, "Lea", "5A", 2, 2), tom = j.eleve(A, "Tom", "5A", 0, 2), zoe = j.eleve(A, "Zoe", "5B", 1, 0);
+      ["08:00", "09:00"].forEach(function (h) { j.cours(lea, "lundi", h); j.cours(tom, "lundi", h); });
+      var d = j.donnees({ aesh: [{ id: "ae-1", nom: "A", prenom: "A", quotite: 10 }] });
+      function af(id, eleves, modalite, debut, version) {
+        return { id: id, version: version || 0, aeshId: "ae-1", creneau: { etab: A.id, jour: "lundi", debut: debut, fin: debut.replace(":00", ":55"), semaine: "toutes" },
+          modalite: modalite, eleves: eleves.map(function (e) { return e.id; }), epinglee: true, origine: "manuel" };
+      }
+      d.affectations = [af("a1", [lea], "individuel", "08:00"), af("a2", [lea, tom], "mutualise", "09:00"), af("v1|a1", [lea], "individuel", "08:00", 1)];
+      d.etablissements = [A, B];
+      return { d: d, A: A, B: B, lea: lea, tom: tom, zoe: zoe };
+    }
+    t("fiche élève : changement de classe, aperçu et choix « garder » (alerte) ou « retirer » (un groupe mutualisé est seulement quitté)", function () {
+      var c = cas(), ch = { classe: "5C", etablissement: c.A.id, etablissementNom: c.A.nom };
+      var garder = M.planIdentite(c.d, c.lea.id, ch, {});
+      vrai(garder.ok && !garder.collisions.length, "plan valide");
+      egal(garder.choix, { affectations: "garder", cours: "garder" }, "classe seule : on garde par défaut");
+      egal([garder.nbCours, garder.affectations.length, garder.versions], [2, 2, [1]], "2 cours, 2 affectations du brouillon, version 1 concernée mais jamais modifiée");
+      var stores = { eleves: c.d.eleves, cours: c.d.cours, affectations: c.d.affectations };
+      var copie = JSON.parse(JSON.stringify(stores));
+      appliquerOps(copie, garder.ops);
+      egal(copie.eleves.filter(function (e) { return e.id === c.lea.id; })[0].classe, "5C");
+      vrai(copie.cours.filter(function (x) { return x.eleveId === c.lea.id; }).every(function (x) { return x.classe === "5C"; }), "les cours suivent la classe");
+      var gardees = copie.affectations.filter(function (a) { return a.eleves.indexOf(c.lea.id) > -1 && !a.version; });
+      egal(gardees.length, 2);
+      vrai(gardees.every(function (a) { return /5A.*5C|5C/.test(a.alerteIdentite); }), "alerte portée par chaque affectation gardée");
+      vrai(!copie.affectations.filter(function (a) { return a.version; })[0].alerteIdentite, "la version validée n'est pas modifiée");
+      var ctx = M.contexte({ etablissements: [c.A, c.B], eleves: copie.eleves, aesh: c.d.aesh, cours: copie.cours, affectations: gardees, reglages: { gererPeriscolaire: false } });
+      egal(M.verifierAffectation(gardees[0], ctx).filter(function (v) { return v.code === "identite"; }).map(function (v) { return v.niveau; }), ["attention"], "alerte non bloquante");
+      var retirer = M.planIdentite(c.d, c.lea.id, ch, { affectations: "retirer" });
+      var r2 = JSON.parse(JSON.stringify(stores));
+      appliquerOps(r2, retirer.ops);
+      egal(r2.affectations.map(function (a) { return a.id + ":" + a.eleves.length; }).sort(), ["a2:1", "v1|a1:1"], "individuelle retirée, groupe quitté par cet élève seulement, version intacte");
+      egal(retirer.groupes, 1);
+      var sansCours = M.planIdentite(c.d, c.lea.id, ch, { cours: "retirer" }), r3 = JSON.parse(JSON.stringify(stores));
+      appliquerOps(r3, sansCours.ops);
+      egal(r3.cours.filter(function (x) { return x.eleveId === c.lea.id; }).length, 0, "cours retirés sur demande");
+      // une seule action annulable : les opérations inverses ramènent fiche, cours et affectations
+      var inverses = M.operationsInverses(retirer.ops, { eleves: stores.eleves, cours: stores.cours, affectations: stores.affectations });
+      appliquerOps(r2, inverses);
+      egal(JSON.stringify(r2.eleves.slice().sort(function (p, q) { return p.id < q.id ? -1 : 1; })), JSON.stringify(stores.eleves.slice().sort(function (p, q) { return p.id < q.id ? -1 : 1; })), "fiche rétablie");
+      egal(r2.affectations.map(function (a) { return a.id + ":" + a.eleves.length; }).sort(), ["a1:1", "a2:2", "v1|a1:1"], "affectations rétablies");
+    });
+    t("fiche élève : changement d'établissement (affectations retirées par défaut, dispositif quitté) et collision de clé", function () {
+      var c = cas(), s = c.d.eleves.filter(function (e) { return e.id === c.lea.id; })[0];
+      s.dispositif = { id: "di-1", classeReference: "5A" }; s.inclusions = [{ depuis: "2026-09-01", cours: [] }];
+      var p = M.planIdentite(c.d, c.lea.id, { classe: "5A", etablissement: c.B.id, etablissementNom: c.B.nom }, {});
+      vrai(p.ok);
+      egal(p.choix.affectations, "retirer", "l'établissement change : les créneaux appartenaient à l'ancien");
+      vrai(p.dispositifRetire && !p.eleve.dispositif, "il quitte son dispositif");
+      egal(p.eleve.inclusions, [{ depuis: "2026-09-01", cours: [] }], "l'historique des inclusions est conservé");
+      // collision : un autre « Tom » en 5A du même établissement
+      var coll = M.planIdentite(c.d, c.zoe.id, { classe: "5A", etablissement: c.A.id, etablissementNom: c.A.nom }, {});
+      vrai(coll.ok, "pas de collision avec un prénom différent");
+      var j2 = jeu(), A2 = j2.etab("Collège Alpha"), x1 = j2.eleve(A2, "Mia", "5A", 1, 0), x2 = j2.eleve(A2, "Mia", "5B", 1, 0);
+      x2.id = "el-mia2"; x2.cle = M.cleEleve(x2.nomCourt, "5B", A2.nom);
+      var c2 = M.planIdentite(j2.donnees(), x2.id, { classe: "5A", etablissement: A2.id, etablissementNom: A2.nom }, {});
+      vrai(!c2.ok && c2.collisions.length === 1, "collision de clé détectée, rien à écrire");
+      vrai(M.planIdentite(c.d, c.lea.id, { classe: "5A", etablissement: c.A.id, etablissementNom: c.A.nom }, {}).inchange, "aucun changement");
+      void x1;
+    });
+    t("fiche élève : dispositif ULIS stocké sans migration, protégé au réimport, compté dans la colonne ULIS et regroupé avec sa classe de référence", function () {
+      var j = jeu(), A = j.etab("Collège Alpha"), u = j.eleve(A, "Ulis", "ULIS", 0, 2), n = j.eleve(A, "Nora", "5A", 0, 2);
+      u.dispositif = { id: "di-1", classeReference: "5A" }; u.inclusions = [];
+      ["08:00", "09:00"].forEach(function (h) { j.cours(u, "lundi", h); j.cours(n, "lundi", h); });
+      var dis = R.nouveauDispositif("di-1", "ULIS Alpha", A.id);
+      egal([M.estEnDispositif(u), M.estEnDispositif(n), M.dispositifEleve(u, [dis]).nom, M.dispositifEleve(n, [dis])], [true, false, "ULIS Alpha", null]);
+      var tab = R.tableau(j.donnees({ dispositifs: [dis] }), R.vide(AN));
+      egal(unite(tab, "ulis:di-1").nbEleves, 1, "l'élève est compté dans la colonne ULIS");
+      proche(unite(tab, A.id).mutBrut, 4, "ses heures notifiées restent dans la colonne de l'établissement");
+      proche(unite(tab, A.id).mutEstime, 2, "regroupé avec la classe de référence (mêmes cours) : 2 h suffisent");
+      var reimport = M.fusionEleve(u, { id: u.id, cle: u.cle, annee: AN, nomCourt: u.nomCourt, classe: "ULIS", etablissement: A.id, heuresInd: 0, heuresMut: 3 }, false, "eleves");
+      egal([reimport.dispositif, reimport.inclusions, reimport.heuresMut], [{ id: "di-1", classeReference: "5A" }, [], 3], "un réimport met à jour la notification mais garde le dispositif et les inclusions");
+    });
     t("répartition : les clés de la répartition suivent la traduction identifiant → clé du moteur", function () {
       var j = jeu(), e = j.etab("Collège Test"), x = j.eleve(e, "Axel", "5A", 1, 0);
       var aesh = [{ id: "ae-1", cle: "dupont|jean", nom: "Dupont", prenom: "Jean", quotite: 10 }];

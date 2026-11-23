@@ -74,7 +74,7 @@ var PialProfils = (function () {
     { cle: "fin", lib: "Fin de notification", classe: "col-secondaire", cmp: function (a, b) { return (a.e.finNotif || "9999").localeCompare(b.e.finNotif || "9999"); } }
   ];
   function filtresEleves() {
-    var ctx = A.contexte(), etab = $("pe-etab").value, classe = $("pe-classe").value, niveau = $("pe-niveau").value,
+    var ctx = A.contexte(), etab = $("pe-etab").value, classe = $("pe-classe").value, niveau = $("pe-niveau").value, dispositif = $("pe-dispositif").value,
       modalite = $("pe-modalite").value, couv = $("pe-couverture").value, mots = M.normaliser($("pe-recherche").value).split(" ").filter(Boolean);
     var lignes = etat.elevesTous.filter(function (e) { return $("pe-archives").checked || !M.estArchive(e); })
       .map(function (e) { return { e: e, cv: M.estArchive(e) ? null : M.couvertureEleve(e, ctx) }; }).filter(function (l) {
@@ -83,6 +83,7 @@ var PialProfils = (function () {
       if (etab && e.etablissement !== etab) return false;
       if (classe && M.normaliser(e.classe) !== M.normaliser(classe)) return false;
       if (niveau && M.niveauClasse(e.classe) !== niveau) return false;
+      if (dispositif === "aucun" ? M.estEnDispositif(e) : (dispositif === "ulis" ? !M.estEnDispositif(e) : (dispositif && !(e.dispositif && e.dispositif.id === dispositif)))) return false;
       if (modalite === "ind" && !(e.heuresInd > 0)) return false;
       if (modalite === "mut" && !(e.heuresMut > 0)) return false;
       if (modalite === "deux" && !(e.heuresInd > 0 && e.heuresMut > 0)) return false;
@@ -108,11 +109,17 @@ var PialProfils = (function () {
     etat.elevesTous.forEach(function (e) { if (!etab || e.etablissement === etab) niveaux[M.niveauClasse(e.classe)] = true; });
     remplirSelect($("pe-classe"), classes.map(function (c) { return { valeur: c, libelle: c }; }), "Toutes");
     remplirSelect($("pe-niveau"), M.NIVEAUX.filter(function (n) { return niveaux[n]; }).map(function (n) { return { valeur: n, libelle: n }; }), "Tous");
+    remplirSelect($("pe-dispositif"), [{ valeur: "ulis", libelle: "Élèves d'ULIS" }, { valeur: "aucun", libelle: "Hors dispositif" }]
+      .concat(etat.dispositifs.map(function (d) { return { valeur: d.id, libelle: "ULIS « " + d.nom + " »" }; })), "Tous");
   }
   function finNotif(e) {
     if (!e.finNotif) return '<span class="aide">—</span>';
     var j = joursAvant(e.finNotif);
     return dateFr(e.finNotif) + (j < 0 ? ' <span class="badge badge-difficile">échue</span>' : (j <= 30 ? ' <span class="badge badge-construction">dans ' + pluriel(j, "jour") + '</span>' : ""));
+  }
+  function dispositifLibelle(e) {
+    var d = M.dispositifEleve(e, etat.dispositifs);
+    return (d ? "ULIS « " + d.nom + " »" : "Dispositif introuvable") + (e.dispositif.classeReference ? " · classe de référence " + e.dispositif.classeReference : "");
   }
   function rendreEleves() {
     if ($("vue-eleves").classList.contains("masque")) return;
@@ -132,7 +139,7 @@ var PialProfils = (function () {
       var e = l.e, cv = l.cv, cls = [pe.ouvert === e.id ? "actif" : "", M.estArchive(e) ? "archive" : ""].filter(Boolean).join(" ");
       h += '<tr data-eleve="' + ech(e.id) + '" tabindex="0"' + (cls ? ' class="' + cls + '"' : "") + (pe.ouvert === e.id ? ' aria-selected="true"' : "") + '>'
         + caseLigne("eleves", e.id, e.nomCourt)
-        + '<td><strong>' + ech(e.nomCourt) + '</strong>' + (M.estArchive(e) ? ' <span class="badge badge-archive">archivé</span>' : "") + '</td><td>' + ech(e.classe) + '</td>'
+        + '<td><strong>' + ech(e.nomCourt) + '</strong>' + (M.estEnDispositif(e) ? ' <span class="badge-ulis" title="' + ech(dispositifLibelle(e)) + '">ULIS</span>' : "") + (M.estArchive(e) ? ' <span class="badge badge-archive">archivé</span>' : "") + '</td><td>' + ech(e.classe) + '</td>'
         + '<td class="col-secondaire">' + ech(A.nomEtablissement(e.etablissement)) + '</td>'
         + '<td class="col-secondaire">' + [e.heuresInd ? heures(e.heuresInd) + " ind." : "", e.heuresMut ? heures(e.heuresMut) + " mut." : ""].filter(Boolean).join(" · ") + '</td>'
         + '<td class="col-jauges">' + (cv ? '<span class="pastille-etat e-' + cv.etat + '">' + A.LIB_ETAT_ELEVE[cv.etat] + '</span>' + A.jaugesEleve(e, cv) : '<span class="aide">archivé le ' + dateFr(e.archiveLe) + '</span>') + '</td>'
@@ -179,14 +186,14 @@ var PialProfils = (function () {
     if (tr) tr.focus();
   }
 
-  ["pe-etab", "pe-classe", "pe-niveau", "pe-modalite", "pe-couverture"].forEach(function (id) {
+  ["pe-etab", "pe-classe", "pe-niveau", "pe-dispositif", "pe-modalite", "pe-couverture"].forEach(function (id) {
     $(id).addEventListener("change", function () { if (id === "pe-etab") remplirFiltresEleves(); rendreEleves(); });
   });
   $("pe-recherche").addEventListener("input", rendreEleves);
   $("pe-archives").addEventListener("change", rendreEleves);
   $("pe-reinitialiser").addEventListener("click", function () {
     $("pe-archives").checked = false;
-    ["pe-recherche", "pe-etab", "pe-classe", "pe-niveau", "pe-modalite", "pe-couverture"].forEach(function (id) { $(id).value = ""; });
+    ["pe-recherche", "pe-etab", "pe-classe", "pe-niveau", "pe-dispositif", "pe-modalite", "pe-couverture"].forEach(function (id) { $(id).value = ""; });
     remplirFiltresEleves(); rendreEleves();
   });
   $("pe-annuler").addEventListener("click", function () { A.annuler(); });
@@ -195,6 +202,88 @@ var PialProfils = (function () {
   $("pe-panneau").addEventListener("keydown", function (ev) {
     if (ev.key === "Escape" && !/^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName)) { ev.preventDefault(); fermerEleve(); }
   });
+
+  /* ---------- changer l'établissement et la classe d'un élève (fiche) ---------- */
+  var ident = null;   // {id}
+  function ouvrirIdentite(id) {
+    var e = A.eleveParId(id);
+    if (!e) return;
+    ident = { id: id };
+    $("id-titre").textContent = "Établissement et classe de " + e.nomCourt;
+    remplirSelect($("id-etab"), etablissementsTries().map(function (x) { return { valeur: x.id, libelle: x.nom }; }), "");
+    $("id-etab").value = e.etablissement;
+    remplirClassesIdentite(e.classe);
+    $("id-classe-autre").value = "";
+    $("voile-identite").hidden = false;
+    majIdentite();
+    $("id-etab").focus();
+  }
+  function remplirClassesIdentite(choisie) {
+    var etab = $("id-etab").value, classes = (referentiel()[etab] || []).slice();
+    if (choisie && !classes.some(function (c) { return M.memeClasse(c, choisie); }) && etab === A.eleveParId(ident.id).etablissement) classes.push(choisie);
+    remplirSelect($("id-classe"), classes.sort(M.comparerClasses).map(function (c) { return { valeur: c, libelle: c }; }).concat([{ valeur: NOUVEAU, libelle: "Autre classe…" }]), "");
+    var existe = choisie && classes.some(function (c) { return M.memeClasse(c, choisie); });
+    $("id-classe").value = existe ? classes.filter(function (c) { return M.memeClasse(c, choisie); })[0] : (classes.length ? classes[0] : NOUVEAU);
+  }
+  function fermerIdentite() { ident = null; $("voile-identite").hidden = true; }
+  // plan de l'action (PialModele.planIdentite) et son aperçu
+  function calculIdentite() {
+    var e = A.eleveParId(ident.id), etabId = $("id-etab").value, nomE = A.nomEtablissement(etabId);
+    var classe = $("id-classe").value === NOUVEAU ? M.classeNette($("id-classe-autre").value) : $("id-classe").value;
+    var r = { plan: null, classe: classe, nomE: nomE, etabId: etabId, lignes: [], erreurs: [] };
+    if (!classe) { r.erreurs.push("Indiquez la classe."); return r; }
+    var choixAff = document.querySelector('input[name="id-aff"]:checked'), choixCours = document.querySelector('input[name="id-cours"]:checked');
+    r.plan = M.planIdentite({ eleves: etat.elevesTous, cours: etat.coursTous, aesh: etat.aeshTous, etablissements: etat.etablissements,
+      affectations: etat.affectations.concat(etat.affectationsVersions) }, e.id, { classe: classe, etablissement: etabId, etablissementNom: nomE },
+      { affectations: choixAff ? choixAff.value : "", cours: choixCours ? choixCours.value : "" });
+    var p = r.plan;
+    if (p.collisions.length) r.erreurs.push("Un élève porte déjà le même nom court (" + ech(p.collisions[0].avec.nomCourt) + ") en " + ech(classe) + " à " + ech(nomE) + ". Rien n'est écrit : écrivez une abréviation terminée par un point dans l'une des deux fiches.");
+    else if (p.inchange) r.lignes.push("Aucun changement : l'élève est déjà dans cette classe de cet établissement.");
+    return r;
+  }
+  function majIdentite() {
+    var e = A.eleveParId(ident.id), autre = $("id-classe").value === NOUVEAU;
+    $("id-classe-autre-champ").hidden = !autre;
+    // les choix ne sont proposés qu'à l'aperçu : on garde ceux déjà faits
+    var c = calculIdentite(), p = c.plan, h = "";
+    if (p && p.ok) {
+      var etabChange = c.etabId !== e.etablissement;
+      h += '<ul class="id-lignes"><li>' + (etabChange ? "Établissement : " + ech(A.nomEtablissement(e.etablissement)) + " → <strong>" + ech(c.nomE) + "</strong>. " : "") + "Classe : " + ech(e.classe) + " → <strong>" + ech(c.classe) + "</strong>.</li>"
+        + (p.dispositifRetire ? '<li>Il quitte son dispositif (un dispositif appartient à un établissement) ; l\'historique de ses inclusions est conservé.</li>' : "")
+        + '<li>Cours de l\'ancienne classe : ' + pluriel(p.nbCours, "cours") + '.</li>'
+        + (p.versions.length ? '<li>Versions validées inchangées (' + p.versions.join(", ") + ').</li>' : "") + "</ul>";
+      h += '<fieldset class="id-choix"><legend>Cours de l\'ancienne classe</legend>'
+        + '<label class="case"><input type="radio" name="id-cours" value="garder"' + (p.choix.cours === "garder" ? " checked" : "") + '> Les garder, rattachés à la nouvelle classe (horaires inchangés jusqu\'au prochain import des emplois du temps)</label>'
+        + '<label class="case"><input type="radio" name="id-cours" value="retirer"' + (p.choix.cours === "retirer" ? " checked" : "") + '> Les retirer (l\'élève n\'a plus d\'emploi du temps jusqu\'à un nouvel import)</label></fieldset>';
+      if (p.affectations.length) {
+        h += '<fieldset class="id-choix"><legend>Affectations du brouillon concernées : ' + p.affectations.length + '</legend>'
+          + '<label class="case"><input type="radio" name="id-aff" value="retirer"' + (p.choix.affectations === "retirer" ? " checked" : "") + '> Retirer ces affectations (un groupe mutualisé est seulement quitté par cet élève)</label>'
+          + '<label class="case"><input type="radio" name="id-aff" value="garder"' + (p.choix.affectations === "garder" ? " checked" : "") + '> Les garder, signalées en alerte jusqu\'à vérification du créneau</label></fieldset>';
+      }
+    } else if (c.lignes.length) h += "<p>" + c.lignes.join(" ") + "</p>";
+    $("id-apercu").innerHTML = h;
+    Array.prototype.forEach.call($("id-apercu").querySelectorAll("input[type=radio]"), function (r) { r.addEventListener("change", majIdentite); });
+    $("id-erreurs").innerHTML = c.erreurs.join("<br>");
+    $("id-erreurs").hidden = !c.erreurs.length;
+    $("id-appliquer").disabled = !(p && p.ok) || !!c.erreurs.length;
+  }
+  function appliquerIdentite() {
+    if (!ident) return;
+    var c = calculIdentite(), p = c.plan;
+    if (!p || !p.ok || c.erreurs.length) { majIdentite(); return; }
+    var e = A.eleveParId(ident.id), ops = p.ops.concat(paramsClasses([p.eleve]));
+    // établissement jamais créé ici : il existe forcément (liste déroulante)
+    fermerIdentite();
+    A.enregistrerPuisRendre(ops, e.nomCourt + " : " + c.classe + " à " + c.nomE + (p.affectations.length ? (p.choix.affectations === "retirer" ? " — affectations retirées." : " — affectations gardées en alerte.") : "."),
+      "le changement de classe ou d'établissement de " + e.nomCourt);
+  }
+  $("id-etab").addEventListener("change", function () { if (!ident) return; remplirClassesIdentite(""); majIdentite(); });
+  $("id-classe").addEventListener("change", majIdentite);
+  $("id-classe-autre").addEventListener("input", majIdentite);
+  $("id-appliquer").addEventListener("click", appliquerIdentite);
+  $("id-annuler").addEventListener("click", fermerIdentite);
+  $("voile-identite").addEventListener("click", function (ev) { if (ev.target === this) fermerIdentite(); });
+  document.addEventListener("keydown", function (ev) { if (ev.key === "Escape" && ident) fermerIdentite(); });
 
   /* ---------- création d'un élève ---------- */
   var NOUVEAU = "__nouveau";
@@ -946,5 +1035,5 @@ var PialProfils = (function () {
     if (!$("vue-reglages").classList.contains("masque")) rendreClasses();
   });
 
-  return { ouvrir: ouvrir };
+  return { ouvrir: ouvrir, ouvrirIdentite: ouvrirIdentite };
 })();

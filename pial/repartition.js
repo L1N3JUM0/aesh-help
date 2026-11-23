@@ -221,7 +221,8 @@ var PialRepartition = (function () {
         var parClasse = {};
         eleves.forEach(function (e) {
           if (!(e.heuresMut > 0)) return;
-          var k = M.normaliser(M.classeNette(e.classe));
+          // un élève d'ULIS suit, pour ses inclusions, sa classe de référence : il se regroupe avec elle
+          var k = M.normaliser(M.classeNette(e.dispositif && e.dispositif.classeReference ? e.dispositif.classeReference : e.classe));
           (parClasse[k] = parClasse[k] || []).push(e);
         });
         Object.keys(parClasse).sort().forEach(function (k) {
@@ -235,7 +236,8 @@ var PialRepartition = (function () {
         out.push(u);
         (donnees.dispositifs || []).filter(function (d) { return d.etab === et.id; }).forEach(function (d) {
           var h = heuresOuverture(d);
-          out.push({ id: idUnite(d), type: "ulis", etab: et.id, nom: d.nom, dispositif: d, ouverture: h, besoin: h, estimation: true, ind: 0, mutBrut: 0, mutMin: 0, mutEstime: 0, peri: 0, nbEleves: 0 });
+          out.push({ id: idUnite(d), type: "ulis", etab: et.id, nom: d.nom, dispositif: d, ouverture: h, besoin: h, estimation: true, ind: 0, mutBrut: 0, mutMin: 0, mutEstime: 0, peri: 0,
+            nbEleves: eleves.filter(function (e) { return e.dispositif && e.dispositif.id === d.id; }).length });
         });
       });
       // dispositif rattaché à un établissement sans colonne : colonne quand même

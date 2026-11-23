@@ -357,6 +357,12 @@ body.glisser-en-cours,body.glisser-en-cours *{cursor:grabbing!important;user-sel
 .ga-axe span{position:absolute;right:6px;transform:translateY(-50%);color:var(--gris);font-variant-numeric:tabular-nums;font-size:10.5px}
 .ga-axe span:first-child{transform:none}
 .ga-axe span:last-child{transform:translateY(-100%)}
+.badge-ulis{display:inline-block;padding:0 7px;border-radius:10px;background:#E8EEF7;color:var(--encre);font-size:11px;font-weight:700;letter-spacing:.3px;margin-left:4px}
+.fe-identite p{margin:0 0 8px;font-size:13.5px}
+.id-lignes{margin:10px 0;padding-left:18px;font-size:13.5px}
+.id-choix{border:1px solid var(--seyes);border-radius:8px;margin:10px 0;padding:6px 10px}
+.id-choix legend{font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:var(--gris);padding:0 4px}
+.id-choix .case{display:block;margin:4px 0;font-size:13.5px}
 .ga-jour[data-jour]{cursor:cell}
 .pastille-mod{display:inline-block;padding:0 6px;border-radius:10px;background:#EEF1F5;font-size:11.5px;color:var(--gris)}
 .ga-jour{position:relative;border-left:1px solid #E4E8F0;background:#fff}
@@ -817,6 +823,7 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
           <div class="champ"><label for="pe-etab">Établissement</label><select id="pe-etab"></select></div>
           <div class="champ etroit"><label for="pe-classe">Classe</label><select id="pe-classe"></select></div>
           <div class="champ etroit"><label for="pe-niveau">Niveau</label><select id="pe-niveau"></select></div>
+          <div class="champ"><label for="pe-dispositif">Dispositif</label><select id="pe-dispositif"></select></div>
           <div class="champ"><label for="pe-modalite">Modalité</label><select id="pe-modalite">
             <option value="">Toutes</option><option value="ind">Individuel</option><option value="mut">Mutualisé</option><option value="deux">Individuel et mutualisé</option>
           </select></div>
@@ -960,6 +967,7 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
             <div class="champ etroit"><label for="af-niveau">Niveau</label><select id="af-niveau"></select></div>
             <div class="champ etroit"><label for="af-classe">Classe</label><select id="af-classe"></select></div>
             <div class="champ"><label for="af-aesh">AESH</label><select id="af-aesh"></select></div>
+            <div class="champ etroit"><label for="af-dispositif">Dispositif</label><select id="af-dispositif"><option value="">Tous</option><option value="ulis">Élèves d'ULIS</option><option value="aucun">Hors dispositif</option></select></div>
             <div class="champ"><label for="af-etat">État</label><select id="af-etat">
               <option value="">Tous les états</option>
               <optgroup label="Élèves">
@@ -1575,6 +1583,22 @@ input[type=search]{width:100%;font-family:inherit;font-size:14.5px;color:var(--t
     <div id="vh-corps"></div>
     <div id="vh-detail"></div>
     <div class="actions"><button type="button" class="btn btn-vide" id="vh-fermer">Fermer</button></div>
+  </div>
+</div>
+
+<div class="voile" id="voile-identite" hidden>
+  <div class="modale modale-large" role="dialog" aria-modal="true" aria-labelledby="id-titre">
+    <h3 id="id-titre">Établissement et classe</h3>
+    <div class="formulaire-fiche">
+      <div class="champ"><label for="id-etab">Établissement</label><select id="id-etab"></select></div>
+      <div class="champ"><label for="id-classe">Classe</label><select id="id-classe"></select></div>
+      <div class="champ" id="id-classe-autre-champ" hidden><label for="id-classe-autre">Nouvelle classe</label><input type="text" id="id-classe-autre" autocomplete="off" placeholder="Ex. : 5B"></div>
+    </div>
+    <div id="id-apercu" aria-live="polite"></div>
+    <div class="note alerte" id="id-erreurs" hidden aria-live="polite"></div>
+    <p class="aide">Une seule action, annulable (Ctrl+Z) : fiche, cours et affectations reviennent ensemble.</p>
+    <div class="actions"><button type="button" class="btn btn-plein" id="id-appliquer" disabled>Appliquer</button>
+      <button type="button" class="btn btn-vide" id="id-annuler">Annuler</button></div>
   </div>
 </div>
 

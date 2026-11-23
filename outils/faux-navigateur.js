@@ -184,16 +184,24 @@ function creerNavigateur(opts) {
   }
 
   /* appelle les écouteurs ; toute exception est enregistrée comme une erreur de la page */
+  // les événements remontent aux ancêtres (comme dans un navigateur), sauf après stopPropagation
   function declencher(el, type, evt) {
     evt = evt || {};
-    evt.type = type; evt.target = evt.target || el; evt.currentTarget = el;
-    evt.preventDefault = evt.preventDefault || function () {}; evt.stopPropagation = evt.stopPropagation || function () {};
-    var liste = (el._ecouteurs[type] || []).slice();
-    if (typeof el["on" + type] === "function") liste.push(el["on" + type]);
-    liste.forEach(function (f) {
-      try { f.call(el, evt); } catch (e) { enregistrer("exception dans l'écouteur « " + type + " » de #" + (el.id || el.tagName), e); }
-    });
-    return liste.length;
+    evt.type = type; evt.target = evt.target || el;
+    evt.preventDefault = evt.preventDefault || function () {};
+    evt.stopPropagation = function () { evt.arretee = true; };
+    var total = 0, courant = el;
+    while (courant && !evt.arretee) {
+      evt.currentTarget = courant;
+      var liste = (courant._ecouteurs[type] || []).slice();
+      if (typeof courant["on" + type] === "function") liste.push(courant["on" + type]);
+      liste.forEach(function (f) {
+        try { f.call(courant, evt); } catch (e) { enregistrer("exception dans l'écouteur « " + type + " » de #" + (courant.id || courant.tagName), e); }
+      });
+      total += liste.length;
+      courant = courant._n && courant._n.parent && courant._n.parent.tag ? enveloppe(courant._n.parent) : null;
+    }
+    return total;
   }
 
   function indexIds() {

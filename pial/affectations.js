@@ -841,11 +841,11 @@ var PialAffectations = (function () {
       .map(function (c) { return { valeur: c, libelle: c }; }), "Toutes");
     remplirSelect("af-aesh", aeshTriees().map(function (a) { return { valeur: a.id, libelle: nomAesh(a) }; }), "Toutes");
   }
-  ["af-etab", "af-niveau", "af-classe", "af-aesh", "af-etat"].forEach(function (id) {
+  ["af-etab", "af-niveau", "af-classe", "af-aesh", "af-etat", "af-dispositif"].forEach(function (id) {
     $(id).addEventListener("change", function () { if (id === "af-etab") remplirFiltres(); rendreAffectations(); });
   });
   $("af-reinitialiser").addEventListener("click", function () {
-    ["af-etab", "af-niveau", "af-classe", "af-aesh", "af-etat"].forEach(function (id) { $(id).value = ""; });
+    ["af-etab", "af-niveau", "af-classe", "af-aesh", "af-etat", "af-dispositif"].forEach(function (id) { $(id).value = ""; });
     remplirFiltres(); rendreAffectations();
   });
 
@@ -867,9 +867,10 @@ var PialAffectations = (function () {
     return h;
   }
   function elevesFiltres() {
-    var fe = $("af-etab").value, fn = $("af-niveau").value, fc = $("af-classe").value, fa = $("af-aesh").value, fs = $("af-etat").value;
+    var fe = $("af-etab").value, fn = $("af-niveau").value, fc = $("af-classe").value, fa = $("af-aesh").value, fs = $("af-etat").value, fd = $("af-dispositif").value;
     return etat.eleves.filter(function (e) {
       if (fe && e.etablissement !== fe) return false;
+      if (fd === "ulis" ? !M.estEnDispositif(e) : (fd === "aucun" && M.estEnDispositif(e))) return false;
       if (fn && M.niveauClasse(e.classe) !== fn) return false;
       if (fc && e.classe !== fc) return false;
       if (fa && !etat.affectations.some(function (a) { return a.aeshId === fa && a.eleves.indexOf(e.id) > -1; })) return false;
@@ -894,6 +895,7 @@ var PialAffectations = (function () {
     $("aff-liste-eleves").innerHTML = eleves.length ? eleves.map(function (e) {
       var cv = M.couvertureEleve(e, ctxCourant);
       return '<li data-eleve="' + ech(e.id) + '" tabindex="0"><div class="lj-tete"><span class="lj-nom">' + ech(e.nomCourt) + '</span>' + sep(" — ")
+        + (M.estEnDispositif(e) ? sep(" ") + '<span class="badge-ulis" title="Élève d\'ULIS">ULIS</span>' : "")
         + '<span class="lj-meta">' + ech(e.classe) + ' · ' + ech(nomEtablissement(e.etablissement)) + '</span></div>' + jaugesEleve(e, cv) + '</li>';
     }).join("") : '<li class="vide">' + (etat.eleves.length ? "Aucun élève ne correspond à ces filtres." : "Aucun élève : importez le fichier des élèves (onglet Importer).") + '</li>';
     var aesh = aeshFiltrees();
@@ -1424,6 +1426,26 @@ var PialAffectations = (function () {
     f.o.hote = hoteId; f.id = null; f.base = null;
   }
   function ongletVisible(id) { var v = $(id); return !!v && !v.classList.contains("masque"); }
+  // établissement, classe (changement : fenêtre avec aperçu, voir PialProfils.ouvrirIdentite) et dispositif (ULIS) de la fiche élève.
+  // Le dispositif et la classe de référence s'enregistrent comme les autres champs de la fiche (enregistrement automatique).
+  function classesDeEtab(etabId) {
+    return M.referentielClasses(M.classesEnregistrees(etat.classes, anneeCourante()), etat.elevesTous, etat.coursTous)[etabId] || [];
+  }
+  function blocIdentiteEleve(e, marque) {
+    var dispos = etat.dispositifs.filter(function (d) { return d.etab === e.etablissement; }), cur = e.dispositif || null;
+    var inconnu = cur && !dispos.some(function (d) { return d.id === cur.id; });
+    var classes = classesDeEtab(e.etablissement).slice();
+    if (cur && cur.classeReference && !classes.some(function (c) { return M.memeClasse(c, cur.classeReference); })) classes.push(cur.classeReference);
+    return '<h4>Identité et dispositif</h4><div class="fe-identite"><p>' + ech(nomEtablissement(e.etablissement)) + ' · classe ' + ech(e.classe)
+      + ' <button type="button" class="btn btn-vide" id="fe-modifier-identite" title="Changer l\'établissement ou la classe, avec l\'aperçu des conséquences">Modifier…</button></p>'
+      + '<div class="fe-champs"><label>Dispositif<select id="fe-dispositif" data-champ="dispositif"' + (dispos.length || inconnu ? "" : " disabled") + '>'
+      + '<option value="">Aucun</option>' + dispos.map(function (d) { return '<option value="' + ech(d.id) + '"' + (cur && cur.id === d.id ? " selected" : "") + '>ULIS « ' + ech(d.nom) + ' » — ' + ech(nomEtablissement(d.etab)) + '</option>'; }).join("")
+      + (inconnu ? '<option value="' + ech(cur.id) + '" selected>(dispositif introuvable)</option>' : "") + '</select></label>'
+      + '<label>Classe de référence<select id="fe-classe-ref" data-champ="classeref"' + (cur ? "" : " disabled") + '><option value="">—</option>'
+      + classes.map(function (c) { return '<option value="' + ech(c) + '"' + (cur && cur.classeReference === c ? " selected" : "") + '>' + ech(c) + '</option>'; }).join("") + '</select></label></div>'
+      + (dispos.length || inconnu ? '<p class="aide">Élève d\'ULIS : sa classe de référence sert à ses cours d\'inclusion (emploi du temps en ULIS et inclusions : à venir). Il est marqué « ULIS » dans les listes.</p>'
+        : '<p class="aide">Aucune ULIS déclarée pour cet établissement (Réglages → Dispositifs).</p>') + '</div>';
+  }
   // opts : {hote (défaut : grille de l'élève), ouverte (fiche dépliée)}
   function rendreFicheEleve(e, opts) {
     opts = opts || {};
@@ -1433,7 +1455,7 @@ var PialAffectations = (function () {
     var matieres = M.matieresEleve(e, etat.cours);
     var h = '<details class="fiche-eleve" id="fe-details"' + (ficheEleveOuverte || opts.ouverte ? " open" : "") + '><summary>Fiche de l\'élève'
       + '<span class="aide"> — notification, besoins, état par matière, commentaire' + (e.commentaire ? " · commentaire saisi" : "") + '</span></summary>'
-      + '<div class="fe-corps"><div class="fe-colonne"><h4>Notification</h4><div class="fe-champs">'
+      + '<div class="fe-corps"><div class="fe-colonne">' + blocIdentiteEleve(e, marque) + '<h4>Notification</h4><div class="fe-champs">'
       + '<label>Heures individuelles' + marque("heuresInd") + '<input type="text" inputmode="decimal" id="fe-ind" data-champ="ind" value="' + ech(String(e.heuresInd || 0).replace(".", ",")) + '"></label>'
       + '<label>Heures mutualisées' + marque("heuresMut") + '<input type="text" inputmode="decimal" id="fe-mut" data-champ="mut" value="' + ech(String(e.heuresMut || 0).replace(".", ",")) + '"></label>'
       + '<label>Début' + marque("debutNotif") + '<input type="date" id="fe-debut" data-champ="debut" value="' + ech(e.debutNotif || "") + '"></label>'
@@ -1465,6 +1487,9 @@ var PialAffectations = (function () {
     Array.prototype.forEach.call(hote.querySelectorAll("[data-etat-matiere]"), function (b) {
       b.addEventListener("click", function () { changerEtatMatiere(e, this.dataset.matiere, this.dataset.etatMatiere); });
     });
+    $("fe-modifier-identite").addEventListener("click", function () { PialProfils.ouvrirIdentite(e.id); });
+    // la classe de référence n'a de sens que dans un dispositif
+    $("fe-dispositif").addEventListener("change", function () { $("fe-classe-ref").disabled = !this.value; });
   }
   // saisie lue dans la fiche (synchrone), appliquée ensuite à l'élève à jour
   function lireFicheEleve(hote) {
@@ -1472,7 +1497,8 @@ var PialAffectations = (function () {
       ind: $("fe-ind").value, mut: $("fe-mut").value, debut: $("fe-debut").value, fin: $("fe-fin").value,
       besoins: Array.prototype.filter.call(hote.querySelectorAll("[data-besoin]"), function (c) { return c.checked; })
         .map(function (c) { return I.ACCOMP[parseInt(c.dataset.besoin, 10)]; }),
-      commentaire: $("fe-commentaire").value
+      commentaire: $("fe-commentaire").value,
+      dispositif: $("fe-dispositif").value, classeRef: $("fe-classe-ref").value
     };
   }
   // { erreur } ou { b } (fiche modifiée) ou {} (aucune modification)
@@ -1491,6 +1517,19 @@ var PialAffectations = (function () {
     if (!Object.keys(b.modifiesAppli).length) delete b.modifiesAppli;
     var commentaire = s.commentaire.replace(/\s+$/, "");
     if (commentaire !== (e.commentaire || "")) { if (commentaire) b.commentaire = commentaire; else delete b.commentaire; change = true; }
+    // dispositif (ULIS) et classe de référence ; l'historique des inclusions n'est jamais effacé
+    var avantD = e.dispositif ? e.dispositif.id : "", avantR = e.dispositif ? (e.dispositif.classeReference || "") : "";
+    var dispo = s.dispositif || "", ref = dispo ? (s.classeRef || "") : "";
+    if (dispo !== avantD || (dispo && ref !== avantR)) {
+      if (dispo) {
+        var d = etat.dispositifs.filter(function (x) { return x.id === dispo; })[0];
+        if (!d && dispo !== avantD) return { erreur: "dispositif introuvable." };
+        if (d && d.etab !== e.etablissement) return { erreur: "ce dispositif appartient à un autre établissement." };
+        b.dispositif = { id: dispo, classeReference: ref };
+        if (!b.inclusions) b.inclusions = [];
+      } else delete b.dispositif;
+      change = true;
+    }
     return change ? { b: b } : {};
   }
   function changerEtatMatiere(e, cle, nouvelEtat) {
@@ -2163,6 +2202,7 @@ var PialAffectations = (function () {
         + (a.origine === "moteur" && (a.raisons || []).length ? '<div class="mc-info">Proposée par le moteur : ' + a.raisons.map(ech).join(" · ") + '</div>' : "")
         + v.map(function (x) { return '<div class="' + (x.niveau === "erreur" ? "mc-alerte" : "mc-info") + '">' + (x.niveau === "erreur" ? "⚠ " : "ℹ ") + ech(x.message) + '</div>'; }).join("")
         + '<div class="actions" style="margin-top:6px">'
+        + (a.alerteIdentite ? '<button type="button" class="btn btn-vide" data-verifiee="' + ech(a.id) + '">Marquer comme vérifiée</button>' : "")
         + '<button type="button" class="btn btn-vide" data-epingler="' + ech(a.id) + '">' + (a.epinglee ? "Désépingler" : "Épingler") + '</button>'
         + '<button type="button" class="btn btn-danger" data-retirer="' + ech(a.id) + '">Retirer' + (autres.length ? " cet élève" : "") + '</button></div></div>';
     }).join("") : '<p class="aide">Aucune AESH sur ce créneau.</p>';
@@ -2235,6 +2275,13 @@ var PialAffectations = (function () {
     chaque("[data-affecter]", function () { affecter(this.dataset.affecter); });
     chaque("[data-retirer]", function () { retirer(this.dataset.retirer); });
     chaque("[data-epingler]", function () { basculerEpingle(this.dataset.epingler); });
+    chaque("[data-verifiee]", function () { marquerVerifiee(this.dataset.verifiee); });
+  }
+  // l'alerte « classe ou établissement modifié » est levée à la main, après vérification du créneau
+  function marquerVerifiee(affId) {
+    var aff = JSON.parse(JSON.stringify(etat.affectations.filter(function (a) { return a.id === affId; })[0]));
+    delete aff.alerteIdentite;
+    enregistrerPuisRendre([{ magasin: "affectations", enregistrer: [aff] }], "Créneau marqué comme vérifié.", "la vérification du créneau");
   }
 
   /* =============== versions : validation (§6) =============== */

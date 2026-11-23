@@ -733,7 +733,7 @@ var PialModele = (function () {
   // fichier des AESH, et champs propres à l'application
   var CHAMPS_FICHE_AESH = ["quotite", "email", "etablissements", "indisponibilites", "formations"];
   // archiveLe et archiveMotif : un réimport « Mettre à jour » ne rétablit jamais une fiche archivée (§17)
-  var PROPRES = { eleves: ["commentaire", "etatsMatieres", "archiveLe", "archiveMotif"], aesh: ["voeux", "elevesExclus", "ignorerIndispos", "alias", "archiveLe", "archiveMotif"] };
+  var PROPRES = { eleves: ["commentaire", "etatsMatieres", "dispositif", "inclusions", "archiveLe", "archiveMotif"], aesh: ["voeux", "elevesExclus", "ignorerIndispos", "alias", "archiveLe", "archiveMotif"] };
   // champs modifiés dans l'application dont la valeur du fichier diffère
   function conflitsReimport(existant, nouveau) {
     var m = (existant && existant.modifiesAppli) || {};
@@ -1058,6 +1058,8 @@ var PialModele = (function () {
         var e = ctx._eleves[id];
         out.push(violation("exclusion", "Ne pas affecter à " + (e ? e.nomCourt : id) + " (fiche de l'AESH)."));
       });
+      // classe ou établissement d'un élève modifié alors que l'affectation a été gardée : à vérifier (attention, pas bloquant)
+      if (aff.alerteIdentite) out.push({ code: "identite", niveau: "attention", message: aff.alerteIdentite });
       // vœux : simple information (pénalité dans le score)
       var vx = voeuxTouches(aesh, c);
       if (vx.length) out.push({ code: "voeu", niveau: "info", message: "Vœu de l'AESH non respecté : éviter " + vx.join(", ") + "." });
@@ -1237,6 +1239,62 @@ var PialModele = (function () {
     return inv.reverse();
   }
 
+  /* =============== dispositif d'un élève (ULIS : spec §19.5) =============== */
+  // Stockage sur la fiche élève, prévu pour la partie « Dispositifs » (rien à migrer ensuite) :
+  //   dispositif : {id (dispositif déclaré dans Réglages), classeReference}  — absent si l'élève n'est dans aucun dispositif ;
+  //   inclusions : historique daté des cours d'inclusion, [{depuis: "AAAA-MM-JJ", cours: [clés de cours]}] (rempli à la partie C ;
+  //                conservé même si l'élève quitte le dispositif).
+  // Un dispositif appartient à un établissement : l'élève ne peut être que dans un dispositif de son établissement.
+  function dispositifEleve(e, dispositifs) {
+    if (!e || !e.dispositif || !e.dispositif.id) return null;
+    return (dispositifs || []).filter(function (d) { return d.id === e.dispositif.id; })[0] || null;
+  }
+  function estEnDispositif(e) { return !!(e && e.dispositif && e.dispositif.id); }
+  /* changer l'établissement et la classe d'UN élève (fiche) : plan complet, une seule action annulable.
+     d : {eleves (archivés compris), cours, aesh, etablissements, affectations (brouillon et versions)} ;
+     ch : {classe, etablissement, etablissementNom} ; choix : {affectations: "retirer" | "garder" (défaut : retirer si l'établissement
+     change, sinon garder), cours: "garder" (défaut : ils suivent l'élève, horaires inchangés jusqu'au prochain import) | "retirer"}.
+     Renvoie {ok, collisions, inchange, eleve (fiche modifiée), nbCours, affectations (brouillon concerné), groupes (groupes mutualisés
+     quittés si retrait), versions, dispositifRetire, choix, ops}. Rien à écrire si ok est faux. Les versions validées ne changent jamais.
+     « garder » : l'affectation reste et porte une alerte (« alerteIdentite ») jusqu'à ce qu'on la marque vérifiée. */
+  function planIdentite(d, id, ch, choix) {
+    choix = choix || {};
+    var out = { ok: false, collisions: [], inchange: false, eleve: null, nbCours: 0, affectations: [], groupes: 0, versions: [], dispositifRetire: false, choix: {}, ops: [] };
+    var e = (d.eleves || []).filter(function (x) { return x.id === id; })[0];
+    if (!e) return out;
+    var dp = deplacerEleves(d.eleves, d.cours, [id], ch);
+    if (dp.collisions.length) { out.collisions = dp.collisions; return out; }
+    if (!dp.eleves.length) { out.inchange = true; return out; }
+    var m = dp.eleves[0], etabChange = m.etablissement !== e.etablissement;
+    if (etabChange && m.dispositif) { m = copie(m); delete m.dispositif; out.dispositifRetire = true; }   // un dispositif appartient à un établissement
+    out.eleve = m;
+    var siens = (d.cours || []).filter(function (c) { return c.eleveId === id; });
+    out.nbCours = siens.length;
+    var vers = {};
+    (d.affectations || []).forEach(function (a) {
+      if ((a.eleves || []).indexOf(id) < 0) return;
+      if (a.version) vers[a.version] = true; else out.affectations.push(a);
+    });
+    out.versions = Object.keys(vers).map(Number).sort(function (a, b) { return a - b; });
+    out.choix = { affectations: choix.affectations || (etabChange ? "retirer" : "garder"), cours: choix.cours || "garder" };
+    out.ops.push({ magasin: "eleves", enregistrer: [m] });
+    if (out.choix.cours === "retirer") { if (siens.length) out.ops.push({ magasin: "cours", supprimer: siens.map(function (c) { return c.id; }) }); }
+    else if (dp.cours.length) out.ops.push({ magasin: "cours", enregistrer: dp.cours });
+    if (out.affectations.length) {
+      if (out.choix.affectations === "retirer") {
+        var eff = effetsRetrait("eleves", [id], { eleves: d.eleves, aesh: d.aesh, cours: d.cours, affectations: out.affectations });
+        out.groupes = eff.mutualisees;
+        out.ops.push({ magasin: "affectations", supprimer: eff.supprimees, enregistrer: eff.modifiees });
+      } else {
+        var nom = function (idEtab) { var x = (d.etablissements || []).filter(function (y) { return y.id === idEtab; })[0]; return x ? x.nom : idEtab; };
+        var message = e.nomCourt + " : " + e.classe + " (" + nom(e.etablissement) + ") → " + m.classe + " (" + (ch.etablissementNom || nom(m.etablissement)) + ") : vérifier ce créneau.";
+        out.ops.push({ magasin: "affectations", enregistrer: out.affectations.map(function (a) { var c = copie(a); c.alerteIdentite = message; return c; }) });
+      }
+    }
+    out.ok = true;
+    return out;
+  }
+
   /* =============== comparatif de deux versions (§6) =============== */
   // avant, apres : listes d'affectations ; etablissements : liste (pour
   // l'alternance A/B). Comparaison par élève × créneau × semaine : un
@@ -1371,7 +1429,7 @@ var PialModele = (function () {
     motifsIndisponibilite: motifsIndisponibilite, violationsSimulees: violationsSimulees, cleEtatPeriscolaire: cleEtatPeriscolaire,
     etatPeriscolaire: etatPeriscolaire, creneauxPeriscolaires: creneauxPeriscolaires,
     joursEntre: joursEntre, alertes: alertes, synthese: synthese, comparerAffectations: comparerAffectations,
-    operationsInverses: operationsInverses
+    operationsInverses: operationsInverses, dispositifEleve: dispositifEleve, estEnDispositif: estEnDispositif, planIdentite: planIdentite
   };
 })();
 

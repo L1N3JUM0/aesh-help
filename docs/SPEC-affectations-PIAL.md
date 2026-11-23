@@ -694,6 +694,68 @@ Ordre de traitement : A (corrections), B (trous), E (grille AESH), puis C (fiche
 6. Ouverture de l'espace PIAL sur le dernier onglet utilisé (Élèves par défaut).
 7. Absences des AESH (absence datée avec remplacement) et saisie des emplois du temps dans l'application : propositions retenues, à coder dans un second temps (EDT : en attente de la réponse sur les exports Pronote).
 
+## 18. Décisions du 22/11/2026 (phase 3 : protection des données, rattachement, dossiers d'envoi, import côté AESH)
+
+Contexte : l'application AESH (`index.html`) est utilisée en production. Aucune donnée existante ne doit être perdue ; l'import corrige les fiches existantes au lieu d'en créer.
+
+1. **Sauvegarde chiffrée** (`pial/chiffrement.js`, §8.4) : PBKDF2-SHA256 (300 000 itérations, minimum accepté 200 000) puis AES-GCM, format `pial-suivi-chiffre/1`. Mot de passe d'au moins 8 caractères, saisi deux fois ; la restauration reconnaît le format et demande le mot de passe. La sauvegarde en clair reste disponible.
+2. **Purge par année** (`M.planPurge`) : « tout ce qui est antérieur à l'année choisie » = rapports (datés par le **début de leur période**, à défaut leur jour de création ; un rapport sans date n'est jamais purgé), élèves et leurs cours, affectations, versions validées, classes de ces années. Les AESH, établissements, réglages et l'historique des imports restent. Une seule transaction, aperçu des comptes, sauvegarde proposée avant.
+3. **Rattachement des rapports aux élèves** (`rapprochement.js`, carte « Rattachement » de l'onglet Importer) : par fiche d'AESH (`eleveId` du rapport), prénom + initiale + classe + établissement, tolérant (casse, accents, « 5ème B » = « 5B », « Collège P. Gauthier »). Identique en tout → automatique ; classe différente, faute de frappe, établissement manquant → « probable » à valider ; plusieurs candidats → « ambigu ». Les liaisons automatiques sont recalculées à la volée ; seul le choix de l'utilisateur est mémorisé (`parametres` / `rattachements` : `liens`, `ignores`). Aucun rapport n'est modifié. Les élèves d'un même `parcours` comptent une fois.
+4. **Dossier d'envoi** (`pial/dossier.js`, §8.1) : bouton « Dossiers d'envoi » de l'onglet Affectations ; version validée ou brouillon ; toutes les AESH ou seulement celles dont l'affectation a changé. « A changé » se compare au **dernier dossier exporté** pour cette AESH (signature mémorisée à l'export dans `parametres` / `exportsDossier`), à défaut à la version validée précédente, à défaut tout est à envoyer. La signature ignore le numéro de version et la date.
+5. **`pial-affectation/1`** (§8.3) : chaque élève porte `eleveId` = identifiant interne **stable** de l'élève côté PIAL (son `parcours`, à défaut l'identifiant de la fiche), jamais la clé qui contient la classe. Un créneau périscolaire porte `type: "periscolaire"`.
+6. **Importer mon affectation** (application AESH, `rapprochement.js` + `index.html`) :
+   - le rapprochement ignore la casse et les accents des prénoms (« Ines » = « Inès » = « INES ») et ne dépend pas de la classe (elle peut être périmée : c'est ce que l'affectation corrige) : prénom exact + initiale + établissement (identique ou abrégé). Une fiche déjà reliée (`affecteId` = `eleveId`) est reconnue directement, malgré tout changement de classe ou d'année ;
+   - tout le reste (faute de frappe, établissement différent ou manquant, nom de famille absent, doublon) est soumis à l'AESH : choisir la fiche, en créer une, ou ne pas importer ;
+   - mise à jour de la classe, de l'établissement, des heures, de la modalité (la modalité ULIS est conservée) et des **matières, par ajout seulement** : celles de la fiche absentes de l'affectation sont signalées, jamais retirées. Deux libellés équivalents (casse, accents, abréviations : « Maths » = « Mathématiques », « HG » = « Histoire-Géographie-EMC », « LV1 Anglais » = « Anglais », « EPS » = « Éducation physique et sportive », « MATHEMATIQUES » des emplois du temps Pronote…) sont la même matière : table `EQUIVALENCES_MATIERES` de `rapprochement.js`, le libellé de la fiche est conservé, seule une vraie différence est signalée ;
+   - jamais modifiés : nom de famille, notes, rapports, identifiants des fiches ; le lien rapport → fiche est donc conservé ; le prénom n'est pas modifié (une différence est signalée) ;
+   - fiche absente de l'affectation : signalée, **archivage proposé** (champ `archive`, jamais de suppression ; « Afficher les élèves archivés » les retrouve) ;
+   - avant toute modification : sauvegarde complète (`suivi-aesh-backup/1`) téléchargée automatiquement, puis copie de secours dans la clé `suivi-aesh-avant-import` **écrite puis relue** ; si elle ne tient pas (quota), l'import n'est possible qu'après confirmation que le fichier téléchargé est enregistré ; l'écriture finale est vérifiée et, en cas d'échec, l'état d'avant est rétabli (aucune écriture partielle) ;
+   - « Revenir à l'état d'avant » (Réglages et écran de résultat) restaure la copie de secours **sans jamais perdre de rapport** (`Rapprochement.retourEtatAvant`) : les rapports rédigés depuis l'import sont conservés, ainsi que les fiches créées depuis auxquelles ils se rattachent (seules sont retirées les créations de l'import restées intactes et sans rapport) ; nom, prénom et notes d'aujourd'hui sont gardés ; si l'application a été modifiée depuis, une sauvegarde de l'état actuel est téléchargée d'abord ;
+   - `rapprochement.js` est **facultatif** pour `index.html` (`<script … onerror>`) : sans lui l'application démarre et fonctionne normalement, seul « Importer mon affectation » est indisponible, avec un message qui explique comment obtenir l'application complète (test : `outils/test-index-sans-module.js`).
+7. **Données de test** : `node outils/generer-sauvegardes-aesh.js` écrit des sauvegardes AESH fictives désordonnées (« 5ème B », nom complet, établissement manquant, doublon, élève absent de l'affectation, fiche sans nom, matière personnalisée, rapports transmis ou non) et les affectations correspondantes ; le test Node vérifie la non-perte (nombre et contenu des rapports, notes, noms, identifiants identiques avant et après).
+8. **Statistiques filtrables** (§7.4) : livrées, voir §7.4. Les fichiers de transmission `suivi-aesh/1` et `/2` restent importables côté PIAL (inchangé).
+
+## 19. Décisions du 23/11/2026 (onglet « Répartition » des AESH entre établissements)
+
+Le coordonnateur répartit d'abord les AESH entre établissements, vérifie que chacun est couvert, puis entre dans le détail par élève dans l'onglet Affectations. L'onglet **Répartition** se place avant Affectations. Fichiers : `pial/repartition.js` (calculs purs, testés), `pial/repartition-ui.js` (onglet, saisie, déclaration des ULIS dans Réglages).
+
+### 19.1 Données
+
+- **Répartition** : `{annee, parAesh: {aeshId: {uniteId: heures}}}`, enregistrée dans `parametres` (clé `repartition`) : pas de changement de schéma IndexedDB. Une unité est un établissement (son identifiant) ou un dispositif ULIS (`ulis:<id>`).
+- **Heures hebdomadaires**, identiques en semaines A et B, **par pas de 0,5 h**. Le total d'une AESH ne dépasse pas sa quotité (refusé à la saisie ; si la quotité baisse ensuite, l'AESH est signalée en dépassement). Une AESH peut avoir 12 h au collège et 12 h à l'école.
+- **Heures non réparties** = quotité − heures réparties. Elles sont affichées en évidence dans le bandeau de Répartition **et** dans celui d'Affectations dès qu'une répartition existe.
+- **Brouillon et versions** : la répartition est celle du brouillon ; « Valider » en garde une copie dans la version (`versions[].repartition`) ; restaurer une version restaure aussi sa répartition (annulable). Annulation (Ctrl+Z, pile commune, §6) : toute modification de la répartition est annulable.
+- **Dispositif ULIS** (`parametres`, clé `dispositifs`) : `{id, nom, type: "ulis", etab, jours, matin: {debut, fin}, apresmidi: {debut, fin}}`, déclaré dans Réglages. Par défaut : lundi, mardi, jeudi, vendredi, 9h-12h et 13h30-16h (22 h d'ouverture par semaine). Le rattachement des élèves ULIS à ce dispositif viendra avec la partie « Dispositifs ».
+
+### 19.2 Colonnes et besoins
+
+Une colonne par établissement et par dispositif ULIS. Pour un établissement :
+
+- **Individuel** : somme des heures notifiées en individuel.
+- **Mutualisé brut** : somme des heures notifiées en mutualisé.
+- **Mutualisé estimé** : une heure mutualisée peut couvrir plusieurs élèves, mais seulement ceux de la **même classe, au même cours** (§4.4 contrainte 3). Par classe, recouvrement glouton et déterministe : on retient à chaque tour le cours (jour, début, fin, semaine, matière, groupe ; cours exclus ignorés) qui couvre le plus d'élèves dont les heures notifiées ne sont pas encore satisfaites (égalité : ordre de la clé du cours), jusqu'à satisfaction de chacun. Ce qu'aucun cours de la classe ne peut couvrir reste compté pour sa valeur brute. L'estimation est bornée par la plus grande notification de la classe (tous les élèves ensemble à chaque cours) et par la somme brute (jamais ensemble) ; l'infobulle donne la fourchette. C'est une estimation de volume : elle ne tient pas compte des conflits d'horaires entre AESH.
+- **Périscolaire** : seulement si « Gérer les temps périscolaires » est coché. Un créneau commun à tout l'établissement compte une fois, quel que soit le nombre d'élèves.
+- **Besoin retenu** = individuel + mutualisé estimé + périscolaire. **Sans emploi du temps pour tous les élèves notifiés en mutualisé** (donc sans estimation fiable), le mutualisé **brut** est retenu, et la colonne le mentionne.
+- **Écart** = heures allouées − besoin. **État** coloré avec les seuils de la couverture d'un élève (§4.2) : manque d'une heure ou plus (rouge), manque inférieur à 1 h (orange), couvert (vert), en trop (bleu).
+- **Colonne ULIS** : besoin = heures d'ouverture du dispositif. Les notifications des élèves ULIS (pour leurs inclusions) comptent dans la colonne de leur établissement.
+
+### 19.3 Interface
+
+- Cartes AESH (nom, quotité, heures réparties, non réparties, détail par colonne), déposées dans une colonne par **glisser-déposer** (Pointer Events, par la poignée ⠿) ou par le bouton « Répartir… » (une ligne d'heures par colonne, total et heures non réparties en direct). Un dépôt ouvre la saisie, préremplie avec les heures non réparties. Un clic sur une AESH dans une colonne modifie ses heures, « × » la retire.
+- **Répartition manuelle uniquement** : pas de bouton « Proposer » pour la répartition.
+- Statistiques → Affectations : tableau « Répartition des AESH entre établissements » (besoin, allouées, écart, état) pour le brouillon ou une version.
+
+### 19.4 Effet sur le moteur et les saisies
+
+- **Sans répartition** (ou réglage « Respecter la répartition » décoché, coché par défaut) : comportement inchangé, résultat identique.
+- **Avec répartition** : une AESH qui a **au moins une ligne** ne dépasse jamais, par semaine A et par semaine B, les heures allouées à chaque établissement (contrainte dure, en plus des établissements possibles et de la règle du déplacement) ; un établissement sans heures allouées lui est fermé. Les temps périscolaires comptent dans ces heures. **Version stricte** : ses heures non réparties ne sont pas utilisables. Une AESH qui n'a **aucune ligne** n'est pas contrainte (elle apparaît dans les heures non réparties). Une AESH qui n'a que des heures de dispositif n'intervient dans aucun établissement.
+- Cette contrainte est indépendante de « Respecter les indisponibilités » et de l'option par AESH « ignorer les indisponibilités ».
+- Motif `repartition` : écarte l'AESH dans le menu d'un créneau (grisée, avec le motif) et dans le rapport du moteur ; une saisie manuelle qui la dépasse reste possible et est **signalée** (§5.4), comme les autres contraintes.
+- La répartition fait partie de la **signature des données** du moteur : une proposition mémorisée (§16) n'est rejouée que si la répartition est la même.
+- Les affectations dans un dispositif ULIS n'existent pas encore : les heures ULIS ne sont donc pas encore consommées par le moteur (partie « Dispositifs »).
+
+---
+
 ## 15. Sujets ouverts
 
 À étudier après la phase 2.
